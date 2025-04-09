@@ -6,7 +6,6 @@ struct ContentView: View {
     // Environment objects
     @EnvironmentObject private var voiceManager: VoiceManager
     @EnvironmentObject private var cameraManager: CameraManager
-    @EnvironmentObject private var speechRecognitionManager: SpeechRecognitionManager
     @EnvironmentObject private var resourceCoordinator: ResourceCoordinator
     @EnvironmentObject private var visionManager: VisionManager
     
@@ -19,7 +18,6 @@ struct ContentView: View {
                         .environmentObject(appState)
                         .environmentObject(voiceManager)
                         .environmentObject(cameraManager)
-                        .environmentObject(speechRecognitionManager)
                         .environmentObject(resourceCoordinator)
                         .environmentObject(visionManager)
                         .transition(.opacity)
@@ -36,7 +34,6 @@ struct ContentView: View {
                     .environmentObject(appState)
                     .environmentObject(voiceManager)
                     .environmentObject(cameraManager)
-                    .environmentObject(speechRecognitionManager)
                     .environmentObject(resourceCoordinator)
                     .environmentObject(visionManager)
                     .transition(.opacity)

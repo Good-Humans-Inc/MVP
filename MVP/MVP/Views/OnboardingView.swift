@@ -9,8 +9,8 @@ struct OnboardingView: View {
     @State private var isLoading = false
     @State private var hasStartedAgent = false
     
-    // Scroll view proxy for auto-scrolling to latest message
-    @State private var scrollProxy: ScrollViewProxy? = nil
+    // Scroll view reader
+    @State private var scrollToBottom = false
     
     // Environment objects
     @EnvironmentObject private var appState: AppState
@@ -34,49 +34,16 @@ struct OnboardingView: View {
             Color(UIColor.systemBackground)
                 .edgesIgnoringSafeArea(.all)
             
+            // Main content
             VStack(spacing: 20) {
-                // Pep animation (renamed from Dog animation)
-                PepAnimation(state: $animationState)
-                    .frame(width: 200, height: 200)
+                // Pep animation
+                animationView
                 
                 // Conversation messages
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(messages) { message in
-                                ConversationBubble(message: message)
-                                    .id(message.id)
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .background(Color(.systemBackground))
-                    .onAppear {
-                        scrollProxy = proxy
-                    }
-                    .onChange(of: messages) { _, newMessages in
-                        if let lastMessage = newMessages.last {
-                            withAnimation {
-                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                            }
-                        }
-                    }
-                }
+                messagesView
                 
                 // Voice activity indicator
-                HStack {
-                    Circle()
-                        .fill(animationState == .listening ? Color.green : Color.gray)
-                        .frame(width: 10, height: 10)
-                    
-                    Text(animationState == .listening ? "Listening..." :
-                         (animationState == .speaking ? "Speaking..." : "Tap to start"))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 5)
-                .padding(.bottom, 10)
+                indicatorView
                 
                 // Loading indicator
                 if isLoading {
@@ -87,115 +54,197 @@ struct OnboardingView: View {
             .padding()
         }
         .onAppear {
-            // Set up notification observers
-            setupNotificationObservers()
-            
-            // Configure audio session to use speaker
-            configureAudioSession()
-            
-            // Start the ElevenLabs onboarding agent
-            if !hasStartedAgent {
-                hasStartedAgent = true
-                voiceManager.startOnboardingAgent()
-                appState.currentAgentType = .onboarding
-                print("Called voiceManager.startOnboardingAgent()")
-            }
-            
-            // Start with initial greeting
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                animationState = .speaking
-            }
+            setup()
         }
         .onDisappear {
-            // Clean up notification observers
-            removeNotificationObservers()
+            cleanup()
         }
-        .onChange(of: voiceManager.isSpeaking) { _, isSpeaking in
-            animationState = isSpeaking ? .speaking : .listening
-        }
-        .onChange(of: voiceManager.isListening) { _, isListening in
-            if isListening && !voiceManager.isSpeaking {
-                animationState = .listening
+    }
+    
+    // MARK: - View Components
+    
+    private var animationView: some View {
+        // Using custom component (assumed to be defined elsewhere)
+        PepAnimation(state: $animationState)
+            .frame(width: 200, height: 200)
+    }
+    
+    private var messagesView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(messages) { message in
+                        ConversationBubble(message: message)
+                            .id(message.id)
+                    }
+                    // Invisible view at bottom for scrolling
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .padding(.horizontal)
+                .onChange(of: messages.count) { _ in
+                    // Scroll to bottom when messages change
+                    withAnimation {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
             }
+            .frame(maxWidth: .infinity)
+            .background(Color(.systemBackground))
         }
-        .onChange(of: voiceManager.lastSpokenText) { _, newText in
-            if !newText.isEmpty {
-                addMessage(text: newText, isUser: false)
-            }
+    }
+    
+    private var indicatorView: some View {
+        HStack {
+            Circle()
+                .fill(animationState == .listening ? Color.green : Color.gray)
+                .frame(width: 10, height: 10)
+            
+            Text(statusText)
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
-        .onChange(of: voiceManager.transcribedText) { _, newText in
-            if !newText.isEmpty {
-                addMessage(text: newText, isUser: true)
-            }
+        .padding(.top, 5)
+        .padding(.bottom, 10)
+    }
+    
+    private var statusText: String {
+        switch animationState {
+        case .listening: return "Listening..."
+        case .speaking: return "Speaking..."
+        case .thinking: return "Thinking..."
+        default: return "Tap to start"
         }
-        .onChange(of: appState.userId) { _, newUserId in
-            if newUserId != nil && !isOnboardingComplete {
-                handleOnboardingComplete()
-            }
+    }
+    
+    // MARK: - Setup and Lifecycle
+    
+    private func setup() {
+        setupNotifications()
+        configureAudio()
+        startAgent()
+        
+        // Start timer to update state
+        Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+            updateState()
         }
-        .onChange(of: isOnboardingComplete) { _, newValue in
-            if newValue {
-                // Double check that session is terminated
-                if voiceManager.isSessionActive {
-                    voiceManager.endElevenLabsSession()
+    }
+    
+    private func startAgent() {
+        if !hasStartedAgent {
+            hasStartedAgent = true
+            
+            // Start the agent
+            DispatchQueue.main.async {
+                self.voiceManager.startOnboardingAgent()
+                self.appState.currentAgentType = .onboarding
+                
+                // Initial animation after a delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    self.animationState = .speaking
                 }
             }
         }
     }
     
-    // MARK: - Helper Methods
+    private func updateState() {
+        // Get states safely
+        let isSpeaking = voiceManager.isSpeaking
+        let isListening = voiceManager.isListening
+        let lastSpokenText = voiceManager.lastSpokenText
+        let transcribedText = voiceManager.transcribedText
+        
+        // Update animation state
+        DispatchQueue.main.async {
+            // Set animation state based on voice manager state
+            if isSpeaking {
+                self.animationState = .speaking
+            } else if isListening && !isSpeaking {
+                self.animationState = .listening
+            }
+            
+            // Add AI message if new
+            if !lastSpokenText.isEmpty {
+                if !self.messages.contains(where: { $0.text == lastSpokenText && !$0.isUser }) {
+                    self.addMessage(text: lastSpokenText, isUser: false)
+                }
+            }
+            
+            // Add user message if new
+            if !transcribedText.isEmpty {
+                if !self.messages.contains(where: { $0.text == transcribedText && $0.isUser }) {
+                    self.addMessage(text: transcribedText, isUser: true)
+                }
+            }
+            
+            // Check for onboarding completion
+            if self.appState.userId != nil && !self.isOnboardingComplete {
+                self.handleOnboardingComplete()
+            }
+        }
+    }
     
-    private func setupNotificationObservers() {
-        // Listen for when patient ID is received
+    private func cleanup() {
+        // Remove notifications
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    // MARK: - Notifications
+    
+    private func setupNotifications() {
+        // Patient ID notification
         NotificationCenter.default.addObserver(
             forName: VoiceManager.patientIdReceivedNotification,
             object: nil,
             queue: .main
-        ) { notification in
+        ) { [weak self] notification in
+            guard let self = self else { return }
             if let patientId = notification.userInfo?["patient_id"] as? String {
-                appState.updateUserId(patientId)
-                animationState = .thinking
-                addMessage(text: "Thanks for sharing that information. I'm generating personalized exercises for you now...", isUser: false)
+                self.appState.updateUserId(patientId)
+                self.animationState = .thinking
+                self.addMessage(text: "Thanks for sharing that information. I'm generating personalized exercises for you now...", isUser: false)
             }
         }
         
-        // Listen for when exercises are generated
+        // Exercises notification
         NotificationCenter.default.addObserver(
             forName: VoiceManager.exercisesGeneratedNotification,
             object: nil,
             queue: .main
-        ) { notification in
-            handleExercisesGenerated()
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            self.handleExercisesGenerated()
         }
     }
     
-    private func removeNotificationObservers() {
-        NotificationCenter.default.removeObserver(self, name: VoiceManager.patientIdReceivedNotification, object: nil)
-        NotificationCenter.default.removeObserver(self, name: VoiceManager.exercisesGeneratedNotification, object: nil)
-    }
+    // MARK: - Audio
     
-    private func configureAudioSession() {
+    private func configureAudio() {
         do {
             try AVAudioSession.sharedInstance().setCategory(.playAndRecord, options: [.defaultToSpeaker, .allowBluetooth])
             try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-            print("Failed to configure audio session: \(error)")
+            print("Failed to configure audio: \(error)")
         }
     }
     
+    // MARK: - Helper Methods
+    
     private func addMessage(text: String, isUser: Bool) {
-        print("Adding message: \(text), isUser: \(isUser)")
         let message = ConversationMessage(text: text, isUser: isUser)
         messages.append(message)
         
-        // Set audio to speaker
+        // Configure audio output
+        configureSpeakerOutput()
+    }
+    
+    private func configureSpeakerOutput() {
         do {
-            if !voiceManager.isBluetoothConnected {
+            if !(voiceManager.isBluetoothConnected) {
                 try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
             } else {
                 try AVAudioSession.sharedInstance().setCategory(.playAndRecord,
-                                          mode: .spokenAudio,
-                                          options: [.allowBluetooth])
+                                                           mode: .spokenAudio,
+                                                           options: [.allowBluetooth])
                 try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
             }
         } catch {
@@ -207,28 +256,29 @@ struct OnboardingView: View {
         isLoading = false
         addMessage(text: "Your personalized exercise is ready! Let's get started with your recovery journey.", isUser: false)
         
-        // Wait a moment to show the message before proceeding
+        // Wait before completing
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            handleOnboardingComplete()
+            self.handleOnboardingComplete()
         }
     }
     
     private func handleOnboardingComplete() {
         guard !isOnboardingComplete else { return }
         
-        print("Onboarding complete, ending onboarding agent session")
+        print("Onboarding complete, ending session")
         
-        // End the ElevenLabs session
+        // End the session
         voiceManager.endElevenLabsSession()
         
         // Small delay to allow session to properly end
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            isOnboardingComplete = true
+            self.isOnboardingComplete = true
         }
     }
 }
 
-// Conversation bubble component
+// MARK: - Bubble Component
+
 struct ConversationBubble: View {
     let message: OnboardingView.ConversationMessage
     
@@ -264,84 +314,5 @@ struct ConversationBubble: View {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return formatter.string(from: date)
-    }
-}
-
-// Rename DogAnimation to PepAnimation
-struct PepAnimation: View {
-    @Binding var state: OnboardingView.AnimationState
-    
-    var body: some View {
-        ZStack {
-            // Idle state - hi.gif
-            if state == .idle {
-                AnimatedImage(name: "hi.gif")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .transition(.opacity)
-            }
-            
-            // Speaking state - wagging.gif
-            if state == .speaking {
-                AnimatedImage(name: "wagging.gif")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .transition(.opacity)
-            }
-            
-            // Listening state - custom ear animation or another gif
-            if state == .listening {
-                AnimatedImage(name: "hi.gif") // You could use a different gif for listening state
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .transition(.opacity)
-                    .overlay(
-                        Image(systemName: "ear.fill")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 50, height: 50)
-                            .offset(x: 40, y: -40)
-                            .foregroundColor(.blue)
-                            .opacity(0.8)
-                            .scaleEffect(pulsingAnimation())
-                    )
-            }
-            
-            // Thinking state - encouraging.gif
-            if state == .thinking {
-                AnimatedImage(name: "encouraging.gif")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.easeInOut(duration: 0.3), value: state)
-    }
-    
-    // Animation for the pulsing effect
-    private func pulsingAnimation() -> CGFloat {
-        let animation = Animation.easeInOut(duration: 0.5).repeatForever(autoreverses: true)
-        return withAnimation(animation) {
-            return 1.0 + 0.1 * sin(Date().timeIntervalSince1970 * 5)
-        }
-    }
-}
-
-// Mock AnimatedImage for preview
-struct AnimatedImage: View {
-    let name: String
-    
-    func resizable() -> Self {
-        return self
-    }
-    
-    func aspectRatio(contentMode: ContentMode) -> Self {
-        return self
-    }
-    
-    var body: some View {
-        Image(systemName: "person.fill")
-            .resizable()
-            .aspectRatio(contentMode: .fit)
     }
 }

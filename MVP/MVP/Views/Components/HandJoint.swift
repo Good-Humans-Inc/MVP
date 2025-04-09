@@ -1,6 +1,7 @@
 import Foundation
 import Vision
 import CoreGraphics
+import UIKit
 
 // Define hand joint types based on VNHumanHandPoseObservation points
 enum HandJointType: String, CaseIterable {

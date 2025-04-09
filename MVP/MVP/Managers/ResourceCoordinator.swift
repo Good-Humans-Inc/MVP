@@ -241,16 +241,16 @@ class ResourceCoordinator: NSObject, ObservableObject {
         
         // Check each finger
         for finger in ["index", "middle", "ring", "little"] {
-            if let extension = extensionValues[finger] {
+            if let extensionValue = extensionValues[finger] {
                 // Set threshold based on typical finger length (can be calibrated better)
                 let threshold: CGFloat = 80.0
                 
-                if extension < threshold {
+                if extensionValue < threshold {
                     feedback.messages.append("\(finger.capitalized) finger needs to stretch more")
                     allExtended = false
                 }
                 
-                feedback.metrics["\(finger)Extension"] = extension
+                feedback.metrics["\(finger)Extension"] = extensionValue
             } else {
                 anyMissing = true
             }
@@ -281,36 +281,36 @@ class ResourceCoordinator: NSObject, ObservableObject {
             
             // Check distance to each fingertip
             if let indexTip = joints[.indexTip]?.position {
-                let distance = distance(from: thumbTip, to: indexTip)
-                distances["indexDistance"] = distance
-                if distance < 20 { // Threshold for "touching"
+                let distanceValue = distance(from: thumbTip, to: indexTip)
+                distances["indexDistance"] = distanceValue
+                if distanceValue < 20 { // Threshold for "touching"
                     touchingAny = true
                     feedback.messages.append("Good opposition with index finger")
                 }
             }
             
             if let middleTip = joints[.middleTip]?.position {
-                let distance = distance(from: thumbTip, to: middleTip)
-                distances["middleDistance"] = distance
-                if distance < 20 {
+                let distanceValue = distance(from: thumbTip, to: middleTip)
+                distances["middleDistance"] = distanceValue
+                if distanceValue < 20 {
                     touchingAny = true
                     feedback.messages.append("Good opposition with middle finger")
                 }
             }
             
             if let ringTip = joints[.ringTip]?.position {
-                let distance = distance(from: thumbTip, to: ringTip)
-                distances["ringDistance"] = distance
-                if distance < 20 {
+                let distanceValue = distance(from: thumbTip, to: ringTip)
+                distances["ringDistance"] = distanceValue
+                if distanceValue < 20 {
                     touchingAny = true
                     feedback.messages.append("Good opposition with ring finger")
                 }
             }
             
             if let littleTip = joints[.littleTip]?.position {
-                let distance = distance(from: thumbTip, to: littleTip)
-                distances["littleDistance"] = distance
-                if distance < 20 {
+                let distanceValue = distance(from: thumbTip, to: littleTip)
+                distances["littleDistance"] = distanceValue
+                if distanceValue < 20 {
                     touchingAny = true
                     feedback.messages.append("Good opposition with little finger")
                 }

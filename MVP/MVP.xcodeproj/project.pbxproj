@@ -9,15 +9,33 @@
 /* Begin PBXBuildFile section */
 		2C54DF602DA508300024E739 /* SDWebImageSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DF5F2DA508300024E739 /* SDWebImageSwiftUI */; };
 		2C54DF662DA509120024E739 /* ElevenLabsSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DF652DA509120024E739 /* ElevenLabsSDK */; };
+		2C54DFC92DA61B830024E739 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFC82DA61B830024E739 /* FirebaseAnalytics */; };
+		2C54DFCB2DA61B830024E739 /* FirebaseAnalyticsOnDeviceConversion in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFCA2DA61B830024E739 /* FirebaseAnalyticsOnDeviceConversion */; };
+		2C54DFCD2DA61B830024E739 /* FirebaseAnalyticsWithoutAdIdSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFCC2DA61B830024E739 /* FirebaseAnalyticsWithoutAdIdSupport */; };
+		2C54DFCF2DA61B830024E739 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFCE2DA61B830024E739 /* FirebaseAppCheck */; };
+		2C54DFD12DA61B830024E739 /* FirebaseAppDistribution-Beta in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFD02DA61B830024E739 /* FirebaseAppDistribution-Beta */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		2C54DF1F2DA4DFE60024E739 /* MVP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MVP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		2C54DFC62DA6198B0024E739 /* Exceptions for "MVP" folder in "MVP" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 2C54DF1E2DA4DFE60024E739 /* MVP */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		2C54DF212DA4DFE60024E739 /* MVP */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2C54DFC62DA6198B0024E739 /* Exceptions for "MVP" folder in "MVP" target */,
+			);
 			path = MVP;
 			sourceTree = "<group>";
 		};
@@ -28,8 +46,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2C54DFD12DA61B830024E739 /* FirebaseAppDistribution-Beta in Frameworks */,
 				2C54DF662DA509120024E739 /* ElevenLabsSDK in Frameworks */,
+				2C54DFCD2DA61B830024E739 /* FirebaseAnalyticsWithoutAdIdSupport in Frameworks */,
 				2C54DF602DA508300024E739 /* SDWebImageSwiftUI in Frameworks */,
+				2C54DFC92DA61B830024E739 /* FirebaseAnalytics in Frameworks */,
+				2C54DFCF2DA61B830024E739 /* FirebaseAppCheck in Frameworks */,
+				2C54DFCB2DA61B830024E739 /* FirebaseAnalyticsOnDeviceConversion in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -74,6 +97,11 @@
 			packageProductDependencies = (
 				2C54DF5F2DA508300024E739 /* SDWebImageSwiftUI */,
 				2C54DF652DA509120024E739 /* ElevenLabsSDK */,
+				2C54DFC82DA61B830024E739 /* FirebaseAnalytics */,
+				2C54DFCA2DA61B830024E739 /* FirebaseAnalyticsOnDeviceConversion */,
+				2C54DFCC2DA61B830024E739 /* FirebaseAnalyticsWithoutAdIdSupport */,
+				2C54DFCE2DA61B830024E739 /* FirebaseAppCheck */,
+				2C54DFD02DA61B830024E739 /* FirebaseAppDistribution-Beta */,
 			);
 			productName = MVP;
 			productReference = 2C54DF1F2DA4DFE60024E739 /* MVP.app */;
@@ -106,6 +134,7 @@
 			packageReferences = (
 				2C54DF5E2DA508300024E739 /* XCRemoteSwiftPackageReference "SDWebImageSwiftUI" */,
 				2C54DF642DA509120024E739 /* XCRemoteSwiftPackageReference "ElevenLabsSwift" */,
+				2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2C54DF202DA4DFE60024E739 /* Products */;
@@ -269,11 +298,15 @@
 				DEVELOPMENT_TEAM = 2MLHSW6S86;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MVP/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "This app uses the camera to track hand movements during RSI exercises";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app uses the microphone for voice assistance during exercises";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -297,11 +330,15 @@
 				DEVELOPMENT_TEAM = 2MLHSW6S86;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MVP/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "This app uses the camera to track hand movements during RSI exercises";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app uses the microphone for voice assistance during exercises";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.3;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -355,6 +392,14 @@
 				kind = branch;
 			};
 		};
+		2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.11.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -367,6 +412,31 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2C54DF642DA509120024E739 /* XCRemoteSwiftPackageReference "ElevenLabsSwift" */;
 			productName = ElevenLabsSDK;
+		};
+		2C54DFC82DA61B830024E739 /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		2C54DFCA2DA61B830024E739 /* FirebaseAnalyticsOnDeviceConversion */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsOnDeviceConversion;
+		};
+		2C54DFCC2DA61B830024E739 /* FirebaseAnalyticsWithoutAdIdSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsWithoutAdIdSupport;
+		};
+		2C54DFCE2DA61B830024E739 /* FirebaseAppCheck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAppCheck;
+		};
+		2C54DFD02DA61B830024E739 /* FirebaseAppDistribution-Beta */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = "FirebaseAppDistribution-Beta";
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

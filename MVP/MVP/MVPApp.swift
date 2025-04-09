@@ -3,6 +3,7 @@ import AVFoundation
 import Firebase
 import UserNotifications
 
+typealias Joint = BodyJointType
 // App Delegate to handle Firebase
 class AppDelegate: NSObject, UIApplicationDelegate {
     // Track if this is first launch of the app
@@ -113,7 +114,7 @@ struct MVPApp: App {
         let camera = CameraManager(appState: appState, visionManager: vision)
         _cameraManager = StateObject(wrappedValue: camera)
         
-        let voice = VoiceManager(appState: appState)
+        let voice = VoiceManager()
         _voiceManager = StateObject(wrappedValue: voice)
         
         let resources = ResourceCoordinator(appState: appState)

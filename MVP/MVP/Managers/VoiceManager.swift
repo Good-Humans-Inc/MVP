@@ -92,7 +92,7 @@ class VoiceManager: NSObject, ObservableObject {
     static let exercisesGeneratedNotification = Notification.Name("ExercisesGenerated")
     static let exerciseCoachReadyNotification = Notification.Name("ExerciseCoachReady")
     
-    init() {
+    override init() {
         super.init()
         print("VoiceManager initialized with ElevenLabsSDK \(ElevenLabsSDK.version)")
         startNetworkMonitoring()

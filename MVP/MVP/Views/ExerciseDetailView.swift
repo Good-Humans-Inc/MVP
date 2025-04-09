@@ -1,4 +1,5 @@
 import SwiftUI
+import AVKit
 import AVFoundation
 
 struct ExerciseDetailView: View {
@@ -95,51 +96,57 @@ struct ExerciseDetailView: View {
     
     private var videoPreviewSection: some View {
         Group {
-            if let videoURL = exercise.videoURL {
-                VideoPlayerView(url: videoURL)
-                    .frame(height: 240)
-                    .cornerRadius(12)
-                    .padding(.horizontal)
-            } else if let imageURL = exercise.imageURL {
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .empty:
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .aspectRatio(16/9, contentMode: .fit)
-                            .overlay(ProgressView())
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(height: 240)
-                    case .failure:
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .aspectRatio(16/9, contentMode: .fit)
-                            .overlay(
-                                Image(systemName: "photo")
-                                    .font(.largeTitle)
-                            )
-                    @unknown default:
-                        EmptyView()
-                    }
-                }
+            mediaContent
+        }
+    }
+
+    // Helper to handle the conditional logic
+    @ViewBuilder
+    private var mediaContent: some View {
+        if let videoURL = exercise.videoURL {
+            VideoPlayerView(url: videoURL)
+                .frame(height: 240)
                 .cornerRadius(12)
                 .padding(.horizontal)
-            } else {
-                // Fallback if no media is available
-                Rectangle()
-                    .fill(Color.gray.opacity(0.2))
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .frame(height: 240)
-                    .overlay(
-                        Image(systemName: "figure.walk")
-                            .font(.system(size: 50))
-                    )
-                    .cornerRadius(12)
-                    .padding(.horizontal)
+        } else if let imageURL = exercise.imageURL {
+            AsyncImage(url: imageURL) { phase in
+                switch phase {
+                case .empty:
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.2))
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .overlay(ProgressView())
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 240)
+                case .failure:
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.2))
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .overlay(
+                            Image(systemName: "photo")
+                                .font(.largeTitle)
+                        )
+                @unknown default:
+                    EmptyView()
+                }
             }
+            .cornerRadius(12)
+            .padding(.horizontal)
+        } else {
+            // Fallback if no media is available
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .aspectRatio(16/9, contentMode: .fit)
+                .frame(height: 240)
+                .overlay(
+                    Image(systemName: "figure.walk")
+                        .font(.system(size: 50))
+                )
+                .cornerRadius(12)
+                .padding(.horizontal)
         }
     }
     

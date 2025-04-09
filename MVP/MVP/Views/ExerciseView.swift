@@ -28,8 +28,8 @@ struct ExerciseView: View {
             CameraPreview(session: cameraManager.session)
                 .edgesIgnoringSafeArea(.all)
             
-            // Body pose overlay
-            BodyPoseView(bodyPose: visionManager.currentBodyPose)
+            // Hand pose overlay
+            HandPoseView(handPose: visionManager.currentHandPose)
                 .edgesIgnoringSafeArea(.all)
             
             // Coach message bubble if there are messages
@@ -200,9 +200,9 @@ struct ExerciseView: View {
         exerciseDuration = exercise.duration - remainingTime
         
         // Set current exercise ID in VoiceManager and end session
-        if let exerciseId = exercise.firestoreId ?? exercise.id.uuidString {
-            voiceManager.setCurrentExercise(id: exerciseId)
-        }
+        let exerciseId = exercise.firestoreId ?? exercise.id.uuidString
+        voiceManager.setCurrentExercise(id: exerciseId)
+        voiceManager.endExerciseSession()
         voiceManager.endExerciseSession()
         
         // Clean up resources

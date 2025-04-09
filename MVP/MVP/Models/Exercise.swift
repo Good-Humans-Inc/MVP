@@ -10,12 +10,12 @@ struct Exercise: Identifiable {
     let targetJoints: [BodyJointType]
     let instructions: [String]
     let firestoreId: String?
-    let videoId: String?
+    let videoURL: URL?
     
     init(id: UUID = UUID(), name: String, description: String,
          imageURLString: String? = nil, imageURLString1: String? = nil, duration: TimeInterval = 180,
          targetJoints: [BodyJointType] = [], instructions: [String] = [],
-         firestoreId: String? = nil,videoId:String? = nil) {
+         firestoreId: String? = nil,videoURL:URL? = nil) {
         self.id = id
         self.name = name
         self.description = description
@@ -25,7 +25,7 @@ struct Exercise: Identifiable {
         self.targetJoints = targetJoints
         self.instructions = instructions
         self.firestoreId = firestoreId
-        self.videoId = videoId
+        self.videoURL = videoURL
     }
 }
 

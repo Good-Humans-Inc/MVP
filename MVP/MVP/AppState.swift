@@ -12,7 +12,7 @@ class AppState: ObservableObject {
     @Published var exerciseReport: ExerciseReport? = nil
     
     // Voice agent states
-    @Published var currentAgentType: AgentType = .none
+    @Published var currentAgentType: VoiceAgentType? = nil
     
     // MARK: - Child States
     @Published var voiceState: VoiceState
@@ -69,9 +69,8 @@ class AppState: ObservableObject {
     }
 }
 
-// MARK: - Agent Type Enum
-enum AgentType {
-    case none
+// MARK: - Voice Agent Type Enum (for internal AppState usage)
+enum VoiceAgentType {
     case onboarding
     case firstExercise
     case exercise

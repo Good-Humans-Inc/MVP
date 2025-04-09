@@ -98,13 +98,15 @@ struct ReportView: View {
     }
     
     private func generateExerciseReport() {
-        guard let userId = appState.userId,
-              let exerciseId = exercise.firestoreId ?? exercise.id.uuidString else {
-            // If we don't have user ID or exercise ID, use placeholder data
+        guard let userId = appState.userId else {
+            // If we don't have user ID, use placeholder data
             reportData = ExerciseReport.placeholder
             isLoading = false
             return
         }
+        
+        // Get the exerciseId - no need for optional binding since we're using nil coalescing
+        let exerciseId = exercise.firestoreId ?? exercise.id.uuidString
         
         // Get conversation history for context
         let conversationHistory = voiceManager.getConversationHistory()
@@ -112,13 +114,13 @@ struct ReportView: View {
         // Call the cloud function
         generatePTReport(patientId: userId, exerciseId: exerciseId, conversationHistory: conversationHistory) { result in
             DispatchQueue.main.async {
-                isLoading = false
+                self.isLoading = false
                 
                 switch result {
                 case .success(let report):
                     self.reportData = report
                     // Save to app state for reference
-                    appState.setExerciseReport(report)
+                    self.appState.setExerciseReport(report)
                     
                 case .failure(let error):
                     print("Error generating report: \(error.localizedDescription)")
@@ -128,6 +130,7 @@ struct ReportView: View {
             }
         }
     }
+
     
     private func generatePTReport(patientId: String, exerciseId: String,
                                 conversationHistory: [[String: Any]],
