@@ -1,3 +1,5 @@
+import os
+import re
 import functions_framework
 import json
 import uuid
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 db = firestore.Client()
 
 @functions_framework.http
-def onboard_patient(request):
+def onboard_user(request):
     """
     Cloud Function to handle patient onboarding with minimal data.
     
