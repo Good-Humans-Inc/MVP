@@ -71,13 +71,31 @@ struct ContentView: View {
 // API Service class for network calls
 class APIService {
     static func getRecommendedExercise(userId: String, completion: @escaping (Result<Exercise, Error>) -> Void) {
-        // Implement API call to get recommended exercise
-        // This would call your generate_exercises cloud function
-        
-        // For now, return a fallback exercise after a delay to simulate network call
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
-            completion(.success(Exercise.fallbackExercise))
+        // Try to load exercises from UserDefaults first
+        if let exercisesData = UserDefaults.standard.data(forKey: "PatientExercises"),
+           let exercisesArray = try? JSONSerialization.jsonObject(with: exercisesData) as? [[String: Any]],
+           let exerciseJson = exercisesArray.first {
+            
+            // Convert JSON to Exercise object
+            let exercise = Exercise(
+                id: UUID(uuidString: exerciseJson["id"] as? String ?? UUID().uuidString) ?? UUID(),
+                name: exerciseJson["name"] as? String ?? "Unknown Exercise",
+                description: exerciseJson["description"] as? String ?? "No description available",
+                imageURLString: exerciseJson["imageURL"] as? String,
+                imageURLString1: exerciseJson["imageURL1"] as? String,
+                duration: TimeInterval(exerciseJson["duration"] as? Int ?? 180),
+                targetJoints: (exerciseJson["targetJoints"] as? [String])?.compactMap { BodyJointType(rawValue: $0) } ?? [],
+                instructions: exerciseJson["instructions"] as? [String] ?? [],
+                firestoreId: exerciseJson["firestoreId"] as? String,
+                videoURL: (exerciseJson["videoURL"] as? String).flatMap { URL(string: $0) }
+            )
+            
+            completion(.success(exercise))
+            return
         }
+        
+        // If no exercises in UserDefaults, use fallback exercise
+        completion(.success(Exercise.fallbackExercise))
     }
 }
 

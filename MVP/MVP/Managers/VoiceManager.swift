@@ -676,10 +676,13 @@ class VoiceManager: NSObject, ObservableObject {
                 print("📊 Exercise generation response: \(json ?? [:])")
                 
                 if let status = json?["status"] as? String, status == "success",
-                   let exercisesJson = json?["exercises"] as? [[String: Any]] {
+                   let exerciseJson = json?["exercise"] as? [String: Any] {
+                    
+                    // Convert single exercise to array format for compatibility
+                    let exercisesArray = [exerciseJson]
                     
                     // Store exercises in UserDefaults
-                    if let exercisesData = try? JSONSerialization.data(withJSONObject: exercisesJson) {
+                    if let exercisesData = try? JSONSerialization.data(withJSONObject: exercisesArray) {
                         UserDefaults.standard.set(exercisesData, forKey: "PatientExercises")
                         
                         DispatchQueue.main.async {
@@ -687,11 +690,11 @@ class VoiceManager: NSObject, ObservableObject {
                             NotificationCenter.default.post(
                                 name: VoiceManager.exercisesGeneratedNotification,
                                 object: nil,
-                                userInfo: ["exercises_count": exercisesJson.count]
+                                userInfo: ["exercises_count": 1]
                             )
                         }
                         
-                        print("✅ Generated \(exercisesJson.count) exercises and saved to UserDefaults")
+                        print("✅ Generated exercise and saved to UserDefaults")
                     }
                 } else {
                     print("❌ Invalid exercise generation response format")
