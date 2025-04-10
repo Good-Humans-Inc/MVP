@@ -67,6 +67,11 @@ struct ReportView: View {
                         
                         // Done button
                         Button(action: {
+                            // Reset exercise state
+                            appState.isExerciseActive = false
+                            appState.currentExercise = exercise
+                            
+                            // Dismiss the report view which will trigger ExerciseView dismissal
                             presentationMode.wrappedValue.dismiss()
                         }) {
                             Text("Done")

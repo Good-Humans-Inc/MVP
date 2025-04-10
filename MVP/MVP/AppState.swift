@@ -10,6 +10,7 @@ class AppState: ObservableObject {
     @Published var currentExercise: Exercise? = nil
     @Published var isExerciseActive: Bool = false
     @Published var exerciseReport: ExerciseReport? = nil
+    @Published var isOnboardingComplete: Bool = false
     
     // Voice agent states
     @Published var currentAgentType: VoiceAgentType? = nil

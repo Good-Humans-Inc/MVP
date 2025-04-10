@@ -19,6 +19,18 @@ struct ExerciseDetailView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 20) {
+                // Top bar with reset button
+                HStack {
+                    Button(action: resetOnboarding) {
+                        Image(systemName: "arrow.counterclockwise.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.leading)
+                    
+                    Spacer()
+                }
+                
                 // Exercise video or image
                 videoPreviewSection
                 
@@ -218,6 +230,28 @@ struct ExerciseDetailView: View {
     }
     
     // MARK: - Actions
+    
+    private func resetOnboarding() {
+        // Reset VoiceManager state
+        voiceManager.resetOnboarding()
+        
+        // Reset AppState
+        appState.hasUserId = false
+        appState.userId = nil
+        appState.isOnboardingComplete = false
+        appState.currentAgentType = nil
+        
+        // Dismiss this view and return to onboarding
+        if let window = UIApplication.shared.windows.first {
+            window.rootViewController = UIHostingController(rootView: OnboardingView()
+                .environmentObject(appState)
+                .environmentObject(voiceManager)
+                .environmentObject(resourceCoordinator)
+                .environmentObject(cameraManager)
+                .environmentObject(visionManager)
+            )
+        }
+    }
     
     private func startExercise() {
         isStartingExercise = true

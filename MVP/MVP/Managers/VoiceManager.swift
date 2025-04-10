@@ -42,6 +42,9 @@ class VoiceManager: NSObject, ObservableObject {
     @Published var mode: ElevenLabsSDK.Mode = .listening
     @Published var isSessionActive = false  // Track if the session is active
     @Published var currentAgentType: AgentType? = nil
+    @Published var isListening = false
+    @Published var transcribedText = ""
+    @Published var hasCompletedOnboarding = false
     
     // Track session operations
     private var sessionOperationInProgress = false
@@ -267,6 +270,7 @@ class VoiceManager: NSObject, ObservableObject {
                     DispatchQueue.main.async {
                         self.mode = newMode
                         self.isSpeaking = (newMode == .speaking)
+                        self.isListening = (newMode == .listening)
                     }
                 }
                 
@@ -281,15 +285,18 @@ class VoiceManager: NSObject, ObservableObject {
                         "content": message
                     ])
                     
+                    // Update transcribed text for user messages
+                    DispatchQueue.main.async {
+                        if role == .user {
+                            self.transcribedText = message
+                        } else {
+                            self.lastSpokenText = message
+                        }
+                    }
+                    
                     // Try to extract JSON from the message if in onboarding mode
                     if self.currentAgentType == .onboarding {
                         self.tryExtractJson(from: message)
-                    }
-                    
-                    DispatchQueue.main.async {
-                        if role == .ai {
-                            self.lastSpokenText = message
-                        }
                     }
                 }
                 
@@ -728,6 +735,9 @@ class VoiceManager: NSObject, ObservableObject {
                                     userInfo: ["patient_id": patientId]
                                 )
                                 
+                                // Set onboarding as completed
+                                self.hasCompletedOnboarding = true
+                                
                                 // Automatically generate exercises
                                 self.generateExercises(patientId: patientId)
                             }
@@ -757,6 +767,9 @@ class VoiceManager: NSObject, ObservableObject {
                             object: nil,
                             userInfo: ["patient_id": patientId]
                         )
+                        
+                        // Set onboarding as completed
+                        self.hasCompletedOnboarding = true
                         
                         // Automatically generate exercises
                         self.generateExercises(patientId: patientId)
@@ -928,10 +941,34 @@ class VoiceManager: NSObject, ObservableObject {
         }
     }
     
-    // Start the onboarding agent
+    // MARK: - Onboarding Management
     func startOnboardingAgent() {
         print("🔍 startOnboardingAgent called")
         startElevenLabsSession(agentType: .onboarding)
+    }
+    
+    func resetOnboarding() {
+        print("🔄 Resetting onboarding state")
+        
+        // End current session if any
+        endElevenLabsSession()
+        
+        // Reset all relevant state
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.hasCompletedOnboarding = false
+            self.lastSpokenText = ""
+            self.transcribedText = ""
+            self.isListening = false
+            self.isSpeaking = false
+            
+            // Reset conversation history
+            self.clearConversationHistory()
+            
+            // Remove stored user data
+            UserDefaults.standard.removeObject(forKey: "PatientID")
+            UserDefaults.standard.removeObject(forKey: "PatientExercises")
+        }
     }
     
     // Start the first exercise agent

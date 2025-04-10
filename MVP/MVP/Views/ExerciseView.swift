@@ -48,26 +48,17 @@ struct ExerciseView: View {
             setupExerciseCoachObserver()
         }
         .onDisappear {
-            // Clean up resources
-            timer?.invalidate()
-            timer = nil
-            voiceManager.endElevenLabsSession()
-            visionManager.stopProcessing()
-            cameraManager.resetSession()
-            resourceCoordinator.stopExerciseSession()
-            
-            // Deactivate audio session when leaving
-            do {
-                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            } catch {
-                print("Error deactivating audio session: \(error)")
-            }
+            cleanupResources()
         }
         .fullScreenCover(isPresented: $showingExerciseReport) {
             ReportView(
                 exercise: exercise,
                 duration: exerciseDuration
             )
+            .onDisappear {
+                // Dismiss ExerciseView when ReportView disappears
+                presentationMode.wrappedValue.dismiss()
+            }
         }
     }
     
@@ -189,6 +180,24 @@ struct ExerciseView: View {
     
     // MARK: - Actions
     
+    private func cleanupResources() {
+        // Clean up resources
+        timer?.invalidate()
+        timer = nil
+        voiceManager.endElevenLabsSession()
+        visionManager.stopProcessing()
+        cameraManager.resetSession()
+        resourceCoordinator.stopExerciseSession()
+        
+        // Deactivate audio session
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            print("Audio session deactivated successfully")
+        } catch {
+            print("Error deactivating audio session: \(error)")
+        }
+    }
+    
     private func stopExercise() {
         isStoppingExercise = true
         
@@ -202,7 +211,6 @@ struct ExerciseView: View {
         // Set current exercise ID in VoiceManager and end session
         let exerciseId = exercise.firestoreId ?? exercise.id.uuidString
         voiceManager.setCurrentExercise(id: exerciseId)
-        voiceManager.endExerciseSession()
         voiceManager.endExerciseSession()
         
         // Clean up resources
