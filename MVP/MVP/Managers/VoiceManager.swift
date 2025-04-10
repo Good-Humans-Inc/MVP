@@ -13,9 +13,9 @@ enum AgentType {
     var agentId: String {
         switch self {
         case .onboarding:
-            return "lpwQ9rz6CHbfexAY8kU3"   // Onboarding agent ID
+            return "cUwyvIu9K7oeWMOljW4r"   // Onboarding agent ID
         case .firstExercise:
-            return "aBC123DEf456gHI789jK"   // First exercise agent ID (replace with actual ID)
+            return "GEXRBIHrq3oa2fB0TO1v"   // First exercise agent ID (replace with actual ID)
         case .exercise:
             return "GEXRBIHrq3oa2fB0TO1v"   // Exercise coach agent ID
         }

@@ -20,10 +20,6 @@ def onboard_patient(request):
     Required fields:
     - name (str): Patient's name
     - pain_description (str): Description of the injury or pain
-    
-    Optional fields:
-    - age (int): Patient's age
-    - pain_level (int): Pain severity (1-10)
     """
     # Enable CORS
     if request.method == 'OPTIONS':
@@ -51,10 +47,6 @@ def onboard_patient(request):
         name = request_json.get('name')
         pain_description = request_json.get('pain_description')
         
-        # Optional fields with defaults
-        age = request_json.get('age', 0)
-        pain_level = request_json.get('pain_level', 5)
-        
         # Check for missing required fields
         if not name or not pain_description:
             error_msg = "Missing required fields: name and pain_description are required"
@@ -70,8 +62,6 @@ def onboard_patient(request):
             'id': patient_id,
             'name': name,
             'pain_description': pain_description,
-            'age': age,
-            'pain_level': pain_level,
             'created_at': created_at,
             'updated_at': created_at
         }

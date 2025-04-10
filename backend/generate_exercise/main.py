@@ -38,6 +38,89 @@ def access_secret_version(secret_id, version_id="latest"):
         logger.error(f"Error accessing secret '{secret_id}': {str(e)}")
         raise
 
+# Predefined RSI exercises
+RSI_EXERCISES = [
+    {
+        "name": "Finger Crawls",
+        "description": "A gentle exercise to improve finger mobility and strength",
+        "target_joints": ["finger", "wrist"],
+        "instructions": [
+            "Start with your hand flat on a table",
+            "Slowly walk your fingers forward like a spider",
+            "Keep your palm flat on the surface",
+            "Return to starting position and repeat"
+        ]
+    },
+    {
+        "name": "Wrist Rotations",
+        "description": "Circular wrist movements to improve mobility and reduce stiffness",
+        "target_joints": ["wrist"],
+        "instructions": [
+            "Make a gentle fist",
+            "Rotate your wrist in full circles",
+            "Do 10 reps clockwise",
+            "Do 10 reps counterclockwise"
+        ],
+        "variations": [
+            "Hold light weights (1-2 lbs)",
+            "Use resistance bands for added challenge"
+        ]
+    },
+    {
+        "name": "Forearm Flexor/Extensor Stretch",
+        "description": "Stretches to relieve tension in forearm muscles",
+        "target_joints": ["wrist", "forearm"],
+        "instructions": [
+            "For flexor stretch:",
+            "Extend your arm straight with palm up",
+            "Pull fingers back with opposite hand",
+            "Hold for 15-20 seconds",
+            "For extensor stretch:",
+            "Extend your arm straight with palm down",
+            "Pull fingers toward body",
+            "Hold for 15-20 seconds"
+        ],
+        "variations": [
+            "Perform against a wall for added resistance"
+        ]
+    },
+    {
+        "name": "Prayer Stretch",
+        "description": "A gentle stretch for wrists and forearms",
+        "target_joints": ["wrist", "forearm"],
+        "instructions": [
+            "Press your palms together near your chest",
+            "Lower your hands until your wrists separate",
+            "Hold for 15-20 seconds",
+            "Return to starting position and repeat"
+        ]
+    },
+    {
+        "name": "Finger Bends",
+        "description": "Individual finger exercises to improve mobility",
+        "target_joints": ["finger"],
+        "instructions": [
+            "Start with hand open",
+            "Bend each finger toward the palm individually",
+            "Keep other fingers straight",
+            "Hold for 2 seconds per finger",
+            "Return to starting position and repeat"
+        ]
+    },
+    {
+        "name": "Finger Stretches",
+        "description": "Comprehensive finger stretching exercise",
+        "target_joints": ["finger", "palm"],
+        "instructions": [
+            "Gently pull back each finger one by one",
+            "Hold each stretch for 2-3 seconds",
+            "Then stretch the entire palm by pulling all fingers back simultaneously",
+            "Hold for 5 seconds",
+            "Return to starting position and repeat"
+        ]
+    }
+]
+
 @functions_framework.http
 def generate_exercises(request):
     """
@@ -78,47 +161,38 @@ def generate_exercises(request):
         else:
             api_key = access_secret_version("openai-api-key")
         
-        # Google API keys for YouTube video search
-        google_api_key = access_secret_version("google-api-key")
-        google_cse_id = access_secret_version("google-cse-id")
-        
         # Get patient data
         patient_data = get_patient_data(patient_id)
         if not patient_data:
             logger.warning(f"Patient not found: {patient_id}")
             return (json.dumps({'error': 'Patient not found'}, cls=DateTimeEncoder), 404, headers)
         
-        # Generate a recommended exercise
+        # Use LLM to select the most appropriate exercise and generate detailed instructions
         if llm_provider == 'claude':
-            exercise = generate_exercise_with_claude(patient_data, api_key)
+            exercise = select_exercise_with_claude(patient_data, api_key)
         else:
-            exercise = generate_exercise_with_openai(patient_data, api_key)
+            exercise = select_exercise_with_openai(patient_data, api_key)
         
-        logger.info(f"Generated exercise: {exercise['name']}")
-        
-        # Find a YouTube video for the exercise
-        enhanced_exercise = enhance_exercise_with_video(exercise, google_api_key, google_cse_id)
+        logger.info(f"Selected exercise: {exercise['name']}")
         
         # Save the exercise to Firestore
-        saved_exercise = save_exercise(enhanced_exercise, patient_id)
+        saved_exercise = save_exercise(exercise, patient_id)
         
         # Return success
         return (json.dumps({
             'status': 'success',
             'exercise': saved_exercise,
-            'source': 'llm-generated'
+            'source': 'llm-selected'
         }, cls=DateTimeEncoder), 200, headers)
         
     except Exception as e:
         logger.error(f"Error generating exercise: {str(e)}", exc_info=True)
         return (json.dumps({'error': f'Error generating exercise: {str(e)}'}, cls=DateTimeEncoder), 500, headers)
 
-
 def get_patient_data(patient_id):
     """
     Retrieve patient data from Firestore
     """
-    # Get patient document
     patient_doc = db.collection('patients').document(patient_id).get()
     
     if not patient_doc.exists:
@@ -126,52 +200,55 @@ def get_patient_data(patient_id):
     
     return patient_doc.to_dict()
 
-
-def generate_exercise_with_claude(patient_data, api_key):
+def select_exercise_with_claude(patient_data, api_key):
     """
-    Generate a single recommended exercise using Anthropic's Claude API
+    Use Claude to select the most appropriate exercise from the predefined list
+    and generate detailed instructions based on the patient's pain description
     """
     try:
         # Extract patient info
         name = patient_data.get('name', 'the patient')
-        age = patient_data.get('age', 0)
-        pain_description = patient_data.get('pain_description', 'knee pain')
-        pain_level = patient_data.get('pain_level', 5)
+        pain_description = patient_data.get('pain_description', '')
+        
+        # Create a JSON string of all available exercises
+        exercises_json = json.dumps(RSI_EXERCISES)
         
         # Construct prompt for Claude
         prompt = f"""
-        I need ONE appropriate knee rehabilitation exercise for a patient with the following profile:
+        I need you to select the most appropriate RSI (Repetitive Strain Injury) exercise for a patient with the following profile:
         
         Name: {name}
-        Age: {age}
         Pain description: {pain_description}
-        Pain level: {pain_level}/10
         
-        Please provide 1 evidence-based exercise that would be appropriate for this patient.
-        Consider standard physical therapy protocols and clinical practice guidelines.
+        Below is a list of predefined exercises for finger and wrist RSI. Please select the ONE most appropriate exercise based on the patient's pain description:
         
-        The exercise should include:
-        1. A clear name
-        2. A concise description
-        3. Target joints (as a list of: knee, ankle, hip)
-        4. Step-by-step instructions (as a list)
+        {exercises_json}
+        
+        After selecting the most appropriate exercise, please provide detailed instructions for that specific exercise. The instructions should be clear, step-by-step, and tailored to the patient's condition.
         
         Format your response as JSON:
         {{
-          "name": "Exercise Name",
-          "description": "Brief description of the exercise",
-          "target_joints": ["knee", "ankle"],
-          "instructions": [
-            "Step 1",
-            "Step 2",
-            "Step 3"
-          ]
+          "selected_exercise": {{
+            "name": "Exercise Name",
+            "description": "Detailed description of the exercise and its benefits for this specific patient",
+            "target_joints": ["finger", "wrist"],
+            "instructions": [
+              "Step 1: Detailed instruction",
+              "Step 2: Detailed instruction",
+              "Step 3: Detailed instruction",
+              ...
+            ],
+            "variations": [
+              "Variation 1: Description",
+              "Variation 2: Description"
+            ]
+          }}
         }}
         
         Respond ONLY with the JSON object and nothing else.
         """
         
-        logger.info("Calling Claude API to generate exercise")
+        logger.info("Calling Claude API to select exercise")
         
         # Call Claude API
         response = requests.post(
@@ -185,7 +262,7 @@ def generate_exercise_with_claude(patient_data, api_key):
                 "model": "claude-3-opus-20240229",
                 "max_tokens": 800,
                 "temperature": 0.2,
-                "system": "You are a senior physical therapist specializing in knee rehabilitation.",
+                "system": "You are a senior physical therapist specializing in RSI rehabilitation for fingers and wrists.",
                 "messages": [
                     {"role": "user", "content": prompt}
                 ]
@@ -208,60 +285,69 @@ def generate_exercise_with_claude(patient_data, api_key):
         else:
             exercise_json = content  # Assume the content is just JSON
         
-        exercise = json.loads(exercise_json)
+        response_data = json.loads(exercise_json)
+        selected_exercise = response_data.get('selected_exercise', {})
         
-        return exercise
+        # Ensure all required fields are present
+        if not all(key in selected_exercise for key in ['name', 'description', 'target_joints', 'instructions']):
+            logger.warning("Missing required fields in LLM response, using fallback")
+            return get_fallback_exercise()
+        
+        return selected_exercise
     except Exception as e:
-        logger.error(f"Error in generate_exercise_with_claude: {str(e)}", exc_info=True)
+        logger.error(f"Error in select_exercise_with_claude: {str(e)}", exc_info=True)
         # Provide a fallback exercise in case of failure
         return get_fallback_exercise()
 
-
-def generate_exercise_with_openai(patient_data, api_key):
+def select_exercise_with_openai(patient_data, api_key):
     """
-    Generate a single recommended exercise using OpenAI's GPT API
+    Use OpenAI to select the most appropriate exercise from the predefined list
+    and generate detailed instructions based on the patient's pain description
     """
     try:
         # Extract patient info
         name = patient_data.get('name', 'the patient')
-        age = patient_data.get('age', 0)
-        pain_description = patient_data.get('pain_description', 'knee pain')
-        pain_level = patient_data.get('pain_level', 5)
+        pain_description = patient_data.get('pain_description', '')
+        
+        # Create a JSON string of all available exercises
+        exercises_json = json.dumps(RSI_EXERCISES)
         
         # Construct prompt for OpenAI
         prompt = f"""
-        I need ONE appropriate knee rehabilitation exercise for a patient with the following profile:
+        I need you to select the most appropriate RSI (Repetitive Strain Injury) exercise for a patient with the following profile:
         
         Name: {name}
-        Age: {age}
         Pain description: {pain_description}
-        Pain level: {pain_level}/10
         
-        Please provide 1 evidence-based exercise that would be appropriate for this patient.
-        Consider standard physical therapy protocols and clinical practice guidelines.
+        Below is a list of predefined exercises for finger and wrist RSI. Please select the ONE most appropriate exercise based on the patient's pain description:
         
-        The exercise should include:
-        1. A clear name
-        2. A concise description
-        3. Target joints (as a list of: knee, ankle, hip)
-        4. Step-by-step instructions (as a list)
+        {exercises_json}
+        
+        After selecting the most appropriate exercise, please provide detailed instructions for that specific exercise. The instructions should be clear, step-by-step, and tailored to the patient's condition.
         
         Format your response as JSON:
         {{
-          "name": "Exercise Name",
-          "description": "Brief description of the exercise",
-          "target_joints": ["knee", "ankle"],
-          "instructions": [
-            "Step 1",
-            "Step 2",
-            "Step 3"
-          ]
+          "selected_exercise": {{
+            "name": "Exercise Name",
+            "description": "Detailed description of the exercise and its benefits for this specific patient",
+            "target_joints": ["finger", "wrist"],
+            "instructions": [
+              "Step 1: Detailed instruction",
+              "Step 2: Detailed instruction",
+              "Step 3: Detailed instruction",
+              ...
+            ],
+            "variations": [
+              "Variation 1: Description",
+              "Variation 2: Description"
+            ]
+          }}
         }}
         
         Respond ONLY with the JSON object and nothing else.
         """
         
-        logger.info("Calling OpenAI API to generate exercise")
+        logger.info("Calling OpenAI API to select exercise")
         
         # Call OpenAI API
         response = requests.post(
@@ -273,7 +359,7 @@ def generate_exercise_with_openai(patient_data, api_key):
             json={
                 "model": "gpt-4",
                 "messages": [
-                    {"role": "system", "content": "You are a senior physical therapist specializing in knee rehabilitation."},
+                    {"role": "system", "content": "You are a senior physical therapist specializing in RSI rehabilitation for fingers and wrists."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.2,
@@ -289,232 +375,62 @@ def generate_exercise_with_openai(patient_data, api_key):
         result = response.json()
         content = result.get('choices', [{}])[0].get('message', {}).get('content', '{}')
         
-        exercise = json.loads(content)
+        response_data = json.loads(content)
+        selected_exercise = response_data.get('selected_exercise', {})
         
-        return exercise
+        # Ensure all required fields are present
+        if not all(key in selected_exercise for key in ['name', 'description', 'target_joints', 'instructions']):
+            logger.warning("Missing required fields in LLM response, using fallback")
+            return get_fallback_exercise()
+        
+        return selected_exercise
     except Exception as e:
-        logger.error(f"Error in generate_exercise_with_openai: {str(e)}", exc_info=True)
+        logger.error(f"Error in select_exercise_with_openai: {str(e)}", exc_info=True)
         # Provide a fallback exercise in case of failure
         return get_fallback_exercise()
 
-
-def enhance_exercise_with_video(exercise, google_api_key, google_cse_id):
-    """
-    Add a YouTube video URL and thumbnail to the exercise
-    """
-    try:
-        # Create search query for exercise videos
-        search_query = f"{exercise['name']} knee physical therapy exercise"
-        logger.info(f"Searching for videos: '{search_query}'")
-        
-        video_data = search_youtube_video(search_query, google_api_key, google_cse_id)
-        
-        # Add video data to exercise
-        exercise_with_video = exercise.copy()
-        
-        if video_data:
-            exercise_with_video['video_url'] = video_data.get('video_url', '')
-            exercise_with_video['video_thumbnail'] = video_data.get('thumbnail', '')
-            
-            # Validate the found video
-            if not validate_video_url(exercise_with_video['video_url']):
-                # Try a more specific search
-                alt_search_query = f"{exercise['name']} knee rehabilitation exercise demonstration"
-                alt_video_data = search_youtube_video(alt_search_query, google_api_key, google_cse_id, num_results=3)
-                
-                if alt_video_data:
-                    exercise_with_video['video_url'] = alt_video_data.get('video_url', '')
-                    exercise_with_video['video_thumbnail'] = alt_video_data.get('thumbnail', '')
-                    logger.info(f"Alternative search found video: {exercise_with_video['video_url']}")
-            else:
-                logger.info(f"Found valid video: {exercise_with_video['video_url']}")
-        else:
-            # Fallback if no video found
-            logger.warning(f"❌ No video found for '{exercise['name']}'")
-            exercise_with_video['video_url'] = ''
-            exercise_with_video['video_thumbnail'] = ''
-        
-        return exercise_with_video
-    except Exception as e:
-        logger.error(f"Error enhancing exercise with video: {str(e)}", exc_info=True)
-        # Return original exercise if enhancement fails
-        return exercise
-
-
-def search_youtube_video(query, google_api_key, google_cse_id, num_results=1):
-    """
-    Search for YouTube videos using Google Custom Search API and return the URL and thumbnail
-    """
-    try:
-        # Build the API request
-        url = "https://www.googleapis.com/customsearch/v1"
-        params = {
-            'key': google_api_key,
-            'cx': google_cse_id,
-            'q': query + " youtube",
-            'num': num_results
-        }
-        
-        logger.info(f"Calling Google Custom Search API with query: '{query} youtube'")
-        
-        # Make the API request
-        response = requests.get(url, params=params)
-        
-        # Check for errors
-        if response.status_code != 200:
-            logger.error(f"Google Search API error: {response.text}")
-            return None
-        
-        # Process the response
-        data = response.json()
-        
-        # Check if we got search results
-        if 'items' not in data or len(data['items']) == 0:
-            logger.warning("No search results found")
-            return None
-        
-        # Get all video results
-        all_videos = []
-        for idx, item in enumerate(data['items']):
-            video_url = item.get('link', '')
-            
-            # Check if this is a YouTube link
-            is_youtube = 'youtube.com' in video_url or 'youtu.be' in video_url
-            
-            # Only process YouTube links
-            if not is_youtube:
-                continue
-                
-            # Get thumbnail image if available
-            thumbnail = ''
-            if 'pagemap' in item:
-                if 'cse_image' in item['pagemap']:
-                    thumbnail = item['pagemap']['cse_image'][0].get('src', '')
-                elif 'videoobject' in item['pagemap']:
-                    thumbnail = item['pagemap']['videoobject'][0].get('thumbnailurl', '')
-            
-            # If no thumbnail found, generate one from YouTube video ID
-            if not thumbnail and is_youtube:
-                video_id = extract_youtube_video_id(video_url)
-                if video_id:
-                    thumbnail = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
-            
-            all_videos.append({
-                'title': item.get('title', 'Unknown'),
-                'video_url': video_url,
-                'thumbnail': thumbnail
-            })
-        
-        # If we have YouTube results
-        if all_videos:
-            # Return the first result
-            return all_videos[0]
-        else:
-            logger.warning("No YouTube videos found in search results")
-            return None
-            
-    except Exception as e:
-        logger.error(f"Error searching for video: {str(e)}", exc_info=True)
-        return None
-
-
-def validate_video_url(url):
-    """
-    Check if a YouTube video URL is valid
-    """
-    if not url:
-        return False
-        
-    try:
-        if 'youtube.com' in url or 'youtu.be' in url:
-            # Extract video ID
-            video_id = extract_youtube_video_id(url)
-            
-            if not video_id:
-                return False
-                
-            # Check video info via oEmbed API (lightweight way to validate)
-            oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
-            response = requests.get(oembed_url)
-            
-            return response.status_code == 200
-    except Exception as e:
-        logger.warning(f"Error validating video URL {url}: {str(e)}")
-    
-    return False
-
-
-def extract_youtube_video_id(url):
-    """
-    Extract the video ID from a YouTube URL
-    """
-    if not url:
-        return None
-        
-    # Match pattern for various YouTube URL formats
-    pattern = r'(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})'
-    match = re.search(pattern, url)
-    
-    if match:
-        return match.group(1)
-    return None
-
-
 def save_exercise(exercise, patient_id):
     """
-    Save the exercise to Firestore and link it to the patient
+    Save the exercise to Firestore
     """
-    # Add required fields
     exercise_id = str(uuid.uuid4())
-    timestamp = datetime.now()
+    created_at = datetime.now()
     
-    # Format the data for Firestore
-    exercise_data = {
+    exercise_doc = {
         'id': exercise_id,
-        'name': exercise.get('name', 'Knee Exercise'),
-        'description': exercise.get('description', ''),
-        'target_joints': exercise.get('target_joints', ['knee']),
-        'instructions': exercise.get('instructions', []),
-        'video_url': exercise.get('video_url', ''),
-        'video_thumbnail': exercise.get('video_thumbnail', ''),
-        'created_at': timestamp,
-        'is_template': False,
-        'source': 'llm-generated'
+        'patient_id': patient_id,
+        'name': exercise['name'],
+        'description': exercise['description'],
+        'target_joints': exercise['target_joints'],
+        'instructions': exercise['instructions'],
+        'variations': exercise.get('variations', []),
+        'created_at': created_at,
+        'updated_at': created_at
     }
     
     # Save to Firestore
-    db.collection('exercises').document(exercise_id).set(exercise_data)
+    db.collection('exercises').document(exercise_id).set(exercise_doc)
+    logger.info(f"Saved exercise with ID: {exercise_id}")
     
-    # Create patient-exercise link
-    patient_exercise_id = str(uuid.uuid4())
-    patient_exercise = {
-        'id': patient_exercise_id,
-        'patient_id': patient_id,
-        'exercise_id': exercise_id,
-        'recommended_at': timestamp,
-        'frequency': 'daily',  # Default
-        'sets': 3,             # Default
-        'repetitions': 10      # Default
-    }
-    
-    db.collection('patient_exercises').document(patient_exercise_id).set(patient_exercise)
-    
-    return exercise_data
-
+    return exercise_doc
 
 def get_fallback_exercise():
     """
     Return a fallback exercise when API calls fail
     """
     return {
-        "name": "Seated Knee Extensions",
-        "description": "A gentle exercise to strengthen the quadriceps muscles that support the knee joint.",
-        "target_joints": ["knee"],
+        "name": "Wrist Rotations",
+        "description": "Circular wrist movements to improve mobility and reduce stiffness. This exercise helps to maintain range of motion in the wrist joint and can help alleviate symptoms of RSI.",
+        "target_joints": ["wrist"],
         "instructions": [
-            "Sit on a chair with your back straight and feet flat on the floor",
-            "Slowly extend your right leg until it's straight, keeping your thigh on the chair",
-            "Hold for 5 seconds, focusing on tightening your thigh muscle",
-            "Slowly lower your foot back to the floor",
-            "Repeat 10 times, then switch to your left leg"
+            "Make a gentle fist with your hand",
+            "Slowly rotate your wrist in full circles, 10 times clockwise",
+            "Then rotate 10 times counterclockwise",
+            "Keep your forearm stable and only move your wrist",
+            "Perform this exercise 2-3 times per day"
+        ],
+        "variations": [
+            "Hold light weights (1-2 lbs) for added resistance",
+            "Use resistance bands for a more challenging workout"
         ]
     }
