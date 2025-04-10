@@ -625,7 +625,7 @@ class VoiceManager: NSObject, ObservableObject {
     // Generate exercises for the patient
     func generateExercises(patientId: String) {
         // Call the cloud function
-        guard let url = URL(string: "https://us-central1-duoligo-pt-app.cloudfunctions.net/generate_exercises") else {
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/onboard_user") else {
             print("❌ Invalid generate exercises URL")
             return
         }
