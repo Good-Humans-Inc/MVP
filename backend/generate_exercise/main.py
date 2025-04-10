@@ -122,7 +122,7 @@ RSI_EXERCISES = [
 ]
 
 @functions_framework.http
-def generate_exercises(request):
+def generate_exercise(request):
     """
     Cloud Function to generate a single recommended exercise for a patient.
     
