@@ -50,6 +50,7 @@ def onboard_user(request):
         name = request_json.get('name')
         injury = request_json.get('injury')
         pain_level = request_json.get('pain_level')
+        
         # Check for missing required fields
         if not name or not injury:
             error_msg = "Missing required fields: name, injury, and pain_level are required"
