@@ -21,7 +21,8 @@ def onboard_user(request):
     
     Required fields:
     - name (str): Patient's name
-    - pain_description (str): Description of the injury or pain
+    - injury (str): Description of the injury or pain
+    - pain_level (int): Pain level on a scale of 1-10
     """
     # Enable CORS
     if request.method == 'OPTIONS':
@@ -47,11 +48,12 @@ def onboard_user(request):
         
         # Extract fields
         name = request_json.get('name')
-        pain_description = request_json.get('pain_description')
+        injury = request_json.get('injury')
+        pain_level = request_json.get('pain_level')
         
         # Check for missing required fields
-        if not name or not pain_description:
-            error_msg = "Missing required fields: name and pain_description are required"
+        if not name or not injury:
+            error_msg = "Missing required fields: name, injury, and pain_level are required"
             logger.error(error_msg)
             return (json.dumps({'error': error_msg}), 400, headers)
         
@@ -63,7 +65,8 @@ def onboard_user(request):
         patient_doc = {
             'id': patient_id,
             'name': name,
-            'pain_description': pain_description,
+            'injury': injury,
+            'pain_level': pain_level,
             'created_at': created_at,
             'updated_at': created_at
         }
