@@ -29,7 +29,7 @@ def access_secret_version(secret_id, version_id="latest"):
     """
     try:
         client = secretmanager.SecretManagerServiceClient()
-        project_id = "duoligo-pt-app"  # Replace with your project ID
+        project_id = "pepmvp"  # Replace with your project ID
         name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
         response = client.access_secret_version(request={"name": name})
         # Strip whitespace and newlines to avoid issues with API keys
