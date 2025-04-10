@@ -497,6 +497,24 @@ class VoiceManager: NSObject, ObservableObject {
                     print("✅ Saved patient ID: \(patientId)")
                 }
                 
+                // Handle name
+                if key == "name", let name = value as? String {
+                    UserDefaults.standard.set(name, forKey: "UserName")
+                    print("✅ Saved name: \(name)")
+                }
+                
+                // Handle injury
+                if key == "injury", let injury = value as? String {
+                    UserDefaults.standard.set(injury, forKey: "UserInjury")
+                    print("✅ Saved injury: \(injury)")
+                }
+                
+                // Handle pain_level
+                if key == "pain_level", let painLevel = value as? Int {
+                    UserDefaults.standard.set(painLevel, forKey: "UserPainLevel")
+                    print("✅ Saved pain level: \(painLevel)")
+                }
+                
                 // Save other data to UserDefaults
                 if let stringValue = value as? String {
                     UserDefaults.standard.set(stringValue, forKey: key)
@@ -625,8 +643,86 @@ class VoiceManager: NSObject, ObservableObject {
     // Generate exercises for the patient
     func generateExercises(patientId: String) {
         // Call the cloud function
-        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/generate_exercise") else {
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/onboard_user") else {
             print("❌ Invalid generate exercises URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Get user data from UserDefaults
+        let name = UserDefaults.standard.string(forKey: "UserName") ?? "Patient"
+        let injury = UserDefaults.standard.string(forKey: "UserInjury") ?? ""
+        let painLevel = UserDefaults.standard.integer(forKey: "UserPainLevel")
+        
+        // Create request body with all three parameters
+        let requestBody: [String: Any] = [
+            "name": name,
+            "injury": injury,
+            "pain_level": painLevel
+        ]
+        
+        // Convert to JSON data
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            print("❌ Failed to serialize exercise generation request")
+            return
+        }
+        
+        request.httpBody = httpBody
+        
+        // Make API call
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("❌ Exercise generation error: \(error.localizedDescription)")
+                return
+            }
+            
+            // Log HTTP response for debugging
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📊 Exercise generation HTTP status: \(httpResponse.statusCode)")
+            }
+            
+            guard let data = data else {
+                print("❌ No data received from exercise generation API")
+                return
+            }
+            
+            // Log raw response for debugging
+            print("📊 Exercise generation raw response: \(String(data: data, encoding: .utf8) ?? "unable to decode")")
+            
+            do {
+                // Parse response
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                print("📊 Exercise generation response: \(json ?? [:])")
+                
+                if let status = json?["status"] as? String, status == "success",
+                   let patientId = json?["patient_id"] as? String {
+                    
+                    // Save the patient ID
+                    UserDefaults.standard.set(patientId, forKey: "PatientID")
+                    
+                    // Now call the generate_exercise function with the patient ID
+                    self.callGenerateExercise(patientId: patientId)
+                } else {
+                    print("❌ Invalid onboarding response format")
+                }
+            } catch {
+                print("❌ Failed to parse onboarding response: \(error)")
+            }
+        }
+        
+        task.resume()
+    }
+    
+    // Helper method to call the generate_exercise function
+    private func callGenerateExercise(patientId: String) {
+        // Call the cloud function
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/generate_exercise") else {
+            print("❌ Invalid generate exercise URL")
             return
         }
         
@@ -742,13 +838,32 @@ class VoiceManager: NSObject, ObservableObject {
                                 self.generateExercises(patientId: patientId)
                             }
                         }
+                        
+                        // Check for name
+                        if let name = json["name"] as? String {
+                            print("✅ Found name in JSON: \(name)")
+                            UserDefaults.standard.set(name, forKey: "UserName")
+                        }
+                        
+                        // Check for injury
+                        if let injury = json["injury"] as? String {
+                            print("✅ Found injury in JSON: \(injury)")
+                            UserDefaults.standard.set(injury, forKey: "UserInjury")
+                        }
+                        
+                        // Check for pain_level
+                        if let painLevel = json["pain_level"] as? Int {
+                            print("✅ Found pain level in JSON: \(painLevel)")
+                            UserDefaults.standard.set(painLevel, forKey: "UserPainLevel")
+                        }
                     }
                 } catch {
                     print("❌ Failed to parse JSON: \(error)")
                 }
             }
             
-            // Alternative: Look for patient_id specifically with regex
+            // Alternative: Look for specific fields with regex
+            // Look for patient_id
             if message.contains("patient_id") {
                 let pattern = "\"patient_id\"\\s*:\\s*\"([^\"]+)\""
                 if let regex = try? NSRegularExpression(pattern: pattern),
@@ -773,6 +888,50 @@ class VoiceManager: NSObject, ObservableObject {
                         
                         // Automatically generate exercises
                         self.generateExercises(patientId: patientId)
+                    }
+                }
+            }
+            
+            // Look for name
+            if message.contains("name") {
+                let pattern = "\"name\"\\s*:\\s*\"([^\"]+)\""
+                if let regex = try? NSRegularExpression(pattern: pattern),
+                   let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+                    
+                    let nameRange = Range(match.range(at: 1), in: message)!
+                    let name = String(message[nameRange])
+                    
+                    print("✅ Found name using regex: \(name)")
+                    UserDefaults.standard.set(name, forKey: "UserName")
+                }
+            }
+            
+            // Look for injury
+            if message.contains("injury") {
+                let pattern = "\"injury\"\\s*:\\s*\"([^\"]+)\""
+                if let regex = try? NSRegularExpression(pattern: pattern),
+                   let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+                    
+                    let injuryRange = Range(match.range(at: 1), in: message)!
+                    let injury = String(message[injuryRange])
+                    
+                    print("✅ Found injury using regex: \(injury)")
+                    UserDefaults.standard.set(injury, forKey: "UserInjury")
+                }
+            }
+            
+            // Look for pain_level
+            if message.contains("pain_level") {
+                let pattern = "\"pain_level\"\\s*:\\s*(\\d+)"
+                if let regex = try? NSRegularExpression(pattern: pattern),
+                   let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
+                    
+                    let painLevelRange = Range(match.range(at: 1), in: message)!
+                    let painLevelStr = String(message[painLevelRange])
+                    
+                    if let painLevel = Int(painLevelStr) {
+                        print("✅ Found pain level using regex: \(painLevel)")
+                        UserDefaults.standard.set(painLevel, forKey: "UserPainLevel")
                     }
                 }
             }
@@ -968,6 +1127,9 @@ class VoiceManager: NSObject, ObservableObject {
             // Remove stored user data
             UserDefaults.standard.removeObject(forKey: "PatientID")
             UserDefaults.standard.removeObject(forKey: "PatientExercises")
+            UserDefaults.standard.removeObject(forKey: "UserName")
+            UserDefaults.standard.removeObject(forKey: "UserInjury")
+            UserDefaults.standard.removeObject(forKey: "UserPainLevel")
         }
     }
     
