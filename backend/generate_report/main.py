@@ -6,10 +6,9 @@ import json
 from datetime import datetime, timedelta
 from google.cloud import secretmanager
 
-# Initialize Firebase Admin
-cred = credentials.Certificate('service-account.json')
-firebase_admin.initialize_app(cred)
-db = db = firestore.Client(project='pepmvp', database='pep-mvp')
+# Initialize Firebase Admin with default credentials
+firebase_admin.initialize_app()
+db = firestore.Client()
 
 def get_secret(secret_id):
     """Get secret from Google Cloud Secret Manager."""
@@ -251,17 +250,15 @@ def extract_exercise_metrics(conversation_history):
     if metrics['reps_completed'] == 0:
         metrics['reps_completed'] = 10
     if metrics['duration_minutes'] == 0:
-        metrics['duration_minutes'] = 3
+        metrics['duration_minutes'] = 5
     
     return metrics
 
 def format_conversation_history(conversation_history):
-    """Format conversation history for better GPT analysis."""
-    formatted_messages = []
-    for msg in conversation_history:
-        role = msg.get('role', '')
-        content = msg.get('content', '')
-        speaker = 'Patient' if role == 'user' else 'AI Coach'
-        formatted_messages.append(f"{speaker}: {content}")
-    
-    return "\n".join(formatted_messages)
+    """Format conversation history for GPT prompt."""
+    formatted = []
+    for message in conversation_history:
+        role = message.get('role', 'user')
+        content = message.get('content', '')
+        formatted.append(f"{role.capitalize()}: {content}")
+    return "\n".join(formatted)
