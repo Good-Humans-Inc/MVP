@@ -125,6 +125,16 @@ struct ReportView: View {
         // Get conversation history for context
         let conversationHistory = voiceManager.getConversationHistory()
         
+        // Debug print the request data
+        print("Sending request to generate report:")
+        print("Patient ID: \(userId)")
+        print("Exercise ID: \(exerciseId)")
+        print("Conversation History:")
+        if let jsonData = try? JSONSerialization.data(withJSONObject: conversationHistory, options: .prettyPrinted),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print(jsonString)
+        }
+        
         // Call the cloud function
         generatePTReport(patientId: userId, exerciseId: exerciseId, conversationHistory: conversationHistory) { result in
             DispatchQueue.main.async {
@@ -137,6 +147,7 @@ struct ReportView: View {
                     self.appState.setExerciseReport(report)
                     
                 case .failure(let error):
+                    print("Report generation error: \(error.localizedDescription)")
                     self.errorMessage = error.localizedDescription
                     self.showErrorAlert = true
                     // Use placeholder data
@@ -150,7 +161,7 @@ struct ReportView: View {
                                 conversationHistory: [[String: Any]],
                                 completion: @escaping (Result<ExerciseReport, Error>) -> Void) {
         // Create URL for API call
-        guard let url = URL(string: "https://us-central1-duoligo-pt-app.cloudfunctions.net/generate_pt_report") else {
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/generate_report") else {
             completion(.failure(NSError(domain: "ReportView", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
             return
         }
@@ -166,6 +177,13 @@ struct ReportView: View {
             "exercise_id": exerciseId,
             "conversation_history": conversationHistory
         ]
+        
+        // Debug print the request body
+        if let jsonData = try? JSONSerialization.data(withJSONObject: requestBody, options: .prettyPrinted),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("Request body:")
+            print(jsonString)
+        }
         
         // Serialize request body
         do {
@@ -187,6 +205,12 @@ struct ReportView: View {
                 return
             }
             
+            // Debug print the response
+            if let jsonString = String(data: data, encoding: .utf8) {
+                print("Response data:")
+                print(jsonString)
+            }
+            
             do {
                 // Parse response
                 let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -199,7 +223,7 @@ struct ReportView: View {
                     if let errorMessage = json?["error"] as? String {
                         completion(.failure(NSError(domain: "ReportView", code: 3, userInfo: [NSLocalizedDescriptionKey: errorMessage])))
                     } else {
-                        completion(.failure(NSError(domain: "ReportView", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])))
+                        completion(.failure(NSError(domain: "ReportView", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid response format"])))
                     }
                     return
                 }
@@ -222,6 +246,7 @@ struct ReportView: View {
                 completion(.success(report))
                 
             } catch {
+                print("JSON parsing error: \(error.localizedDescription)")
                 completion(.failure(error))
             }
         }.resume()

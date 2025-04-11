@@ -40,6 +40,13 @@ def generate_report(request):
         exercise_id = request_json.get('exercise_id')
         conversation_history = request_json.get('conversation_history', [])
         
+        # Debug logging
+        print("Received request data:")
+        print(f"Patient ID: {patient_id}")
+        print(f"Exercise ID: {exercise_id}")
+        print("Conversation History:")
+        print(json.dumps(conversation_history, indent=2))
+        
         if not patient_id or not exercise_id:
             return (json.dumps({'error': 'Missing required parameters'}), 400, headers)
         
@@ -117,8 +124,16 @@ Format the response as JSON with these exact keys:
             max_tokens=1000
         )
         
-        # Parse GPT response - note the change in response structure
-        report_data = json.loads(response.choices[0].message.content)
+        # Parse GPT response
+        try:
+            report_data = json.loads(response.choices[0].message.content)
+            print("GPT Response:")
+            print(json.dumps(report_data, indent=2))
+        except json.JSONDecodeError as e:
+            print(f"Error parsing GPT response: {str(e)}")
+            print("Raw GPT response:")
+            print(response.choices[0].message.content)
+            return (json.dumps({'error': 'Failed to parse GPT response'}), 500, headers)
         
         # Update with actual metrics and streak
         report_data['sets_completed'] = metrics['sets_completed']
@@ -149,11 +164,17 @@ Format the response as JSON with these exact keys:
         # Add timestamp to the response data
         report_data['timestamp'] = datetime.now().isoformat()
         
-        return (json.dumps({
+        # Prepare response
+        response_data = {
             'status': 'success',
             'report_id': report_ref.id,
             'report': report_data
-        }), 200, headers)
+        }
+        
+        print("Final Response:")
+        print(json.dumps(response_data, indent=2))
+        
+        return (json.dumps(response_data), 200, headers)
         
     except Exception as e:
         print(f"Error generating report: {str(e)}")

@@ -129,10 +129,6 @@ struct ExerciseDetailView: View {
                 .frame(height: 240)
                 .cornerRadius(12)
                 .padding(.horizontal)
-                .onError { error in
-                    mediaLoadError = error
-                    showErrorAlert = true
-                }
         } else if let imageURL = exercise.primaryMediaURL {
             AsyncImage(url: imageURL) { phase in
                 switch phase {
