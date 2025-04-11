@@ -50,15 +50,34 @@ def generate_report(request):
         if not patient_id or not exercise_id:
             return (json.dumps({'error': 'Missing required parameters'}), 400, headers)
         
+        # Convert exercise_id to uppercase for consistency
+        exercise_id = exercise_id.upper()
+        print(f"Normalized Exercise ID: {exercise_id}")
+        
         # Get exercise details from Firestore
         exercise_ref = db.collection('exercises').document(exercise_id)
         exercise_doc = exercise_ref.get()
         
         if not exercise_doc.exists:
-            return (json.dumps({'error': 'Exercise not found'}), 404, headers)
+            # Try a case-insensitive search
+            print("Exercise not found with exact ID, trying case-insensitive search...")
+            exercises_query = db.collection('exercises').get()
+            found_doc = None
+            for doc in exercises_query:
+                if doc.id.upper() == exercise_id.upper():
+                    found_doc = doc
+                    break
             
-        exercise_data = exercise_doc.to_dict()
+            if found_doc is None:
+                print(f"Exercise not found with ID: {exercise_id}")
+                return (json.dumps({'error': 'Exercise not found'}), 404, headers)
+            else:
+                print(f"Found exercise with case-insensitive match: {found_doc.id}")
+                exercise_doc = found_doc
         
+        exercise_data = exercise_doc.to_dict()
+        print(f"Found exercise data: {json.dumps(exercise_data, indent=2)}")
+            
         # Calculate streak information
         streak_info = calculate_streak(patient_id)
         

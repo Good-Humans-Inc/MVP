@@ -145,6 +145,8 @@ struct ReportView: View {
                     self.reportData = report
                     // Save to app state for reference
                     self.appState.setExerciseReport(report)
+                    // Clear conversation history after successful report generation
+                    self.voiceManager.clearConversationHistory()
                     
                 case .failure(let error):
                     print("Report generation error: \(error.localizedDescription)")

@@ -1052,8 +1052,7 @@ class VoiceManager: NSObject, ObservableObject {
         // End ElevenLabs session
         endElevenLabsSession()
         
-        // Clear conversation history after sending for report
-        clearConversationHistory()
+        // Don't clear conversation history here - it will be cleared after report generation
     }
     
     // Method to set current exercise
@@ -1068,7 +1067,7 @@ class VoiceManager: NSObject, ObservableObject {
                                  completion: @escaping (Result<[String: Any], Error>) -> Void) {
         
         // Create URL for cloud function
-        guard let url = URL(string: "https://us-central1-duoligo-pt-app.cloudfunctions.net/generate_pt_report") else {
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/generate_report") else {
             completion(.failure(NSError(domain: "VoiceManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
             return
         }
@@ -1084,6 +1083,13 @@ class VoiceManager: NSObject, ObservableObject {
             "exercise_id": exerciseId,
             "conversation_history": conversationHistory
         ]
+        
+        // Debug print the request body
+        if let jsonData = try? JSONSerialization.data(withJSONObject: requestBody, options: .prettyPrinted),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("Request body for report generation:")
+            print(jsonString)
+        }
         
         // Serialize request body
         do {
@@ -1103,6 +1109,12 @@ class VoiceManager: NSObject, ObservableObject {
             guard let data = data else {
                 completion(.failure(NSError(domain: "VoiceManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "No data received"])))
                 return
+            }
+            
+            // Debug print the response
+            if let jsonString = String(data: data, encoding: .utf8) {
+                print("Response from report generation:")
+                print(jsonString)
             }
             
             do {
