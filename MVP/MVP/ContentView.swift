@@ -15,7 +15,7 @@ struct ContentView: View {
     var body: some View {
         Group {
             // Simplify the decision tree to reduce potential race conditions
-            if shouldShowExerciseDetail, let exercise = appState.currentExercise {
+            if let exercise = appState.currentExercise {
                 ExerciseDetailView(exercise: exercise)
                     .environmentObject(appState)
                     .environmentObject(voiceManager)
@@ -81,7 +81,7 @@ struct ContentView: View {
                     appState.setCurrentExercise(exercise)
                 case .failure(let error):
                     print("⚠️ DEBUG: ContentView - Error loading exercise: \(error)")
-                    appState.setCurrentExercise(Exercise.fallbackExercise)
+                    // appState.setCurrentExercise(Exercise.fallbackExercise)
                 }
             }
         }
@@ -144,7 +144,9 @@ class APIService {
         }
         
         print("ℹ️ DEBUG: APIService - Using fallback exercise")
-        completion(.success(Exercise.fallbackExercise))
+        //completion(.success(Exercise.fallbackExercise))
+        let error = NSError(domain: "APIService", code: 1001, userInfo: [NSLocalizedDescriptionKey: "No exercise data found"])
+        completion(.failure(error))
     }
 }
 
@@ -153,7 +155,7 @@ extension Exercise {
     static var fallbackExercise: Exercise {
         return Exercise(
             id: UUID(),
-            name: "Knee Flexion",
+            name: "Place Holder",
             description: "Improve range of motion in your knee joint",
             imageURLString: "https://example.com/knee-flexion.mp4",
             imageURLString1: "https://example.com/knee-flexion1.mp4",

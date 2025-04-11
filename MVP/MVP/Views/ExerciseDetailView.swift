@@ -8,6 +8,8 @@ struct ExerciseDetailView: View {
     // State variables
     @State private var isStartingExercise = false
     @State private var showingExerciseView = false
+    @State private var mediaLoadError: Error?
+    @State private var showErrorAlert = false
     
     // Environment objects
     @EnvironmentObject private var appState: AppState
@@ -33,6 +35,13 @@ struct ExerciseDetailView: View {
                 
                 // Exercise video or image
                 videoPreviewSection
+                    .alert(isPresented: $showErrorAlert) {
+                        Alert(
+                            title: Text("Media Loading Error"),
+                            message: Text(mediaLoadError?.localizedDescription ?? "Failed to load media"),
+                            dismissButton: .default(Text("OK"))
+                        )
+                    }
                 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -120,7 +129,11 @@ struct ExerciseDetailView: View {
                 .frame(height: 240)
                 .cornerRadius(12)
                 .padding(.horizontal)
-        } else if let imageURL = exercise.imageURL {
+                .onError { error in
+                    mediaLoadError = error
+                    showErrorAlert = true
+                }
+        } else if let imageURL = exercise.primaryMediaURL {
             AsyncImage(url: imageURL) { phase in
                 switch phase {
                 case .empty:
@@ -133,14 +146,22 @@ struct ExerciseDetailView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(height: 240)
-                case .failure:
+                case .failure(let error):
                     Rectangle()
                         .fill(Color.gray.opacity(0.2))
                         .aspectRatio(16/9, contentMode: .fit)
                         .overlay(
-                            Image(systemName: "photo")
-                                .font(.largeTitle)
+                            VStack {
+                                Image(systemName: "photo")
+                                    .font(.largeTitle)
+                                Text("Failed to load image")
+                                    .font(.caption)
+                            }
                         )
+                        .onAppear {
+                            mediaLoadError = error
+                            showErrorAlert = true
+                        }
                 @unknown default:
                     EmptyView()
                 }
@@ -292,7 +313,10 @@ struct ExerciseDetailView: View {
             } else {
                 // Handle resource initialization failure
                 isStartingExercise = false
-                // Show error alert (implementation needed)
+                mediaLoadError = NSError(domain: "ExerciseDetailView", 
+                                       code: 1, 
+                                       userInfo: [NSLocalizedDescriptionKey: "Failed to initialize exercise resources"])
+                showErrorAlert = true
             }
         }
     }
@@ -302,20 +326,48 @@ struct ExerciseDetailView: View {
 struct VideoPlayerView: View {
     let url: URL
     @State private var isPlaying = false
+    @State private var player: AVPlayer?
+    var onError: ((Error) -> Void)?
     
     var body: some View {
         ZStack {
-            VideoPlayer(player: AVPlayer(url: url))
-                .aspectRatio(contentMode: .fit)
+            if let player = player {
+                VideoPlayer(player: player)
+                    .aspectRatio(contentMode: .fit)
+            }
             
             if !isPlaying {
                 Button(action: {
                     isPlaying = true
+                    player?.play()
                 }) {
                     Image(systemName: "play.circle.fill")
                         .font(.system(size: 50))
                         .foregroundColor(.white)
                 }
+            }
+        }
+        .onAppear {
+            setupPlayer()
+        }
+        .onDisappear {
+            player?.pause()
+            player = nil
+        }
+    }
+    
+    private func setupPlayer() {
+        let player = AVPlayer(url: url)
+        self.player = player
+        
+        // Add error observation
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { _ in
+            if let error = player.currentItem?.error {
+                onError?(error)
             }
         }
     }

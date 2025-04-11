@@ -8,6 +8,8 @@ struct ReportView: View {
     @State private var showingCongrats = true
     @State private var reportData: ExerciseReport?
     @State private var isLoading = true
+    @State private var showErrorAlert = false
+    @State private var errorMessage: String?
     
     // Exercise data
     let exercise: Exercise
@@ -100,6 +102,13 @@ struct ReportView: View {
             // Generate report from cloud function
             generateExerciseReport()
         }
+        .alert(isPresented: $showErrorAlert) {
+            Alert(
+                title: Text("Report Generation Error"),
+                message: Text(errorMessage ?? "Failed to generate exercise report"),
+                dismissButton: .default(Text("OK"))
+            )
+        }
     }
     
     private func generateExerciseReport() {
@@ -128,14 +137,14 @@ struct ReportView: View {
                     self.appState.setExerciseReport(report)
                     
                 case .failure(let error):
-                    print("Error generating report: \(error.localizedDescription)")
+                    self.errorMessage = error.localizedDescription
+                    self.showErrorAlert = true
                     // Use placeholder data
                     self.reportData = ExerciseReport.placeholder
                 }
             }
         }
     }
-
     
     private func generatePTReport(patientId: String, exerciseId: String,
                                 conversationHistory: [[String: Any]],

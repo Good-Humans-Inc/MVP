@@ -40,6 +40,9 @@ class VisionManager: NSObject, ObservableObject {
     private var lastFpsUpdate = Date()
     @Published var currentFps: Double = 0
     
+    private var lastProcessedTime: Date = Date()
+    private let minimumProcessingInterval: TimeInterval = 0.1 // 10 frames per second
+    
     // Initialize with AppState
     init(appState: AppState) {
         self.appState = appState
@@ -96,10 +99,19 @@ class VisionManager: NSObject, ObservableObject {
         let now = Date()
         if now.timeIntervalSince(lastFpsUpdate) >= 1.0 {
             let elapsed = now.timeIntervalSince(lastFpsUpdate)
-            currentFps = Double(frameCount) / elapsed
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.currentFps = Double(self.frameCount) / elapsed
+            }
             frameCount = 0
             lastFpsUpdate = now
         }
+        
+        // Add throttling to reduce processing frequency
+        if now.timeIntervalSince(lastProcessedTime) < minimumProcessingInterval {
+            return // Skip this frame to maintain performance
+        }
+        lastProcessedTime = now
         
         // Process hand pose detection
         let handler = VNImageRequestHandler(cvPixelBuffer: imageBuffer, orientation: .up, options: [:])
@@ -134,13 +146,16 @@ class VisionManager: NSObject, ObservableObject {
             // Convert the hand observation to our HandPose model
             let handPose = createHandPose(from: observation)
             
-            DispatchQueue.main.async {
+            DispatchQueue.main.async {[weak self] in
+                guard let self = self else { return }
                 self.currentHandPose = handPose
                 
-                // Update AppState
-                self.appState.visionState.currentHandPose = handPose
-                self.appState.visionState.isProcessing = true
-                self.appState.visionState.error = nil
+                // Update AppState on main thread too
+                DispatchQueue.main.async {
+                    self.appState.visionState.currentHandPose = handPose
+                    self.appState.visionState.isProcessing = true
+                    self.appState.visionState.error = nil
+                }
                 
                 // Log joint stats every 30 frames (about 1 second at 30fps)
                 if self.frameCount % 30 == 0 {

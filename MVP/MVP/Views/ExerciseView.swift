@@ -13,6 +13,8 @@ struct ExerciseView: View {
     @State private var coachMessages: [String] = []
     @State private var showCoachFeedback = false
     @State private var isStoppingExercise = false
+    @State private var showErrorAlert = false
+    @State private var errorMessage: String?
     
     // Environment objects
     @Environment(\.presentationMode) var presentationMode
@@ -59,6 +61,15 @@ struct ExerciseView: View {
                 // Dismiss ExerciseView when ReportView disappears
                 presentationMode.wrappedValue.dismiss()
             }
+        }
+        .alert(isPresented: $showErrorAlert) {
+            Alert(
+                title: Text("Exercise Error"),
+                message: Text(errorMessage ?? "An error occurred during the exercise"),
+                dismissButton: .default(Text("OK")) {
+                    stopExercise()
+                }
+            )
         }
     }
     
@@ -147,7 +158,7 @@ struct ExerciseView: View {
                                           options: [.allowBluetooth])
             }
         } catch {
-            print("Error configuring audio session: \(error)")
+            handleError("Failed to configure audio: \(error.localizedDescription)")
         }
     }
     
@@ -224,6 +235,11 @@ struct ExerciseView: View {
             self.isStoppingExercise = false
             self.showingExerciseReport = true
         }
+    }
+    
+    private func handleError(_ message: String) {
+        errorMessage = message
+        showErrorAlert = true
     }
     
     private func timeString(from timeInterval: TimeInterval) -> String {
