@@ -76,7 +76,9 @@ def generate_report(request):
                 exercise_doc = found_doc
         
         exercise_data = exercise_doc.to_dict()
-        print(f"Found exercise data: {json.dumps(exercise_data, indent=2)}")
+        # Serialize exercise data for logging
+        serialized_exercise_data = serialize_firestore_data(exercise_data)
+        print(f"Found exercise data: {json.dumps(serialized_exercise_data, indent=2)}")
             
         # Calculate streak information
         streak_info = calculate_streak(patient_id)
@@ -190,10 +192,12 @@ Format the response as JSON with these exact keys:
             'report': report_data
         }
         
+        # Serialize the response data to handle any Firestore timestamps
+        serialized_response = serialize_firestore_data(response_data)
         print("Final Response:")
-        print(json.dumps(response_data, indent=2))
+        print(json.dumps(serialized_response, indent=2))
         
-        return (json.dumps(response_data), 200, headers)
+        return (json.dumps(serialized_response), 200, headers)
         
     except Exception as e:
         print(f"Error generating report: {str(e)}")
@@ -230,7 +234,13 @@ def calculate_streak(patient_id):
     last_date = today
     
     for report in reports:
-        report_date = report.get('timestamp').date()
+        report_data = report.to_dict()
+        timestamp = report_data.get('timestamp')
+        if timestamp:
+            # Convert Firestore timestamp to datetime
+            report_date = timestamp.datetime.date()
+        else:
+            continue
         
         # If this exercise was done today, skip to next
         if report_date == today:
@@ -311,3 +321,14 @@ def format_conversation_history(conversation_history):
         content = message.get('content', '')
         formatted.append(f"{role.capitalize()}: {content}")
     return "\n".join(formatted)
+
+def serialize_firestore_data(data):
+    """Helper function to serialize Firestore data for JSON."""
+    if isinstance(data, dict):
+        return {k: serialize_firestore_data(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [serialize_firestore_data(item) for item in data]
+    elif hasattr(data, 'datetime'):  # Handle Firestore Timestamp
+        return data.datetime.isoformat()
+    else:
+        return data
