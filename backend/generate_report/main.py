@@ -8,7 +8,7 @@ from google.cloud import secretmanager
 
 # Initialize Firebase Admin with default credentials
 firebase_admin.initialize_app()
-db = db = firestore.Client(project='pepmvp', database='pep-mvp')
+db = firestore.Client()
 
 def get_secret(secret_id):
     """Get secret from Google Cloud Secret Manager."""
@@ -125,9 +125,9 @@ Format the response as JSON with these exact keys:
         report_data['reps_completed'] = metrics['reps_completed']
         report_data['day_streak'] = streak_info['current_streak']
         
-        # Store report in Firestore
-        report_ref = db.collection('exercise_reports').document()
-        report_data.update({
+        # Create a copy of report_data for Firestore
+        firestore_data = report_data.copy()
+        firestore_data.update({
             'patient_id': patient_id,
             'exercise_id': exercise_id,
             'timestamp': firestore.SERVER_TIMESTAMP,
@@ -138,10 +138,16 @@ Format the response as JSON with these exact keys:
             'duration_minutes': metrics['duration_minutes'],
             'best_streak': streak_info['best_streak']
         })
-        report_ref.set(report_data)
+        
+        # Store report in Firestore
+        report_ref = db.collection('exercise_reports').document()
+        report_ref.set(firestore_data)
         
         # Update patient's streak information
         update_patient_streak(patient_id, streak_info)
+        
+        # Add timestamp to the response data
+        report_data['timestamp'] = datetime.now().isoformat()
         
         return (json.dumps({
             'status': 'success',
@@ -207,12 +213,15 @@ def update_patient_streak(patient_id, streak_info):
     """Update patient's streak information in Firestore."""
     patient_ref = db.collection('patients').document(patient_id)
     
-    patient_ref.set({
+    # Create a copy of streak_info for Firestore
+    firestore_data = {
         'current_streak': streak_info['current_streak'],
         'best_streak': streak_info['best_streak'],
         'last_exercise_date': streak_info['last_exercise_date'],
         'last_updated': firestore.SERVER_TIMESTAMP
-    }, merge=True)
+    }
+    
+    patient_ref.set(firestore_data, merge=True)
 
 def extract_exercise_metrics(conversation_history):
     """Extract exercise metrics from conversation history."""
