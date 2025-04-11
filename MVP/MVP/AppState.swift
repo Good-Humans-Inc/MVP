@@ -5,12 +5,48 @@ import Combine
 // MARK: - App State
 class AppState: ObservableObject {
     // MARK: - Published Properties
-    @Published var hasUserId: Bool = false
-    @Published var userId: String? = nil
-    @Published var currentExercise: Exercise? = nil
+    @Published var hasUserId: Bool = false {
+        didSet {
+            print("🔄 DEBUG: AppState - hasUserId changed to: \(hasUserId)")
+        }
+    }
+    @Published var userId: String? = nil {
+        didSet {
+            print("🔄 DEBUG: AppState - userId changed to: \(userId ?? "nil")")
+        }
+    }
+    @Published var currentExercise: Exercise? = nil {
+        didSet {
+            print("🔄 DEBUG: AppState - currentExercise changed to: \(currentExercise?.name ?? "nil")")
+        }
+    }
     @Published var isExerciseActive: Bool = false
     @Published var exerciseReport: ExerciseReport? = nil
-    @Published var isOnboardingComplete: Bool = false
+    @Published var isOnboardingComplete: Bool = false {
+        didSet {
+            print("🔄 DEBUG: AppState - isOnboardingComplete changed to: \(isOnboardingComplete)")
+            if isOnboardingComplete {
+                // When onboarding completes, ensure we load the exercise
+                DispatchQueue.main.async { [weak self] in
+                    if let userId = self?.userId {
+                        print("🔄 DEBUG: AppState - Triggering exercise load after onboarding completion")
+                        APIService.getRecommendedExercise(userId: userId) { result in
+                            DispatchQueue.main.async {
+                                switch result {
+                                case .success(let exercise):
+                                    print("✅ DEBUG: AppState - Successfully loaded exercise after onboarding")
+                                    self?.currentExercise = exercise
+                                case .failure(let error):
+                                    print("⚠️ DEBUG: AppState - Failed to load exercise after onboarding: \(error)")
+                                    self?.currentExercise = Exercise.fallbackExercise
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     
     // Voice agent states
     @Published var currentAgentType: VoiceAgentType? = nil
@@ -38,22 +74,28 @@ class AppState: ObservableObject {
     
     // MARK: - State Management
     private func loadPersistedState() {
+        print("🔄 DEBUG: AppState - Loading persisted state")
         // Load from UserDefaults
         if let storedId = UserDefaults.standard.string(forKey: "PatientID") {
             userId = storedId
             hasUserId = true
+            print("📱 DEBUG: AppState - Loaded stored user ID: \(storedId)")
         }
     }
     
     // MARK: - State Updates
     func updateUserId(_ id: String) {
+        print("🔄 DEBUG: AppState - Updating user ID to: \(id)")
         userId = id
         hasUserId = true
         UserDefaults.standard.set(id, forKey: "PatientID")
     }
     
     func setCurrentExercise(_ exercise: Exercise) {
-        currentExercise = exercise
+        print("🔄 DEBUG: AppState - Setting current exercise to: \(exercise.name)")
+        DispatchQueue.main.async { [weak self] in
+            self?.currentExercise = exercise
+        }
     }
     
     func setExerciseReport(_ report: ExerciseReport) {

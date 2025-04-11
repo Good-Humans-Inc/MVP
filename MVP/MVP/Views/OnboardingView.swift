@@ -206,6 +206,7 @@ struct OnboardingView: View {
     }
     
     private func handleExercisesGenerated() {
+        print("🎯 DEBUG: OnboardingView - Exercises generated notification received")
         isLoading = false
         addMessage(text: "Your personalized exercise is ready! Let's get started with your recovery journey.", isUser: false)
         
@@ -216,21 +217,33 @@ struct OnboardingView: View {
     }
     
     private func handleOnboardingComplete() {
-        guard !isOnboardingComplete else { return }
+        guard !isOnboardingComplete else { 
+            print("⚠️ DEBUG: OnboardingView - handleOnboardingComplete called but isOnboardingComplete is already true")
+            return 
+        }
         
-        print("Onboarding complete, ending onboarding agent session")
+        print("🎯 DEBUG: OnboardingView - Starting onboarding completion process")
         
         // End the ElevenLabs session
         voiceManager.endElevenLabsSession()
         
-        // Small delay to allow session to properly end
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            isOnboardingComplete = true
-            appState.isOnboardingComplete = true
+        // Small delay to allow session to properly end and cleanup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            print("🎯 DEBUG: OnboardingView - Setting completion states")
+            self.isOnboardingComplete = true
+            self.appState.isOnboardingComplete = true
+            
+            // Additional cleanup
+            self.animationState = .idle
+            self.voiceManager.hasCompletedOnboarding = true
+            
+            print("✅ DEBUG: OnboardingView - Onboarding completion process finished")
         }
     }
     
     private func resetOnboarding() {
+        print("🔄 DEBUG: OnboardingView - Resetting onboarding")
+        
         // Reset VoiceManager state
         voiceManager.resetOnboarding()
         
@@ -238,6 +251,7 @@ struct OnboardingView: View {
         appState.hasUserId = false
         appState.userId = nil
         appState.isOnboardingComplete = false
+        appState.currentExercise = nil
         
         // Reset local view state
         isOnboardingComplete = false
