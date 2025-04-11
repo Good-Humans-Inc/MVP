@@ -88,6 +88,10 @@ struct ContentView: View {
                 }
             }
         }
+//        .sheet(isPresented: $showingNotificationSettings) {
+//            NotificationSettingsView()
+//                .environmentObject(notificationManager)
+//        }
     }
     
     private func loadRecommendedExercise(userId: String) {
