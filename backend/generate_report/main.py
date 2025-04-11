@@ -8,7 +8,7 @@ from google.cloud import secretmanager
 
 # Initialize Firebase Admin with default credentials
 firebase_admin.initialize_app()
-db = firestore.Client()
+db = db = firestore.Client(project='pepmvp', database='pep-mvp')
 
 def get_secret(secret_id):
     """Get secret from Google Cloud Secret Manager."""
