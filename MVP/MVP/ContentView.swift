@@ -8,9 +8,11 @@ struct ContentView: View {
     @EnvironmentObject private var cameraManager: CameraManager
     @EnvironmentObject private var resourceCoordinator: ResourceCoordinator
     @EnvironmentObject private var visionManager: VisionManager
+    @EnvironmentObject private var notificationManager: NotificationManager
     
     // Add state to track changes
     @State private var shouldShowExerciseDetail: Bool = false
+    @State private var showingNotificationSettings: Bool = false
     
     var body: some View {
         Group {
@@ -22,7 +24,24 @@ struct ContentView: View {
                     .environmentObject(cameraManager)
                     .environmentObject(resourceCoordinator)
                     .environmentObject(visionManager)
+                    .environmentObject(notificationManager)
                     .transition(.opacity)
+                    .overlay(
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Button(action: {
+                                    showingNotificationSettings = true
+                                }) {
+                                    Image(systemName: "bell.fill")
+                                        .font(.title2)
+                                        .foregroundColor(.blue)
+                                        .padding()
+                                }
+                            }
+                            Spacer()
+                        }
+                    )
             } else if appState.isOnboardingComplete || appState.hasUserId {
                 // If onboarding is complete or we have a user ID, show loading with exercise fetch
                 ProgressView("Loading your exercise...")
@@ -39,6 +58,7 @@ struct ContentView: View {
                     .environmentObject(cameraManager)
                     .environmentObject(resourceCoordinator)
                     .environmentObject(visionManager)
+                    .environmentObject(notificationManager)
             }
         }
         .onChange(of: appState.currentExercise) { exercise in

@@ -9,5 +9,11 @@
 	</dict>
 	<key>UIApplicationExitsOnSuspend</key>
 	<false/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>We need to send you notifications to remind you about your physical therapy exercises.</string>
 </dict>
 </plist>

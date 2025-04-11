@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timedelta
 from google.cloud import secretmanager
 from google.cloud.firestore_v1._helpers import DatetimeWithNanoseconds
+import uuid
 
 # Initialize Firebase Admin with default credentials
 firebase_admin.initialize_app()
@@ -183,7 +184,7 @@ Format the response as JSON with these exact keys:
         # Update patient's streak information
         update_patient_streak(patient_id, streak_info)
         
-        # Add timestamp to the response data
+        # Add timestamp to the response data (use ISO format string directly)
         report_data['timestamp'] = datetime.now().isoformat()
         
         # Prepare response
@@ -193,12 +194,25 @@ Format the response as JSON with these exact keys:
             'report': report_data
         }
         
-        # Serialize the response data to handle any Firestore timestamps
-        serialized_response = serialize_firestore_data(response_data)
-        print("Final Response:")
-        print(json.dumps(serialized_response, indent=2))
-        
-        return (json.dumps(serialized_response), 200, headers)
+        # Ensure all Firestore timestamps are serialized
+        try:
+            serialized_response = serialize_firestore_data(response_data)
+            json_response = json.dumps(serialized_response)
+            print("Final Response:")
+            print(json.dumps(serialized_response, indent=2))
+            return (json_response, 200, headers)
+        except Exception as e:
+            print(f"Error serializing response: {str(e)}")
+            # Fallback to a simpler response if serialization fails
+            fallback_response = {
+                'status': 'success',
+                'report_id': report_ref.id,
+                'report': {
+                    **report_data,
+                    'timestamp': datetime.now().isoformat()
+                }
+            }
+            return (json.dumps(fallback_response), 200, headers)
         
     except Exception as e:
         print(f"Error generating report: {str(e)}")
@@ -338,3 +352,99 @@ def serialize_firestore_data(data):
         return data.datetime.isoformat()
     else:
         return data
+
+def generate_notification_content(patient_name, exercise_names, patient_data):
+    """Generate personalized notification content using OpenAI."""
+    try:
+        client = OpenAI(api_key=get_secret('openai-api-key'))
+        
+        # Get patient's preferences and history
+        preferred_tone = patient_data.get('notification_preferences', {}).get('tone', 'friendly')
+        exercise_history = patient_data.get('exercise_history', [])
+        streak = len(exercise_history)
+        
+        # Create prompt for OpenAI
+        prompt = f"""Generate a motivational exercise reminder notification for a physical therapy patient with the following details:
+
+Patient Name: {patient_name}
+Exercises: {', '.join(exercise_names)}
+Current Streak: {streak} days
+Preferred Tone: {preferred_tone}
+
+The notification should have:
+1. A catchy title (max 50 characters)
+2. A motivational message (max 150 characters)
+3. Be {preferred_tone} in tone
+4. Mention specific exercises if provided
+5. Include streak information if significant (>3 days)
+
+Format the response as JSON:
+{{
+    "title": "string",
+    "body": "string"
+}}"""
+
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a motivational physical therapy assistant crafting engaging notifications."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=200
+        )
+        
+        # Parse the response
+        content = json.loads(response.choices[0].message.content)
+        return content
+        
+    except Exception as e:
+        print(f"Error generating notification content: {str(e)}")
+        # Return default content if OpenAI generation fails
+        return {
+            "title": "Time for your PT exercises!",
+            "body": f"Hi {patient_name}! Ready to continue your progress? Let's work on your exercises today!"
+        }
+
+# Update the send_exercise_notification function to use OpenAI-generated content
+def send_exercise_notification(patient_id, fcm_token):
+    """Send an exercise reminder notification to a patient's device via FCM"""
+    # Get patient details
+    patient_doc = db.collection('patients').document(patient_id).get()
+    patient_data = patient_doc.to_dict()
+    patient_name = patient_data.get('name', 'Patient')
+    
+    # Get patient exercises
+    patient_exercises = db.collection('patient_exercises').where('patient_id', '==', patient_id).get()
+    exercise_ids = [doc.to_dict().get('exercise_id') for doc in patient_exercises]
+    
+    # Get exercise details
+    exercise_names = []
+    for ex_id in exercise_ids:
+        ex_doc = db.collection('exercises').document(ex_id).get()
+        if ex_doc.exists:
+            ex_data = ex_doc.to_dict()
+            exercise_names.append(ex_data.get('name'))
+    
+    # Generate notification content using OpenAI
+    notification_content = generate_notification_content(patient_name, exercise_names, patient_data)
+    
+    # Create notification content
+    title = notification_content['title']
+    body = notification_content['body']
+    
+    # Save notification to database
+    notification_id = str(uuid.uuid4())
+    notification = {
+        'id': notification_id,
+        'patient_id': patient_id,
+        'title': title,
+        'body': body,
+        'scheduled_for': datetime.now(),
+        'exercise_ids': exercise_ids,
+        'status': 'sending',
+        'created_at': datetime.now(),
+        'content_type': 'ai_generated'
+    }
+    
+    # ... rest of the existing send_exercise_notification function ...

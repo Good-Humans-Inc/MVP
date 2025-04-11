@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Knee Flexion",
+    "description": "Gently bend and extend your knee to improve range of motion",
+    "duration": 180,
+    "target_joints": ["right_knee", "right_ankle", "right_hip"],
+    "instructions": [
+      "Sit on a chair with your feet flat on the floor",
+      "Slowly lift your right foot and bend your knee",
+      "Hold for 5 seconds",
+      "Slowly lower your foot back to the floor",
+      "Repeat 10 times"
+    ]
+  },
+  {
+    "name": "Straight Leg Raises",
+    "description": "Strengthen the quadriceps without bending the knee",
+    "duration": 180,
+    "target_joints": ["left_hip", "left_knee", "left_ankle"],
+    "instructions": [
+      "Lie on your back with one leg bent and one leg straight",
+      "Tighten the thigh muscles of your straight leg",
+      "Slowly lift your straight leg up about 12 inches",
+      "Hold for 5 seconds",
+      "Slowly lower your leg back down",
+      "Repeat 10 times"
+    ]
+  },
+  {
+    "name": "Hamstring Stretch",
+    "description": "Stretch the back of your thigh to improve knee mobility",
+    "duration": 180,
+    "target_joints": ["right_hip", "right_knee", "right_ankle"],
+    "instructions": [
+      "Sit on the edge of a chair",
+      "Extend one leg forward with your heel on the floor",
+      "Sit up straight and lean forward slightly at your hips",
+      "Hold for 30 seconds",
+      "Repeat with the other leg"
+    ]
+  }
+] 

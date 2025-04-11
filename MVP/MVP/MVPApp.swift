@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import Firebase
 import UserNotifications
+import FirebaseMessaging
 
 typealias Joint = BodyJointType
 // App Delegate to handle Firebase
@@ -19,6 +20,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         
         // Configure Firebase
         FirebaseApp.configure()
+        
+        // Request notification permissions
+        requestNotificationPermissions()
         
         // Only mark first launch as complete after setup is done
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
@@ -90,6 +94,55 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             print("❌ Error pre-initializing audio session: \(error)")
         }
     }
+    
+    // Request notification permissions
+    private func requestNotificationPermissions() {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if granted {
+                print("✅ Notification permission granted")
+                DispatchQueue.main.async {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            } else if let error = error {
+                print("❌ Notification permission error: \(error.localizedDescription)")
+            } else {
+                print("❌ Notification permission denied")
+            }
+        }
+    }
+    
+    // Handle successful registration for remote notifications
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        // Convert token to string
+        let tokenParts = deviceToken.map { data in String(format: "%02.2hhx", data) }
+        let token = tokenParts.joined()
+        print("📱 Device Token: \(token)")
+        
+        // Set the APNs token in Firebase Messaging
+        Messaging.messaging().apnsToken = deviceToken
+    }
+    
+    // Handle failed registration for remote notifications
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        print("❌ Failed to register for remote notifications: \(error.localizedDescription)")
+    }
+    
+    // Handle incoming remote notifications when app is in foreground
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable : Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        print("📱 Received remote notification: \(userInfo)")
+        
+//        // Process the notification data
+//        if let exerciseId = userInfo["exerciseId"] as? String {
+//            // Handle exercise notification
+//            print("📱 Remote notification for exercise: \(exerciseId)")
+//            // You can post a notification to handle this in your app
+//            NotificationCenter.default.post(name: NSNotification.Name("OpenExerciseFromNotification"), object: nil, userInfo: ["exerciseId": exerciseId])
+//            completionHandler(.newDataFetched)
+//        } else {
+//            completionHandler(.noData)
+//        }
+    }
 }
 
 @main
@@ -105,6 +158,7 @@ struct MVPApp: App {
     @StateObject private var cameraManager: CameraManager
     @StateObject private var visionManager: VisionManager
     @StateObject private var resourceCoordinator: ResourceCoordinator
+    @StateObject private var notificationManager: NotificationManager
     
     init() {
         // Initialize managers with dependency injection
@@ -120,6 +174,9 @@ struct MVPApp: App {
         let resources = ResourceCoordinator(appState: appState)
         _resourceCoordinator = StateObject(wrappedValue: resources)
         
+        let notifications = NotificationManager()
+        _notificationManager = StateObject(wrappedValue: notifications)
+        
         print("🚀 App initialization complete")
     }
     
@@ -131,6 +188,7 @@ struct MVPApp: App {
                 .environmentObject(cameraManager)
                 .environmentObject(visionManager)
                 .environmentObject(resourceCoordinator)
+                .environmentObject(notificationManager)
                 .onAppear {
                     // Configure resource coordinator with other managers
                     resourceCoordinator.configure(

@@ -14,6 +14,14 @@
 		2C54DFCD2DA61B830024E739 /* FirebaseAnalyticsWithoutAdIdSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFCC2DA61B830024E739 /* FirebaseAnalyticsWithoutAdIdSupport */; };
 		2C54DFCF2DA61B830024E739 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFCE2DA61B830024E739 /* FirebaseAppCheck */; };
 		2C54DFD12DA61B830024E739 /* FirebaseAppDistribution-Beta in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFD02DA61B830024E739 /* FirebaseAppDistribution-Beta */; };
+		2C54DFDE2DA91C2E0024E739 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFDD2DA91C2E0024E739 /* FirebaseAuth */; };
+		2C54DFE02DA91C2E0024E739 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFDF2DA91C2E0024E739 /* FirebaseCore */; };
+		2C54DFE22DA91C2E0024E739 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFE12DA91C2E0024E739 /* FirebaseCrashlytics */; };
+		2C54DFE42DA91C2E0024E739 /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFE32DA91C2E0024E739 /* FirebaseDatabase */; };
+		2C54DFE62DA91C2E0024E739 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFE52DA91C2E0024E739 /* FirebaseFirestore */; };
+		2C54DFE82DA91C2E0024E739 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFE72DA91C2E0024E739 /* FirebaseFunctions */; };
+		2C54DFEA2DA91C2E0024E739 /* FirebaseInAppMessaging-Beta in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFE92DA91C2E0024E739 /* FirebaseInAppMessaging-Beta */; };
+		2C54DFEC2DA91C2E0024E739 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 2C54DFEB2DA91C2E0024E739 /* FirebaseMessaging */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,12 +55,20 @@
 			buildActionMask = 2147483647;
 			files = (
 				2C54DFD12DA61B830024E739 /* FirebaseAppDistribution-Beta in Frameworks */,
+				2C54DFEA2DA91C2E0024E739 /* FirebaseInAppMessaging-Beta in Frameworks */,
 				2C54DF662DA509120024E739 /* ElevenLabsSDK in Frameworks */,
 				2C54DFCD2DA61B830024E739 /* FirebaseAnalyticsWithoutAdIdSupport in Frameworks */,
 				2C54DF602DA508300024E739 /* SDWebImageSwiftUI in Frameworks */,
 				2C54DFC92DA61B830024E739 /* FirebaseAnalytics in Frameworks */,
+				2C54DFE62DA91C2E0024E739 /* FirebaseFirestore in Frameworks */,
 				2C54DFCF2DA61B830024E739 /* FirebaseAppCheck in Frameworks */,
 				2C54DFCB2DA61B830024E739 /* FirebaseAnalyticsOnDeviceConversion in Frameworks */,
+				2C54DFE22DA91C2E0024E739 /* FirebaseCrashlytics in Frameworks */,
+				2C54DFE82DA91C2E0024E739 /* FirebaseFunctions in Frameworks */,
+				2C54DFE42DA91C2E0024E739 /* FirebaseDatabase in Frameworks */,
+				2C54DFEC2DA91C2E0024E739 /* FirebaseMessaging in Frameworks */,
+				2C54DFE02DA91C2E0024E739 /* FirebaseCore in Frameworks */,
+				2C54DFDE2DA91C2E0024E739 /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -102,6 +118,14 @@
 				2C54DFCC2DA61B830024E739 /* FirebaseAnalyticsWithoutAdIdSupport */,
 				2C54DFCE2DA61B830024E739 /* FirebaseAppCheck */,
 				2C54DFD02DA61B830024E739 /* FirebaseAppDistribution-Beta */,
+				2C54DFDD2DA91C2E0024E739 /* FirebaseAuth */,
+				2C54DFDF2DA91C2E0024E739 /* FirebaseCore */,
+				2C54DFE12DA91C2E0024E739 /* FirebaseCrashlytics */,
+				2C54DFE32DA91C2E0024E739 /* FirebaseDatabase */,
+				2C54DFE52DA91C2E0024E739 /* FirebaseFirestore */,
+				2C54DFE72DA91C2E0024E739 /* FirebaseFunctions */,
+				2C54DFE92DA91C2E0024E739 /* FirebaseInAppMessaging-Beta */,
+				2C54DFEB2DA91C2E0024E739 /* FirebaseMessaging */,
 			);
 			productName = MVP;
 			productReference = 2C54DF1F2DA4DFE60024E739 /* MVP.app */;
@@ -437,6 +461,46 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = "FirebaseAppDistribution-Beta";
+		};
+		2C54DFDD2DA91C2E0024E739 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		2C54DFDF2DA91C2E0024E739 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		2C54DFE12DA91C2E0024E739 /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
+		};
+		2C54DFE32DA91C2E0024E739 /* FirebaseDatabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseDatabase;
+		};
+		2C54DFE52DA91C2E0024E739 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		2C54DFE72DA91C2E0024E739 /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
+		};
+		2C54DFE92DA91C2E0024E739 /* FirebaseInAppMessaging-Beta */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = "FirebaseInAppMessaging-Beta";
+		};
+		2C54DFEB2DA91C2E0024E739 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C54DFC72DA61B830024E739 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
