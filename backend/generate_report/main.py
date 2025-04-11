@@ -5,6 +5,7 @@ from openai import OpenAI
 import json
 from datetime import datetime, timedelta
 from google.cloud import secretmanager
+from google.cloud.firestore_v1._helpers import DatetimeWithNanoseconds
 
 # Initialize Firebase Admin with default credentials
 firebase_admin.initialize_app()
@@ -237,8 +238,11 @@ def calculate_streak(patient_id):
         report_data = report.to_dict()
         timestamp = report_data.get('timestamp')
         if timestamp:
-            # Convert Firestore timestamp to datetime
-            report_date = timestamp.datetime.date()
+            # Handle both DatetimeWithNanoseconds and Timestamp types
+            if hasattr(timestamp, 'date'):
+                report_date = timestamp.date()
+            else:
+                report_date = timestamp.datetime.date()
         else:
             continue
         
@@ -328,6 +332,8 @@ def serialize_firestore_data(data):
         return {k: serialize_firestore_data(v) for k, v in data.items()}
     elif isinstance(data, list):
         return [serialize_firestore_data(item) for item in data]
+    elif isinstance(data, DatetimeWithNanoseconds):
+        return data.isoformat()
     elif hasattr(data, 'datetime'):  # Handle Firestore Timestamp
         return data.datetime.isoformat()
     else:
