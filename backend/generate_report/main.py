@@ -1,14 +1,14 @@
 import functions_framework
 import firebase_admin
 from firebase_admin import credentials, firestore
-import openai
+from openai import OpenAI
 import json
 from datetime import datetime, timedelta
 from google.cloud import secretmanager
 
 # Initialize Firebase Admin with default credentials
 firebase_admin.initialize_app()
-db = db = firestore.Client(project='pepmvp', database='pep-mvp')
+db = firestore.Client()
 
 def get_secret(secret_id):
     """Get secret from Google Cloud Secret Manager."""
@@ -31,8 +31,8 @@ def generate_report(request):
     headers = {'Access-Control-Allow-Origin': '*'}
     
     try:
-        # Get OpenAI API key from Secret Manager
-        openai.api_key = get_secret('openai-api-key')
+        # Initialize OpenAI client with API key from Secret Manager
+        client = OpenAI(api_key=get_secret('openai-api-key'))
         
         # Get request data
         request_json = request.get_json()
@@ -102,8 +102,8 @@ Format the response as JSON with these exact keys:
     "motivational_message": "string"
 }}"""
 
-        # Call OpenAI API
-        response = openai.ChatCompletion.create(
+        # Call OpenAI API with new format
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": """You are a professional physical therapist assistant specialized in RSI (Repetitive Strain Injury).
@@ -117,7 +117,7 @@ Format the response as JSON with these exact keys:
             max_tokens=1000
         )
         
-        # Parse GPT response
+        # Parse GPT response - note the change in response structure
         report_data = json.loads(response.choices[0].message.content)
         
         # Update with actual metrics and streak
