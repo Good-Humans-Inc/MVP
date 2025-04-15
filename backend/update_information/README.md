@@ -9,7 +9,6 @@ The `update_information` function allows the ElevenLabs agent to:
 1. Update notification preferences (time and frequency)
 2. Set or update the user's ultimate goal
 3. Update the user's exercise routine
-4. Update the user's FCM token for push notifications
 
 ## API Endpoint
 
@@ -24,7 +23,6 @@ POST /update_information
   "patient_id": "user123",
   "notification_time": "09:00",  // Optional, format: "HH:MM"
   "ultimate_goal": "Improve knee mobility and reduce pain",  // Optional
-  "fcm_token": "fcm_token_here",  // Optional, Firebase Cloud Messaging token
   "exercise_routine": [  // Optional
     {
       "name": "Knee Flexion",
@@ -51,7 +49,7 @@ POST /update_information
 {
   "status": "success",
   "message": "Patient information updated successfully",
-  "updated_fields": ["notification_preferences", "ultimate_goal", "exercise_routine", "fcm_token"]
+  "updated_fields": ["notification_preferences", "ultimate_goal", "exercise_routine"]
 }
 ```
 
@@ -78,15 +76,6 @@ This function interacts with the following Firestore collections:
 - `patients`: Contains patient information including notification preferences and exercise routines
 - `activities`: Logs all profile updates and changes
 
-## FCM Token Handling
-
-The function supports updating the FCM token for a user, which is essential for sending push notifications. When an FCM token is provided:
-
-1. The token is stored in the user's profile
-2. A timestamp is recorded for when the token was updated
-3. The agent that updated the token is recorded
-4. The token is logged (partially) for debugging purposes
-
 ## Usage by ElevenLabs Agent
 
 The ElevenLabs agent can call this function to update user information based on conversation context. For example:
@@ -94,7 +83,6 @@ The ElevenLabs agent can call this function to update user information based on 
 1. When a user mentions their preferred exercise time
 2. When a user discusses their rehabilitation goals
 3. When a user needs a customized exercise routine
-4. When the app registers a new FCM token for push notifications
 
 ## Deployment
 

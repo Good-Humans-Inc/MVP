@@ -223,18 +223,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         // Save the token to UserDefaults
         if let token = fcmToken {
-            print("🔔 🔔 🔔 FCM TOKEN RECEIVED: \(token.prefix(10))... 🔔 🔔 🔔")
             defaults.set(token, forKey: "fcmToken")
             
             // If we have a user ID, update the token on the server
             if let userId = defaults.string(forKey: "PatientID") {
-                print("📱 🔄 UPDATING FCM TOKEN FOR USER: \(userId) 🔄 📱")
                 updateFCMTokenOnServer(userId: userId, token: token)
-            } else {
-                print("⚠️ ⚠️ ⚠️ NO PATIENT ID FOUND! FCM token will be updated when user ID is available ⚠️ ⚠️ ⚠️")
             }
-        } else {
-            print("❌ ❌ ❌ RECEIVED NIL FCM TOKEN ❌ ❌ ❌")
         }
     }
     
@@ -242,7 +236,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     private func updateFCMTokenOnServer(userId: String, token: String) {
         // Create URL for API call
         guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_fcm_token") else {
-            print("❌ ❌ ❌ INVALID URL FOR FCM TOKEN UPDATE ❌ ❌ ❌")
+            print("❌ Invalid URL for FCM token update")
             return
         }
         
@@ -260,45 +254,24 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         // Serialize request body
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-            print("📤 📤 📤 SENDING FCM TOKEN UPDATE REQUEST FOR USER: \(userId) 📤 📤 📤")
         } catch {
-            print("❌ ❌ ❌ ERROR SERIALIZING FCM TOKEN UPDATE REQUEST: \(error) ❌ ❌ ❌")
+            print("❌ Error serializing FCM token update request: \(error)")
             return
         }
         
         // Make API call
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("❌ ❌ ❌ ERROR UPDATING FCM TOKEN: \(error) ❌ ❌ ❌")
+                print("❌ Error updating FCM token: \(error)")
                 return
             }
             
-            if let httpResponse = response as? HTTPURLResponse {
-                if httpResponse.statusCode == 200 {
-                    print("✅ ✅ ✅ FCM TOKEN UPDATED SUCCESSFULLY FOR USER: \(userId) ✅ ✅ ✅")
-                } else {
-                    print("❌ ❌ ❌ FAILED TO UPDATE FCM TOKEN: HTTP \(httpResponse.statusCode) ❌ ❌ ❌")
-                }
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                print("✅ FCM token updated successfully")
             } else {
-                print("❌ ❌ ❌ FAILED TO UPDATE FCM TOKEN: INVALID RESPONSE ❌ ❌ ❌")
+                print("❌ Failed to update FCM token: \(response.debugDescription)")
             }
         }.resume()
-    }
-    
-    /// Print the current FCM token
-    func printCurrentFCMToken() {
-        if let token = fcmToken {
-            print("🔑 🔑 🔑 CURRENT FCM TOKEN: \(token) 🔑 🔑 🔑")
-        } else {
-            print("⚠️ ⚠️ ⚠️ NO FCM TOKEN AVAILABLE YET ⚠️ ⚠️ ⚠️")
-            
-            // Try to get the token from UserDefaults as a fallback
-            if let savedToken = defaults.string(forKey: "fcmToken") {
-                print("🔑 🔑 🔑 SAVED FCM TOKEN FROM USERDEFAULTS: \(savedToken) 🔑 🔑 🔑")
-            } else {
-                print("❌ ❌ ❌ NO FCM TOKEN FOUND IN USERDEFAULTS EITHER ❌ ❌ ❌")
-            }
-        }
     }
 }
 

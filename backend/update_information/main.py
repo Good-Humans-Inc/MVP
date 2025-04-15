@@ -49,17 +49,9 @@ def update_information(request):
         notification_time = request_json.get('notification_time')
         ultimate_goal = request_json.get('ultimate_goal')
         exercise_routine = request_json.get('exercise_routine')
-        fcm_token = request_json.get('fcm_token')  # Add support for FCM token update
         
         # Prepare update data
         update_data = {}
-        
-        # Update FCM token if provided
-        if fcm_token:
-            update_data['fcm_token'] = fcm_token
-            update_data['last_token_update'] = firestore.SERVER_TIMESTAMP
-            update_data['token_updated_by'] = 'elevenlabs_agent'
-            print(f"FCM token updated for patient {patient_id}: {fcm_token[:10]}...")
         
         # Update notification preferences if provided
         if notification_time:
@@ -183,8 +175,6 @@ def update_information(request):
                     schedule_notification(notification_request)
                 except Exception as e:
                     print(f"Error scheduling notification: {str(e)}")
-            else:
-                print(f"Warning: Cannot schedule notification for patient {patient_id} - No FCM token available")
         
         return (json.dumps({
             'status': 'success',
