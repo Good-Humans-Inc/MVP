@@ -249,6 +249,12 @@ struct ExerciseDetailView: View {
     // MARK: - Actions
     
     private func resetOnboarding() {
+        print("🔄 DEBUG: ExerciseDetailView - Resetting onboarding")
+        print("📊 DEBUG: ExerciseDetailView - Pre-reset state:")
+        print("- appState.hasUserId: \(appState.hasUserId)")
+        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
+        print("- appState.isFirstExercise: \(appState.isFirstExercise)")
+
         // Reset VoiceManager state
         voiceManager.resetOnboarding()
         
@@ -259,6 +265,11 @@ struct ExerciseDetailView: View {
         appState.currentAgentType = nil
         appState.isFirstExercise = true  // Reset first exercise flag
         
+        print("📊 DEBUG: ExerciseDetailView - Post-reset state:")
+        print("- appState.hasUserId: \(appState.hasUserId)")
+        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
+        print("- appState.isFirstExercise: \(appState.isFirstExercise)")
+
         // Dismiss this view and return to onboarding
         if let window = UIApplication.shared.windows.first {
             window.rootViewController = UIHostingController(rootView: OnboardingView()

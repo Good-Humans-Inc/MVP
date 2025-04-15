@@ -5,7 +5,6 @@ struct OnboardingView: View {
     // State for animation and conversation
     @State private var animationState: AnimationState = .idle
     @State private var messages: [ConversationMessage] = []
-    @State private var isOnboardingComplete = false
     @State private var isLoading = false
     @State private var hasStartedAgent = false
     
@@ -13,6 +12,8 @@ struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject private var voiceManager: VoiceManager
     @EnvironmentObject private var resourceCoordinator: ResourceCoordinator
+    @EnvironmentObject private var cameraManager: CameraManager
+    @EnvironmentObject private var visionManager: VisionManager
     
     enum AnimationState {
         case idle, listening, speaking, thinking
@@ -139,7 +140,7 @@ struct OnboardingView: View {
         }
         // Handle voiceManager.hasCompletedOnboarding changes
         .onChange(of: voiceManager.hasCompletedOnboarding) { completed in
-            if completed && !isOnboardingComplete {
+            if completed && !appState.isOnboardingComplete {
                 handleOnboardingComplete()
             }
         }
@@ -217,12 +218,17 @@ struct OnboardingView: View {
     }
     
     private func handleOnboardingComplete() {
-        guard !isOnboardingComplete else { 
-            print("⚠️ DEBUG: OnboardingView - handleOnboardingComplete called but isOnboardingComplete is already true")
+        // Only proceed if not already completed
+        guard !appState.isOnboardingComplete else { 
+            print("⚠️ DEBUG: OnboardingView - handleOnboardingComplete called but onboarding is already complete")
             return 
         }
         
         print("🎯 DEBUG: OnboardingView - Starting onboarding completion process")
+        print("📊 DEBUG: OnboardingView - Pre-completion state:")
+        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
+        print("- appState.hasUserId: \(appState.hasUserId)")
+        print("- appState.isFirstExercise: \(appState.isFirstExercise)")
         
         // End the ElevenLabs session
         voiceManager.endElevenLabsSession()
@@ -230,12 +236,36 @@ struct OnboardingView: View {
         // Small delay to allow session to properly end and cleanup
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             print("🎯 DEBUG: OnboardingView - Setting completion states")
-            self.isOnboardingComplete = true
+            
+            // Set completion state in AppState
             self.appState.isOnboardingComplete = true
             
             // Additional cleanup
             self.animationState = .idle
-            self.voiceManager.hasCompletedOnboarding = true
+            
+            print("📊 DEBUG: OnboardingView - Post-completion state:")
+            print("- appState.isOnboardingComplete: \(self.appState.isOnboardingComplete)")
+            print("- appState.hasUserId: \(self.appState.hasUserId)")
+            print("- appState.isFirstExercise: \(self.appState.isFirstExercise)")
+            
+            // Ensure we have an exercise before transitioning
+            if let exercise = self.appState.currentExercise {
+                print("✅ DEBUG: OnboardingView - Transitioning to ExerciseDetailView with exercise: \(exercise.name)")
+                
+                // Transition to ExerciseDetailView with all required environment objects
+                if let window = UIApplication.shared.windows.first {
+                    window.rootViewController = UIHostingController(rootView: 
+                        ExerciseDetailView(exercise: exercise)
+                            .environmentObject(self.appState)
+                            .environmentObject(self.voiceManager)
+                            .environmentObject(self.resourceCoordinator)
+                            .environmentObject(self.cameraManager)
+                            .environmentObject(self.visionManager)
+                    )
+                }
+            } else {
+                print("⚠️ DEBUG: OnboardingView - No exercise available for transition")
+            }
             
             print("✅ DEBUG: OnboardingView - Onboarding completion process finished")
         }
@@ -243,6 +273,10 @@ struct OnboardingView: View {
     
     private func resetOnboarding() {
         print("🔄 DEBUG: OnboardingView - Resetting onboarding")
+        print("📊 DEBUG: OnboardingView - Pre-reset state:")
+        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
+        print("- appState.hasUserId: \(appState.hasUserId)")
+        print("- appState.isFirstExercise: \(appState.isFirstExercise)")
         
         // Reset VoiceManager state
         voiceManager.resetOnboarding()
@@ -255,10 +289,15 @@ struct OnboardingView: View {
         appState.isFirstExercise = true  // Reset first exercise flag
         
         // Reset local view state
-        isOnboardingComplete = false
+        isLoading = false
         hasStartedAgent = false
         messages.removeAll()
         animationState = .idle
+        
+        print("📊 DEBUG: OnboardingView - Post-reset state:")
+        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
+        print("- appState.hasUserId: \(appState.hasUserId)")
+        print("- appState.isFirstExercise: \(appState.isFirstExercise)")
         
         // Restart onboarding agent after a short delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

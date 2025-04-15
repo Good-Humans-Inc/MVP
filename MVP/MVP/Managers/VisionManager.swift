@@ -138,24 +138,23 @@ class VisionManager: NSObject, ObservableObject {
             // Determine if it's a left or right hand (simplified method)
             determineHandOrientation(observation)
             
-            // Update observed hands
-            DispatchQueue.main.async {
-                self.detectedHands = observations
-            }
-            
             // Convert the hand observation to our HandPose model
             let handPose = createHandPose(from: observation)
             
-            DispatchQueue.main.async {[weak self] in
+            // Update all UI-related state on the main thread
+            DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
+                
+                // Update detected hands
+                self.detectedHands = observations
+                
+                // Update current hand pose
                 self.currentHandPose = handPose
                 
-                // Update AppState on main thread too
-                DispatchQueue.main.async {
-                    self.appState.visionState.currentHandPose = handPose
-                    self.appState.visionState.isProcessing = true
-                    self.appState.visionState.error = nil
-                }
+                // Update AppState
+                self.appState.visionState.currentHandPose = handPose
+                self.appState.visionState.isProcessing = true
+                self.appState.visionState.error = nil
                 
                 // Log joint stats every 30 frames (about 1 second at 30fps)
                 if self.frameCount % 30 == 0 {
@@ -164,7 +163,8 @@ class VisionManager: NSObject, ObservableObject {
             }
         } catch {
             print("👁 Vision processing error: \(error)")
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
                 self.processingError = error.localizedDescription
                 self.appState.visionState.error = error.localizedDescription
             }
@@ -217,38 +217,48 @@ class VisionManager: NSObject, ObservableObject {
             
             // This simple heuristic is based on the typical position of the thumb
             // relative to the fingers when the palm is facing the camera
-            isLeftHand = thumbToWristX > indexToWristX
+            let detectedIsLeftHand = thumbToWristX > indexToWristX
             
-            print("👁 Hand orientation detected: \(isLeftHand ? "Left" : "Right") hand")
+            // Update isLeftHand on main thread
+            DispatchQueue.main.async {
+                self.isLeftHand = detectedIsLeftHand
+                print("👁 Hand orientation detected: \(detectedIsLeftHand ? "Left" : "Right") hand")
+            }
         } catch {
             print("👁 Error determining hand orientation: \(error)")
             // Default to left hand if determination fails
-            isLeftHand = true
+            DispatchQueue.main.async {
+                self.isLeftHand = true
+            }
         }
     }
     
     // Log hand stats for debugging
     private func logHandStats(_ handPose: HandPose) {
-        // Get finger extension values
-        let extensionValues = handPose.getFingerExtensionValues()
-        print("HAND STATS (FINGER EXTENSION):")
-        for (finger, value) in extensionValues {
-            print("- \(finger): \(value)")
+        DispatchQueue.main.async {
+            // Get finger extension values
+            let extensionValues = handPose.getFingerExtensionValues()
+            print("HAND STATS (FINGER EXTENSION):")
+            for (finger, value) in extensionValues {
+                print("- \(finger): \(value)")
+            }
+            
+            // Log wrist angle if available
+            if let wristAngle = handPose.getWristAngle() {
+                print("- Wrist angle: \(wristAngle)°")
+            }
+            
+            print("-----------------------------------")
         }
-        
-        // Log wrist angle if available
-        if let wristAngle = handPose.getWristAngle() {
-            print("- Wrist angle: \(wristAngle)°")
-        }
-        
-        print("-----------------------------------")
     }
     
     // Clean up resources
     func cleanUp() {
-        isProcessing = false
-        detectedHands.removeAll()
-        processingError = nil
+        DispatchQueue.main.async {
+            self.isProcessing = false
+            self.detectedHands.removeAll()
+            self.processingError = nil
+        }
     }
 }
 

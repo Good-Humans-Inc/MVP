@@ -88,6 +88,21 @@ class AppState: ObservableObject {
         // Load first exercise flag
         isFirstExercise = UserDefaults.standard.bool(forKey: "IsFirstExercise")
         print("📱 DEBUG: AppState - Loaded isFirstExercise: \(isFirstExercise)")
+        
+        // Print all state flags
+        printStateFlags()
+    }
+    
+    // Add method to print all state flags
+    private func printStateFlags() {
+        print("""
+        📊 DEBUG: AppState - Current State:
+        - hasUserId: \(hasUserId)
+        - userId: \(userId ?? "nil")
+        - isOnboardingComplete: \(isOnboardingComplete)
+        - isFirstExercise: \(isFirstExercise)
+        - currentExercise: \(currentExercise?.name ?? "nil")
+        """)
     }
     
     // MARK: - State Updates
@@ -100,6 +115,8 @@ class AppState: ObservableObject {
         // When setting user ID, ensure first exercise flag is true
         isFirstExercise = true
         UserDefaults.standard.set(true, forKey: "IsFirstExercise")
+        
+        printStateFlags()
     }
     
     func setCurrentExercise(_ exercise: Exercise) {
@@ -117,7 +134,8 @@ class AppState: ObservableObject {
     func markExerciseCompleted() {
         isFirstExercise = false
         UserDefaults.standard.set(false, forKey: "IsFirstExercise")
-        print("📱 DEBUG: AppState - Marked exercise as completed, isFirstExercise: \(isFirstExercise)")
+        print("📱 DEBUG: AppState - Marked exercise as completed")
+        printStateFlags()
     }
     
     // MARK: - Cleanup
