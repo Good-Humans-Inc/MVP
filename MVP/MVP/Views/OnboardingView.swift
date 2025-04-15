@@ -252,6 +252,7 @@ struct OnboardingView: View {
         appState.userId = nil
         appState.isOnboardingComplete = false
         appState.currentExercise = nil
+        appState.isFirstExercise = true  // Reset first exercise flag
         
         // Reset local view state
         isOnboardingComplete = false

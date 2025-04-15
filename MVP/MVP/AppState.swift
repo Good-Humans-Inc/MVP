@@ -61,6 +61,9 @@ class AppState: ObservableObject {
     // MARK: - Private Properties
     private var cancellables = Set<AnyCancellable>()
     
+    // Add flag to track first exercise
+    @Published var isFirstExercise: Bool = true
+    
     // MARK: - Initialization
     init() {
         self.voiceState = VoiceState()
@@ -81,6 +84,10 @@ class AppState: ObservableObject {
             hasUserId = true
             print("📱 DEBUG: AppState - Loaded stored user ID: \(storedId)")
         }
+        
+        // Load first exercise flag
+        isFirstExercise = UserDefaults.standard.bool(forKey: "IsFirstExercise")
+        print("📱 DEBUG: AppState - Loaded isFirstExercise: \(isFirstExercise)")
     }
     
     // MARK: - State Updates
@@ -89,6 +96,10 @@ class AppState: ObservableObject {
         userId = id
         hasUserId = true
         UserDefaults.standard.set(id, forKey: "UserID")
+        
+        // When setting user ID, ensure first exercise flag is true
+        isFirstExercise = true
+        UserDefaults.standard.set(true, forKey: "IsFirstExercise")
     }
     
     func setCurrentExercise(_ exercise: Exercise) {
@@ -100,6 +111,13 @@ class AppState: ObservableObject {
     
     func setExerciseReport(_ report: ExerciseReport) {
         exerciseReport = report
+    }
+    
+    // Add method to mark exercise as completed
+    func markExerciseCompleted() {
+        isFirstExercise = false
+        UserDefaults.standard.set(false, forKey: "IsFirstExercise")
+        print("📱 DEBUG: AppState - Marked exercise as completed, isFirstExercise: \(isFirstExercise)")
     }
     
     // MARK: - Cleanup

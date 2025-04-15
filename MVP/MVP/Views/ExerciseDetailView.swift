@@ -257,6 +257,7 @@ struct ExerciseDetailView: View {
         appState.userId = nil
         appState.isOnboardingComplete = false
         appState.currentAgentType = nil
+        appState.isFirstExercise = true  // Reset first exercise flag
         
         // Dismiss this view and return to onboarding
         if let window = UIApplication.shared.windows.first {
@@ -282,10 +283,10 @@ struct ExerciseDetailView: View {
                     visionManager.startProcessing(cameraManager.videoOutput)
                     
                     // Start ElevenLabs exercise coach agent
-                    if appState.hasUserId {
-                        // Returning user - use regular exercise agent
-                        voiceManager.startElevenLabsSession(agentType: .exercise) {
-                            appState.currentAgentType = .exercise
+                    if appState.isFirstExercise {
+                        // First-time exercise - use first exercise agent
+                        voiceManager.startElevenLabsSession(agentType: .firstExercise) {
+                            appState.currentAgentType = .firstExercise
                             
                             // Show the exercise view
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -294,9 +295,9 @@ struct ExerciseDetailView: View {
                             }
                         }
                     } else {
-                        // First-time user - use first exercise agent
-                        voiceManager.startElevenLabsSession(agentType: .firstExercise) {
-                            appState.currentAgentType = .firstExercise
+                        // Returning user - use regular exercise agent
+                        voiceManager.startElevenLabsSession(agentType: .exercise) {
+                            appState.currentAgentType = .exercise
                             
                             // Show the exercise view
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {

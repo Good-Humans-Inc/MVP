@@ -224,6 +224,11 @@ struct ExerciseView: View {
         voiceManager.setCurrentExercise(id: exerciseId)
         voiceManager.endExerciseSession()
         
+        // If this was the first exercise, mark it as completed
+        if appState.isFirstExercise {
+            appState.markExerciseCompleted()
+        }
+        
         // Clean up resources
         resourceCoordinator.stopExerciseSession()
         visionManager.stopProcessing()
