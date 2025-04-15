@@ -231,15 +231,55 @@ class VoiceManager: NSObject, ObservableObject {
                 print("🔍 Debug - UserDefaults values:")
                 print("userId: \(UserDefaults.standard.string(forKey: "userId") ?? "nil")")
                 
-                // Add dynamic variables for firstExercise agent
-                if agentType == .firstExercise, let userId = UserDefaults.standard.string(forKey: "userId") {
-                    print("🔍 Debug - Setting up agent configuration:")
-                    print("Agent Type: \(agentType)")
-                    print("Agent ID: \(agentType.agentId)")
-                    print("User ID: \(userId)")
-                    
-                    dynamicVars["user_id"] = .string(userId)
-                    print("✅ Added dynamic variables for firstExercise agent: user_id=\(userId)")
+                // Add dynamic variables for exercise agents
+                if agentType == .firstExercise || agentType == .exercise {
+                    if let exercisesData = UserDefaults.standard.data(forKey: "UserExercises"),
+                       let exercises = try? JSONSerialization.jsonObject(with: exercisesData) as? [[String: Any]],
+                       let exercise = exercises.first {
+                        
+                        print("🔍 Debug - Adding exercise information to dynamic variables")
+                        
+                        // Add basic exercise info
+                        if let name = exercise["name"] as? String {
+                            dynamicVars["exercise_name"] = .string(name)
+                        }
+                        if let description = exercise["description"] as? String {
+                            dynamicVars["exercise_description"] = .string(description)
+                        }
+                        
+                        // Add instructions as a formatted string
+                        if let instructions = exercise["instructions"] as? [String] {
+                            let numberedInstructions = instructions.enumerated()
+                                .map { (index, instruction) in "\(index + 1). \(instruction)" }
+                                .joined(separator: "\n")
+                            dynamicVars["exercise_instructions"] = .string(numberedInstructions)
+                        }
+                        
+                        // Add variations as a formatted string
+                        if let variations = exercise["variations"] as? [String] {
+                            let formattedVariations = variations
+                                .map { "• \($0)" }
+                                .joined(separator: "\n")
+                            dynamicVars["exercise_variations"] = .string(formattedVariations)
+                        }
+                        
+                        // Add target joints
+                        if let targetJoints = exercise["target_joints"] as? [String] {
+                            dynamicVars["target_joints"] = .string(targetJoints.joined(separator: ", "))
+                        }
+                        
+                        // Add user ID if available
+                        if let userId = exercise["user_id"] as? String {
+                            dynamicVars["user_id"] = .string(userId)
+                        }
+                        
+                        print("✅ Added exercise dynamic variables:")
+                        dynamicVars.forEach { key, value in
+                            print("- \(key): \(value)")
+                        }
+                    } else {
+                        print("⚠️ Warning: Could not load exercise information from UserDefaults")
+                    }
                 }
                 
                 let config = ElevenLabsSDK.SessionConfig(
