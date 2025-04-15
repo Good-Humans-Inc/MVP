@@ -184,7 +184,7 @@ extension Exercise {
             imageURLString: nil,
             imageURLString1: nil,
             duration: 180,
-            targetJoints: [.finger],
+            targetJoints: [.leftWrist,.rightWrist],
             instructions: [
                 "Start with hand open",
                 "Bend each finger toward the palm individually",

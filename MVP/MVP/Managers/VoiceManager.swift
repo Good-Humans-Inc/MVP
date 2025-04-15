@@ -15,9 +15,9 @@ enum AgentType {
         case .onboarding:
             return "cUwyvIu9K7oeWMOljW4r"   // Onboarding agent ID
         case .firstExercise:
-            return "GEXRBIHrq3oa2fB0TO1v"   // First exercise agent ID (replace with actual ID)
+            return "naMobWlIcnYO3az032lj"   // First exercise agent ID
         case .exercise:
-            return "GEXRBIHrq3oa2fB0TO1v"   // Exercise coach agent ID
+            return "naMobWlIcnYO3az032lj"   // Exercise coach agent ID
         }
     }
     
@@ -225,7 +225,32 @@ class VoiceManager: NSObject, ObservableObject {
                 }
                 
                 // Set up initial configuration
-                let config = ElevenLabsSDK.SessionConfig(agentId: agentType.agentId)
+                var dynamicVars: [String: ElevenLabsSDK.DynamicVariableValue] = [:]
+                
+                // Debug print UserDefaults values
+                print("🔍 Debug - UserDefaults values:")
+                print("userId: \(UserDefaults.standard.string(forKey: "userId") ?? "nil")")
+                
+                // Add dynamic variables for firstExercise agent
+                if agentType == .firstExercise, let userId = UserDefaults.standard.string(forKey: "userId") {
+                    print("🔍 Debug - Setting up agent configuration:")
+                    print("Agent Type: \(agentType)")
+                    print("Agent ID: \(agentType.agentId)")
+                    print("User ID: \(userId)")
+                    
+                    dynamicVars["patient_id"] = .string(userId)
+                    print("✅ Added dynamic variables for firstExercise agent: patient_id=\(userId)")
+                }
+                
+                let config = ElevenLabsSDK.SessionConfig(
+                    agentId: agentType.agentId,
+                    dynamicVariables: dynamicVars
+                )
+                
+                // Debug print final configuration
+                print("🔍 Debug - Final configuration:")
+                print("Agent ID: \(config.agentId)")
+                print("Dynamic Variables: \(config.dynamicVariables)")
                 
                 // Register client tools - different tools based on agent type
                 var clientTools = ElevenLabsSDK.ClientTools()
@@ -442,7 +467,7 @@ class VoiceManager: NSObject, ObservableObject {
             }
             
             // Save patient ID to UserDefaults
-            UserDefaults.standard.set(patientId, forKey: "PatientID")
+            UserDefaults.standard.set(patientId, forKey: "userId")
             
             // Update published property on main thread
             DispatchQueue.main.async {
@@ -480,7 +505,7 @@ class VoiceManager: NSObject, ObservableObject {
                 
                 // Special handling for patient_id
                 if key == "patient_id", let patientId = value as? String {
-                    UserDefaults.standard.set(patientId, forKey: "PatientID")
+                    UserDefaults.standard.set(patientId, forKey: "userId")
                     
                     DispatchQueue.main.async {
                         // Post notification
@@ -728,7 +753,7 @@ class VoiceManager: NSObject, ObservableObject {
                         // Check for patient_id
                         if let patientId = json["patient_id"] as? String {
                             print("✅ Found patient ID in JSON: \(patientId)")
-                            UserDefaults.standard.set(patientId, forKey: "PatientID")
+                            UserDefaults.standard.set(patientId, forKey: "userId")
                             
                             DispatchQueue.main.async {
                                 // Post notification
@@ -761,7 +786,7 @@ class VoiceManager: NSObject, ObservableObject {
                     let patientId = String(message[idRange])
                     
                     print("✅ Found patient ID using regex: \(patientId)")
-                    UserDefaults.standard.set(patientId, forKey: "PatientID")
+                    UserDefaults.standard.set(patientId, forKey: "userId")
                     
                     DispatchQueue.main.async {
                         // Post notification
@@ -969,7 +994,7 @@ class VoiceManager: NSObject, ObservableObject {
             self.clearConversationHistory()
             
             // Remove stored user data
-            UserDefaults.standard.removeObject(forKey: "PatientID")
+            UserDefaults.standard.removeObject(forKey: "userId")
             UserDefaults.standard.removeObject(forKey: "PatientExercises")
         }
     }
@@ -1036,7 +1061,7 @@ class VoiceManager: NSObject, ObservableObject {
         
         // Generate report using conversation history if we have exercise ID
         if let exerciseId = self.currentExerciseId,
-           let patientId = UserDefaults.standard.string(forKey: "PatientID") {
+           let patientId = UserDefaults.standard.string(forKey: "userId") {
             
             // Call the server API to generate report in the background
             generatePTReport(
