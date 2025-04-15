@@ -179,19 +179,20 @@ extension Exercise {
     static var fallbackExercise: Exercise {
         return Exercise(
             id: UUID(),
-            name: "Place Holder",
-            description: "Improve range of motion in your knee joint",
-            imageURLString: "https://example.com/knee-flexion.mp4",
-            imageURLString1: "https://example.com/knee-flexion1.mp4",
+            name: "Finger Bends",
+            description: "Individual finger exercises to improve mobility",
+            imageURLString: nil,
+            imageURLString1: nil,
             duration: 180,
-            targetJoints: [.leftKnee, .rightKnee],
+            targetJoints: [.finger],
             instructions: [
-                "Sit on a chair with your feet flat on the floor",
-                "Slowly lift your right foot and bend your knee",
-                "Hold for 5 seconds",
-                "Slowly lower your foot back to the floor",
-                "Repeat 10 times"
-            ]
+                "Start with hand open",
+                "Bend each finger toward the palm individually",
+                "Keep other fingers straight",
+                "Hold for 2 seconds per finger",
+                "Return to starting position and repeat"
+            ],
+            videoURL: URL(string: "https://storage.googleapis.com/mvp-vids/finger_bend.mp4")
         )
     }
 }

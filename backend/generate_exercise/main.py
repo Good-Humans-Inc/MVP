@@ -49,7 +49,8 @@ RSI_EXERCISES = [
             "Slowly walk your fingers forward like a spider",
             "Keep your palm flat on the surface",
             "Return to starting position and repeat"
-        ]
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/finger_crawl.mp4"
     },
     {
         "name": "Wrist Rotations",
@@ -64,7 +65,8 @@ RSI_EXERCISES = [
         "variations": [
             "Hold light weights (1-2 lbs)",
             "Use resistance bands for added challenge"
-        ]
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/wrist_rotation.mp4"
     },
     {
         "name": "Forearm Flexor/Extensor Stretch",
@@ -82,7 +84,8 @@ RSI_EXERCISES = [
         ],
         "variations": [
             "Perform against a wall for added resistance"
-        ]
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/forearm_stretch.mp4"
     },
     {
         "name": "Prayer Stretch",
@@ -93,7 +96,8 @@ RSI_EXERCISES = [
             "Lower your hands until your wrists separate",
             "Hold for 15-20 seconds",
             "Return to starting position and repeat"
-        ]
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/prayer_stretch.mp4"
     },
     {
         "name": "Finger Bends",
@@ -105,7 +109,8 @@ RSI_EXERCISES = [
             "Keep other fingers straight",
             "Hold for 2 seconds per finger",
             "Return to starting position and repeat"
-        ]
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/finger_bend.mp4"
     },
     {
         "name": "Finger Stretches",
@@ -117,7 +122,8 @@ RSI_EXERCISES = [
             "Then stretch the entire palm by pulling all fingers back simultaneously",
             "Hold for 5 seconds",
             "Return to starting position and repeat"
-        ]
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/finger_stretch.mp4"
     }
 ]
 
@@ -404,6 +410,7 @@ def save_exercise(exercise, patient_id):
         'target_joints': exercise['target_joints'],
         'instructions': exercise['instructions'],
         'variations': exercise.get('variations', []),
+        'videoURL': exercise.get('videoURL'),
         'created_at': created_at,
         'updated_at': created_at
     }
@@ -432,5 +439,6 @@ def get_fallback_exercise():
         "variations": [
             "Hold light weights (1-2 lbs) for added resistance",
             "Use resistance bands for a more challenging workout"
-        ]
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/wrist_rotation.mp4"
     }
