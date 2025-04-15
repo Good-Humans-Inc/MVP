@@ -80,32 +80,12 @@ def update_information(request):
         
         # Update exercise routine if provided
         if exercise_routine:
-            # Validate exercise routine format
-            if not isinstance(exercise_routine, list):
-                return (json.dumps({'error': 'Exercise routine must be a list'}), 400, headers)
-            
-            # Process each exercise in the routine
-            processed_exercises = []
-            for exercise in exercise_routine:
-                if not isinstance(exercise, dict):
-                    continue
-                
-                # Ensure required fields
-                if 'name' not in exercise or 'description' not in exercise:
-                    continue
-                
-                # Generate a unique ID if not provided
-                if 'id' not in exercise:
-                    exercise['id'] = str(uuid.uuid4())
-                
-                # Add timestamp
-                exercise['added_at'] = firestore.SERVER_TIMESTAMP
-                exercise['added_by'] = 'elevenlabs_agent'
-                
-                processed_exercises.append(exercise)
+            # Validate exercise routine format - should be a string
+            if not isinstance(exercise_routine, str):
+                return (json.dumps({'error': 'Exercise routine must be a string describing your regular physical activities'}), 400, headers)
             
             # Update the exercise routine
-            update_data['exercise_routine'] = processed_exercises
+            update_data['exercise_routine'] = exercise_routine
             update_data['routine_updated_at'] = firestore.SERVER_TIMESTAMP
             update_data['routine_updated_by'] = 'elevenlabs_agent'
         
