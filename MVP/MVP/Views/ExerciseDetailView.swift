@@ -335,6 +335,7 @@ struct VideoPlayerView: View {
     let url: URL
     @State private var isPlaying = false
     @State private var player: AVPlayer?
+    @State private var isLoading = true
     var onError: ((Error) -> Void)?
     
     var body: some View {
@@ -342,9 +343,21 @@ struct VideoPlayerView: View {
             if let player = player {
                 VideoPlayer(player: player)
                     .aspectRatio(contentMode: .fit)
+                    .onDisappear {
+                        player.pause()
+                    }
             }
             
-            if !isPlaying {
+            if isLoading {
+                ProgressView("Loading video...")
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Color.black.opacity(0.5))
+                    .cornerRadius(10)
+            }
+            
+            if !isPlaying && !isLoading {
                 Button(action: {
                     isPlaying = true
                     player?.play()
@@ -359,24 +372,55 @@ struct VideoPlayerView: View {
             setupPlayer()
         }
         .onDisappear {
-            player?.pause()
-            player = nil
+            cleanup()
         }
     }
     
     private func setupPlayer() {
-        let player = AVPlayer(url: url)
-        self.player = player
+        // Create an asset options dictionary for asynchronous loading
+        let assetOptions = [AVURLAssetPreferPreciseDurationAndTimingKey: true]
         
-        // Add error observation
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemFailedToPlayToEndTime,
-            object: player.currentItem,
-            queue: .main
-        ) { _ in
-            if let error = player.currentItem?.error {
-                onError?(error)
+        // Create the asset with options
+        let asset = AVURLAsset(url: url, options: assetOptions)
+        
+        // Load the asset asynchronously
+        Task {
+            do {
+                // Load the duration property asynchronously
+                _ = try await asset.load(.duration)
+                
+                // Create player item and player on the main thread
+                let playerItem = AVPlayerItem(asset: asset)
+                
+                await MainActor.run {
+                    self.player = AVPlayer(playerItem: playerItem)
+                    self.isLoading = false
+                    
+                    // Add error observation
+                    NotificationCenter.default.addObserver(
+                        forName: .AVPlayerItemFailedToPlayToEndTime,
+                        object: playerItem,
+                        queue: .main
+                    ) { notification in
+                        if let error = playerItem.error {
+                            onError?(error)
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    print("❌ Error loading video asset: \(error)")
+                    self.isLoading = false
+                    onError?(error)
+                }
             }
         }
+    }
+    
+    private func cleanup() {
+        player?.pause()
+        player = nil
+        isPlaying = false
+        isLoading = true
     }
 }
