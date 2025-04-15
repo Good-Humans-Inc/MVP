@@ -127,17 +127,22 @@ struct ExerciseDetailView: View {
             if let videoURL = exercise.videoURL {
                 if isVideoLoading {
                     ProgressView("Loading video...")
-                        .frame(height: 240)
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(1, contentMode: .fit)  // Use 1:1 for loading state
+                        .background(Color.black.opacity(0.1))
                 } else if let asset = videoAsset {
                     VideoPlayerView(asset: asset)
-                        .frame(height: 240)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.black.opacity(0.1))
                         .cornerRadius(12)
                         .padding(.horizontal)
                 } else {
                     // Fallback if video loading failed
                     Rectangle()
                         .fill(Color.gray.opacity(0.2))
-                        .frame(height: 240)
+                        .aspectRatio(1, contentMode: .fit)
+                        .frame(maxWidth: .infinity)
                         .overlay(
                             VStack {
                                 Image(systemName: "video.slash")
@@ -151,17 +156,19 @@ struct ExerciseDetailView: View {
                     case .empty:
                         Rectangle()
                             .fill(Color.gray.opacity(0.2))
-                            .aspectRatio(16/9, contentMode: .fit)
+                            .aspectRatio(1, contentMode: .fit)
+                            .frame(maxWidth: .infinity)
                             .overlay(ProgressView())
                     case .success(let image):
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(height: 240)
+                            .frame(maxWidth: .infinity)
                     case .failure(let error):
                         Rectangle()
                             .fill(Color.gray.opacity(0.2))
-                            .aspectRatio(16/9, contentMode: .fit)
+                            .aspectRatio(1, contentMode: .fit)
+                            .frame(maxWidth: .infinity)
                             .overlay(
                                 VStack {
                                     Image(systemName: "photo")
@@ -184,8 +191,8 @@ struct ExerciseDetailView: View {
                 // Fallback if no media is available
                 Rectangle()
                     .fill(Color.gray.opacity(0.2))
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .frame(height: 240)
+                    .aspectRatio(1, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
                     .overlay(
                         Image(systemName: "figure.walk")
                             .font(.system(size: 50))
@@ -374,7 +381,7 @@ struct ExerciseDetailView: View {
     }
 }
 
-// Update VideoPlayerView to accept AVAsset instead of URL
+// Update VideoPlayerView to handle aspect ratio
 struct VideoPlayerView: View {
     let asset: AVAsset
     @State private var isPlaying = false
@@ -382,23 +389,26 @@ struct VideoPlayerView: View {
     var onError: ((Error) -> Void)?
     
     var body: some View {
-        ZStack {
-            if let player = player {
-                VideoPlayer(player: player)
-                    .aspectRatio(contentMode: .fit)
-                    .onDisappear {
-                        player.pause()
+        GeometryReader { geometry in
+            ZStack {
+                if let player = player {
+                    VideoPlayer(player: player)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .onDisappear {
+                            player.pause()
+                        }
+                }
+                
+                if !isPlaying {
+                    Button(action: {
+                        isPlaying = true
+                        player?.play()
+                    }) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 50))
+                            .foregroundColor(.white)
                     }
-            }
-            
-            if !isPlaying {
-                Button(action: {
-                    isPlaying = true
-                    player?.play()
-                }) {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 50))
-                        .foregroundColor(.white)
                 }
             }
         }
