@@ -34,26 +34,26 @@ def schedule_notification(request):
     try:
         # Get request data
         request_json = request.get_json()
-        patient_id = request_json.get('patient_id')
+        user_id = request_json.get('user_id')
         notification_type = request_json.get('notification_type', 'exercise_reminder')
         scheduled_time = request_json.get('scheduled_time')
         exercise_id = request_json.get('exercise_id')
         
-        if not patient_id:
-            return (json.dumps({'error': 'Missing patient_id'}), 400, headers)
+        if not user_id:
+            return (json.dumps({'error': 'Missing user_id'}), 400, headers)
         
-        # Get patient's FCM token
-        patient_ref = db.collection('patients').document(patient_id)
-        patient_doc = patient_ref.get()
+        # Get user's FCM token
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
         
-        if not patient_doc.exists:
-            return (json.dumps({'error': 'Patient not found'}), 404, headers)
+        if not user_doc.exists:
+            return (json.dumps({'error': 'User not found'}), 404, headers)
         
-        patient_data = patient_doc.to_dict()
-        fcm_token = patient_data.get('fcm_token')
+        user_data = user_doc.to_dict()
+        fcm_token = user_data.get('fcm_token')
         
         if not fcm_token:
-            return (json.dumps({'error': 'Patient has no FCM token'}), 400, headers)
+            return (json.dumps({'error': 'User has no FCM token'}), 400, headers)
         
         # Parse scheduled time
         try:
@@ -67,7 +67,7 @@ def schedule_notification(request):
         # Create notification document
         notification_data = {
             'id': notification_id,
-            'patient_id': patient_id,
+            'user_id': user_id,
             'type': notification_type,
             'scheduled_for': scheduled_datetime,
             'status': 'scheduled',
@@ -107,7 +107,7 @@ def schedule_notification(request):
                 ),
                 data={
                     'notification_id': notification_id,
-                    'patient_id': patient_id,
+                    'user_id': user_id,
                     'type': notification_type,
                     'exercise_id': exercise_id or ''
                 },
@@ -167,15 +167,15 @@ def update_fcm_token(request):
     try:
         # Get request data
         request_json = request.get_json()
-        patient_id = request_json.get('patient_id')
+        user_id = request_json.get('user_id')
         fcm_token = request_json.get('fcm_token')
         
-        if not patient_id or not fcm_token:
+        if not user_id or not fcm_token:
             return (json.dumps({'error': 'Missing required parameters'}), 400, headers)
         
-        # Update patient's FCM token
-        patient_ref = db.collection('patients').document(patient_id)
-        patient_ref.update({
+        # Update user's FCM token
+        user_ref = db.collection('users').document(user_id)
+        user_ref.update({
             'fcm_token': fcm_token,
             'last_token_update': firestore.SERVER_TIMESTAMP
         })
@@ -202,24 +202,24 @@ def send_exercise_notification(request):
     try:
         # Get request data
         request_json = request.get_json()
-        patient_id = request_json.get('patient_id')
+        user_id = request_json.get('user_id')
         exercise_id = request_json.get('exercise_id')
         
-        if not patient_id or not exercise_id:
+        if not user_id or not exercise_id:
             return (json.dumps({'error': 'Missing required parameters'}), 400, headers)
         
-        # Get patient's FCM token
-        patient_ref = db.collection('patients').document(patient_id)
-        patient_doc = patient_ref.get()
+        # Get user's FCM token
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
         
-        if not patient_doc.exists:
-            return (json.dumps({'error': 'Patient not found'}), 404, headers)
+        if not user_doc.exists:
+            return (json.dumps({'error': 'User not found'}), 404, headers)
         
-        patient_data = patient_doc.to_dict()
-        fcm_token = patient_data.get('fcm_token')
+        user_data = user_doc.to_dict()
+        fcm_token = user_data.get('fcm_token')
         
         if not fcm_token:
-            return (json.dumps({'error': 'Patient has no FCM token'}), 400, headers)
+            return (json.dumps({'error': 'User has no FCM token'}), 400, headers)
         
         # Get exercise details
         exercise_ref = db.collection('exercises').document(exercise_id)
@@ -245,7 +245,7 @@ def send_exercise_notification(request):
             ),
             data={
                 'notification_id': notification_id,
-                'patient_id': patient_id,
+                'user_id': user_id,
                 'type': 'exercise_reminder',
                 'exercise_id': exercise_id
             },
@@ -273,7 +273,7 @@ def send_exercise_notification(request):
         # Create notification document
         notification_data = {
             'id': notification_id,
-            'patient_id': patient_id,
+            'user_id': user_id,
             'type': 'exercise_reminder',
             'scheduled_for': firestore.SERVER_TIMESTAMP,
             'sent_at': firestore.SERVER_TIMESTAMP,

@@ -91,7 +91,7 @@ class VoiceManager: NSObject, ObservableObject {
     var isBluetoothConnected: Bool = false
     
     // Notification names
-    static let patientIdReceivedNotification = Notification.Name("PatientIDReceived")
+    static let userIdReceivedNotification = Notification.Name("UserIDReceived")
     static let exercisesGeneratedNotification = Notification.Name("ExercisesGenerated")
     static let exerciseCoachReadyNotification = Notification.Name("ExerciseCoachReady")
     
@@ -238,8 +238,8 @@ class VoiceManager: NSObject, ObservableObject {
                     print("Agent ID: \(agentType.agentId)")
                     print("User ID: \(userId)")
                     
-                    dynamicVars["patient_id"] = .string(userId)
-                    print("✅ Added dynamic variables for firstExercise agent: patient_id=\(userId)")
+                    dynamicVars["user_id"] = .string(userId)
+                    print("✅ Added dynamic variables for firstExercise agent: user_id=\(userId)")
                 }
                 
                 let config = ElevenLabsSDK.SessionConfig(
@@ -454,33 +454,33 @@ class VoiceManager: NSObject, ObservableObject {
     
     // Register tools specific to the onboarding agent
     private func registerOnboardingTools(clientTools: inout ElevenLabsSDK.ClientTools) {
-        // Tool to capture patient ID
-        clientTools.register("savePatientData") { [weak self] parameters in
+        // Tool to capture user ID
+        clientTools.register("saveUserData") { [weak self] parameters in
             guard let self = self else { return "Manager not available" }
             
-            print("🔵 savePatientData tool called with parameters: \(parameters)")
+            print("🔵 saveUserData tool called with parameters: \(parameters)")
             
-            // Extract patient ID from parameters
-            guard let patientId = parameters["patient_id"] as? String else {
-                print("❌ No patient_id parameter found")
+            // Extract user ID from parameters
+            guard let userId = parameters["user_id"] as? String else {
+                print("❌ No user_id parameter found")
                 throw ElevenLabsSDK.ClientToolError.invalidParameters
             }
             
-            // Save patient ID to UserDefaults
-            UserDefaults.standard.set(patientId, forKey: "userId")
+            // Save user ID to UserDefaults
+            UserDefaults.standard.set(userId, forKey: "userId")
             
             // Update published property on main thread
             DispatchQueue.main.async {
                 // Post notification for other parts of the app
                 NotificationCenter.default.post(
-                    name: VoiceManager.patientIdReceivedNotification,
+                    name: VoiceManager.userIdReceivedNotification,
                     object: nil,
-                    userInfo: ["patient_id": patientId]
+                    userInfo: ["user_id": userId]
                 )
             }
             
-            print("✅ Saved patient ID: \(patientId)")
-            return "Patient data saved successfully with ID: \(patientId)"
+            print("✅ Saved user ID: \(userId)")
+            return "User data saved successfully with ID: \(userId)"
         }
         
         // Debug tool to log any message
@@ -503,23 +503,23 @@ class VoiceManager: NSObject, ObservableObject {
             for (key, value) in parameters {
                 print("📝 Key: \(key), Value: \(value)")
                 
-                // Special handling for patient_id
-                if key == "patient_id", let patientId = value as? String {
-                    UserDefaults.standard.set(patientId, forKey: "userId")
+                // Special handling for user_id
+                if key == "user_id", let userId = value as? String {
+                    UserDefaults.standard.set(userId, forKey: "userId")
                     
                     DispatchQueue.main.async {
                         // Post notification
                         NotificationCenter.default.post(
-                            name: VoiceManager.patientIdReceivedNotification,
+                            name: VoiceManager.userIdReceivedNotification,
                             object: nil,
-                            userInfo: ["patient_id": patientId]
+                            userInfo: ["user_id": userId]
                         )
                         
-                        // Generate exercises with the patient ID
-                        self.generateExercises(patientId: patientId)
+                        // Generate exercises with the user ID
+                        self.generateExercises(userId: userId)
                     }
                     
-                    print("✅ Saved patient ID: \(patientId)")
+                    print("✅ Saved user ID: \(userId)")
                 }
                 
                 // Save other data to UserDefaults
@@ -531,7 +531,7 @@ class VoiceManager: NSObject, ObservableObject {
             return "JSON data processed successfully"
         }
         
-        print("⭐️ Registered onboarding client tools: savePatientData, logMessage, saveJsonData")
+        print("⭐️ Registered onboarding client tools: saveUserData, logMessage, saveJsonData")
     }
     
     // Register tools specific to the first exercise agent
@@ -647,8 +647,8 @@ class VoiceManager: NSObject, ObservableObject {
         print("⭐️ Registered exercise client tools: logExerciseProgress, provideExerciseFeedback, logMessage")
     }
     
-    // Generate exercises for the patient
-    func generateExercises(patientId: String) {
+    // Generate exercises for the user
+    func generateExercises(userId: String) {
         // Call the cloud function
         guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/generate_exercise") else {
             print("❌ Invalid generate exercises URL")
@@ -661,7 +661,7 @@ class VoiceManager: NSObject, ObservableObject {
         
         // Create request body
         let requestBody: [String: Any] = [
-            "patient_id": patientId,
+            "user_id": userId,
             "llm_provider": "openai"  // Can also use Claude
         ]
         
@@ -708,7 +708,7 @@ class VoiceManager: NSObject, ObservableObject {
                     
                     // Store exercises in UserDefaults
                     if let exercisesData = try? JSONSerialization.data(withJSONObject: exercisesArray) {
-                        UserDefaults.standard.set(exercisesData, forKey: "PatientExercises")
+                        UserDefaults.standard.set(exercisesData, forKey: "UserExercises")
                         
                         DispatchQueue.main.async {
                             // Post notification that exercises are ready
@@ -750,24 +750,24 @@ class VoiceManager: NSObject, ObservableObject {
                         
                         print("📊 Extracted JSON: \(json)")
                         
-                        // Check for patient_id
-                        if let patientId = json["patient_id"] as? String {
-                            print("✅ Found patient ID in JSON: \(patientId)")
-                            UserDefaults.standard.set(patientId, forKey: "userId")
+                        // Check for user_id
+                        if let userId = json["user_id"] as? String {
+                            print("✅ Found user ID in JSON: \(userId)")
+                            UserDefaults.standard.set(userId, forKey: "userId")
                             
                             DispatchQueue.main.async {
                                 // Post notification
                                 NotificationCenter.default.post(
-                                    name: VoiceManager.patientIdReceivedNotification,
+                                    name: VoiceManager.userIdReceivedNotification,
                                     object: nil,
-                                    userInfo: ["patient_id": patientId]
+                                    userInfo: ["user_id": userId]
                                 )
                                 
                                 // Set onboarding as completed
                                 self.hasCompletedOnboarding = true
                                 
                                 // Automatically generate exercises
-                                self.generateExercises(patientId: patientId)
+                                self.generateExercises(userId: userId)
                             }
                         }
                     }
@@ -776,31 +776,31 @@ class VoiceManager: NSObject, ObservableObject {
                 }
             }
             
-            // Alternative: Look for patient_id specifically with regex
-            if message.contains("patient_id") {
-                let pattern = "\"patient_id\"\\s*:\\s*\"([^\"]+)\""
+            // Alternative: Look for user_id specifically with regex
+            if message.contains("user_id") {
+                let pattern = "\"user_id\"\\s*:\\s*\"([^\"]+)\""
                 if let regex = try? NSRegularExpression(pattern: pattern),
                    let match = regex.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)) {
                     
                     let idRange = Range(match.range(at: 1), in: message)!
-                    let patientId = String(message[idRange])
+                    let userId = String(message[idRange])
                     
-                    print("✅ Found patient ID using regex: \(patientId)")
-                    UserDefaults.standard.set(patientId, forKey: "userId")
+                    print("✅ Found user ID using regex: \(userId)")
+                    UserDefaults.standard.set(userId, forKey: "userId")
                     
                     DispatchQueue.main.async {
                         // Post notification
                         NotificationCenter.default.post(
-                            name: VoiceManager.patientIdReceivedNotification,
+                            name: VoiceManager.userIdReceivedNotification,
                             object: nil,
-                            userInfo: ["patient_id": patientId]
+                            userInfo: ["user_id": userId]
                         )
                         
                         // Set onboarding as completed
                         self.hasCompletedOnboarding = true
                         
                         // Automatically generate exercises
-                        self.generateExercises(patientId: patientId)
+                        self.generateExercises(userId: userId)
                     }
                 }
             }
@@ -995,7 +995,7 @@ class VoiceManager: NSObject, ObservableObject {
             
             // Remove stored user data
             UserDefaults.standard.removeObject(forKey: "userId")
-            UserDefaults.standard.removeObject(forKey: "PatientExercises")
+            UserDefaults.standard.removeObject(forKey: "UserExercises")
         }
     }
     
@@ -1061,11 +1061,11 @@ class VoiceManager: NSObject, ObservableObject {
         
         // Generate report using conversation history if we have exercise ID
         if let exerciseId = self.currentExerciseId,
-           let patientId = UserDefaults.standard.string(forKey: "userId") {
+           let userId = UserDefaults.standard.string(forKey: "userId") {
             
             // Call the server API to generate report in the background
             generatePTReport(
-                patientId: patientId,
+                userId: userId,
                 exerciseId: exerciseId,
                 conversationHistory: conversationMessages
             ) { _ in
@@ -1087,7 +1087,7 @@ class VoiceManager: NSObject, ObservableObject {
     }
     
     // Helper method to generate PT report without blocking UI
-    private func generatePTReport(patientId: String, exerciseId: String,
+    private func generatePTReport(userId: String, exerciseId: String,
                                  conversationHistory: [[String: Any]],
                                  completion: @escaping (Result<[String: Any], Error>) -> Void) {
         
@@ -1104,7 +1104,7 @@ class VoiceManager: NSObject, ObservableObject {
         
         // Create request body
         let requestBody: [String: Any] = [
-            "patient_id": patientId,
+            "user_id": userId,
             "exercise_id": exerciseId,
             "conversation_history": conversationHistory
         ]

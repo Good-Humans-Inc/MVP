@@ -33,17 +33,17 @@ def update_information(request):
     try:
         # Get request data
         request_json = request.get_json()
-        patient_id = request_json.get('patient_id')
+        user_id = request_json.get('user_id')
         
-        if not patient_id:
-            return (json.dumps({'error': 'Missing patient_id'}), 400, headers)
+        if not user_id:
+            return (json.dumps({'error': 'Missing user_id'}), 400, headers)
         
-        # Check if patient exists
-        patient_ref = db.collection('patients').document(patient_id)
-        patient_doc = patient_ref.get()
+        # Check if user exists
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
         
-        if not patient_doc.exists:
-            return (json.dumps({'error': 'Patient not found'}), 404, headers)
+        if not user_doc.exists:
+            return (json.dumps({'error': 'User not found'}), 404, headers)
         
         # Get update data
         notification_time = request_json.get('notification_time')
@@ -93,14 +93,14 @@ def update_information(request):
         if not update_data:
             return (json.dumps({'error': 'No update data provided'}), 400, headers)
         
-        # Update patient document
-        patient_ref.update(update_data)
+        # Update user document
+        user_ref.update(update_data)
         
         # Create an activity log entry
         activity_id = str(uuid.uuid4())
         activity_data = {
             'id': activity_id,
-            'patient_id': patient_id,
+            'user_id': user_id,
             'type': 'profile_update',
             'updated_fields': list(update_data.keys()),
             'updated_at': firestore.SERVER_TIMESTAMP,
@@ -111,9 +111,9 @@ def update_information(request):
         
         # If notification time was updated, schedule a notification
         if 'notification_preferences' in update_data:
-            # Get patient's FCM token
-            patient_data = patient_doc.to_dict()
-            fcm_token = patient_data.get('fcm_token')
+            # Get user's FCM token
+            user_data = user_doc.to_dict()
+            fcm_token = user_data.get('fcm_token')
             
             if fcm_token:
                 # Create a scheduled time for tomorrow at the specified hour and minute
@@ -146,7 +146,7 @@ def update_information(request):
                     
                     # Create notification request
                     notification_request = MockRequest({
-                        'patient_id': patient_id,
+                        'user_id': user_id,
                         'notification_type': 'exercise_reminder',
                         'scheduled_time': scheduled_time_str
                     })
@@ -158,12 +158,12 @@ def update_information(request):
         
         return (json.dumps({
             'status': 'success',
-            'message': 'Patient information updated successfully',
+            'message': 'User information updated successfully',
             'updated_fields': list(update_data.keys())
         }), 200, headers)
             
     except Exception as e:
-        print(f"Error updating patient information: {str(e)}")
+        print(f"Error updating user information: {str(e)}")
         return (json.dumps({'error': str(e)}), 500, headers)
 
 # Helper function to serialize Firestore data for JSON

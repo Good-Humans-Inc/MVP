@@ -148,14 +148,14 @@ struct OnboardingView: View {
     // MARK: - Helper Methods
     
     private func setupNotificationObservers() {
-        // Listen for when patient ID is received
+        // Listen for when user ID is received
         NotificationCenter.default.addObserver(
-            forName: VoiceManager.patientIdReceivedNotification,
+            forName: VoiceManager.userIdReceivedNotification,
             object: nil,
             queue: .main
         ) { notification in
-            if let patientId = notification.userInfo?["patient_id"] as? String {
-                self.appState.updateUserId(patientId)
+            if let userId = notification.userInfo?["user_id"] as? String {
+                self.appState.updateUserId(userId)
                 animationState = .thinking
                 addMessage(text: "Thanks for sharing that information. I'm generating personalized exercises for you now...", isUser: false)
             }
@@ -172,7 +172,7 @@ struct OnboardingView: View {
     }
     
     private func removeNotificationObservers() {
-        NotificationCenter.default.removeObserver(self, name: VoiceManager.patientIdReceivedNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: VoiceManager.userIdReceivedNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: VoiceManager.exercisesGeneratedNotification, object: nil)
     }
     

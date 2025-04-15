@@ -130,11 +130,11 @@ RSI_EXERCISES = [
 @functions_framework.http
 def generate_exercise(request):
     """
-    Cloud Function to generate a single recommended exercise for a patient.
+    Cloud Function to generate a single recommended exercise for a user.
     
     Request format:
     {
-        "patient_id": "uuid-of-patient",
+        "user_id": "uuid-of-user",
         "llm_provider": "claude" or "openai"  (optional, defaults to openai)
     }
     """
@@ -153,13 +153,13 @@ def generate_exercise(request):
     try:
         request_json = request.get_json(silent=True)
         
-        if not request_json or 'patient_id' not in request_json:
-            return (json.dumps({'error': 'Invalid request - missing patient_id'}, cls=DateTimeEncoder), 400, headers)
+        if not request_json or 'user_id' not in request_json:
+            return (json.dumps({'error': 'Invalid request - missing user_id'}, cls=DateTimeEncoder), 400, headers)
         
-        patient_id = request_json['patient_id']
+        user_id = request_json['user_id']
         llm_provider = request_json.get('llm_provider', 'openai')  # Default to OpenAI
         
-        logger.info(f"Processing request for patient_id: {patient_id}, llm_provider: {llm_provider}")
+        logger.info(f"Processing request for user_id: {user_id}, llm_provider: {llm_provider}")
         
         # Get API keys
         if llm_provider == 'claude':
@@ -167,22 +167,22 @@ def generate_exercise(request):
         else:
             api_key = access_secret_version("openai-api-key")
         
-        # Get patient data
-        patient_data = get_patient_data(patient_id)
-        if not patient_data:
-            logger.warning(f"Patient not found: {patient_id}")
-            return (json.dumps({'error': 'Patient not found'}, cls=DateTimeEncoder), 404, headers)
+        # Get user data
+        user_data = get_user_data(user_id)
+        if not user_data:
+            logger.warning(f"User not found: {user_id}")
+            return (json.dumps({'error': 'User not found'}, cls=DateTimeEncoder), 404, headers)
         
         # Use LLM to select the most appropriate exercise and generate detailed instructions
         if llm_provider == 'claude':
-            exercise = select_exercise_with_claude(patient_data, api_key)
+            exercise = select_exercise_with_claude(user_data, api_key)
         else:
-            exercise = select_exercise_with_openai(patient_data, api_key)
+            exercise = select_exercise_with_openai(user_data, api_key)
         
         logger.info(f"Selected exercise: {exercise['name']}")
         
         # Save the exercise to Firestore
-        saved_exercise = save_exercise(exercise, patient_id)
+        saved_exercise = save_exercise(exercise, user_id)
         
         # Return success
         return (json.dumps({
@@ -195,48 +195,48 @@ def generate_exercise(request):
         logger.error(f"Error generating exercise: {str(e)}", exc_info=True)
         return (json.dumps({'error': f'Error generating exercise: {str(e)}'}, cls=DateTimeEncoder), 500, headers)
 
-def get_patient_data(patient_id):
+def get_user_data(user_id):
     """
-    Retrieve patient data from Firestore
+    Retrieve user data from Firestore
     """
-    patient_doc = db.collection('patients').document(patient_id).get()
+    user_doc = db.collection('users').document(user_id).get()
     
-    if not patient_doc.exists:
+    if not user_doc.exists:
         return None
     
-    return patient_doc.to_dict()
+    return user_doc.to_dict()
 
-def select_exercise_with_claude(patient_data, api_key):
+def select_exercise_with_claude(user_data, api_key):
     """
     Use Claude to select the most appropriate exercise from the predefined list
-    and generate detailed instructions based on the patient's pain description
+    and generate detailed instructions based on the user's pain description
     """
     try:
-        # Extract patient info
-        name = patient_data.get('name', 'the patient')
-        pain_description = patient_data.get('pain_description', '')
+        # Extract user info
+        name = user_data.get('name', 'the user')
+        pain_description = user_data.get('pain_description', '')
         
         # Create a JSON string of all available exercises
         exercises_json = json.dumps(RSI_EXERCISES)
         
         # Construct prompt for Claude
         prompt = f"""
-        I need you to select the most appropriate RSI (Repetitive Strain Injury) exercise for a patient with the following profile:
+        I need you to select the most appropriate RSI (Repetitive Strain Injury) exercise for a user with the following profile:
         
         Name: {name}
         Pain description: {pain_description}
         
-        Below is a list of predefined exercises for finger and wrist RSI. Please select the ONE most appropriate exercise based on the patient's pain description:
+        Below is a list of predefined exercises for finger and wrist RSI. Please select the ONE most appropriate exercise based on the user's pain description:
         
         {exercises_json}
         
-        After selecting the most appropriate exercise, please provide detailed instructions for that specific exercise. The instructions should be clear, step-by-step, and tailored to the patient's condition.
+        After selecting the most appropriate exercise, please provide detailed instructions for that specific exercise. The instructions should be clear, step-by-step, and tailored to the user's condition.
         
         Format your response as JSON:
         {{
           "selected_exercise": {{
             "name": "Exercise Name",
-            "description": "Detailed description of the exercise and its benefits for this specific patient",
+            "description": "Detailed description of the exercise and its benefits for this specific user",
             "target_joints": ["finger", "wrist"],
             "instructions": [
               "Step 1: Detailed instruction",
@@ -305,37 +305,37 @@ def select_exercise_with_claude(patient_data, api_key):
         # Provide a fallback exercise in case of failure
         return get_fallback_exercise()
 
-def select_exercise_with_openai(patient_data, api_key):
+def select_exercise_with_openai(user_data, api_key):
     """
     Use OpenAI to select the most appropriate exercise from the predefined list
-    and generate detailed instructions based on the patient's pain description
+    and generate detailed instructions based on the user's pain description
     """
     try:
-        # Extract patient info
-        name = patient_data.get('name', 'the patient')
-        pain_description = patient_data.get('pain_description', '')
+        # Extract user info
+        name = user_data.get('name', 'the user')
+        pain_description = user_data.get('pain_description', '')
         
         # Create a JSON string of all available exercises
         exercises_json = json.dumps(RSI_EXERCISES)
         
         # Construct prompt for OpenAI
         prompt = f"""
-        I need you to select the most appropriate RSI (Repetitive Strain Injury) exercise for a patient with the following profile:
+        I need you to select the most appropriate RSI (Repetitive Strain Injury) exercise for a user with the following profile:
         
         Name: {name}
         Pain description: {pain_description}
         
-        Below is a list of predefined exercises for finger and wrist RSI. Please select the ONE most appropriate exercise based on the patient's pain description:
+        Below is a list of predefined exercises for finger and wrist RSI. Please select the ONE most appropriate exercise based on the user's pain description:
         
         {exercises_json}
         
-        After selecting the most appropriate exercise, please provide detailed instructions for that specific exercise. The instructions should be clear, step-by-step, and tailored to the patient's condition.
+        After selecting the most appropriate exercise, please provide detailed instructions for that specific exercise. The instructions should be clear, step-by-step, and tailored to the user's condition.
         
         Format your response as JSON:
         {{
           "selected_exercise": {{
             "name": "Exercise Name",
-            "description": "Detailed description of the exercise and its benefits for this specific patient",
+            "description": "Detailed description of the exercise and its benefits for this specific user",
             "target_joints": ["finger", "wrist"],
             "instructions": [
               "Step 1: Detailed instruction",
@@ -395,7 +395,7 @@ def select_exercise_with_openai(patient_data, api_key):
         # Provide a fallback exercise in case of failure
         return get_fallback_exercise()
 
-def save_exercise(exercise, patient_id):
+def save_exercise(exercise, user_id):
     """
     Save the exercise to Firestore
     """
@@ -404,7 +404,7 @@ def save_exercise(exercise, patient_id):
     
     exercise_doc = {
         'id': exercise_id,
-        'patient_id': patient_id,
+        'user_id': user_id,
         'name': exercise['name'],
         'description': exercise['description'],
         'target_joints': exercise['target_joints'],

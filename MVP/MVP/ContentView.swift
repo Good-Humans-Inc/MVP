@@ -75,7 +75,7 @@ struct ContentView: View {
         }
         .onAppear {
             // Check for existing user on appear
-            if let userId = UserDefaults.standard.string(forKey: "PatientID") {
+            if let userId = UserDefaults.standard.string(forKey: "UserID") {
                 appState.userId = userId
                 appState.hasUserId = true
                 
@@ -118,7 +118,7 @@ class APIService {
         print("🎯 DEBUG: APIService - Attempting to load exercises from UserDefaults for user: \(userId)")
         
         // Try to load exercises from UserDefaults first
-        if let exercisesData = UserDefaults.standard.data(forKey: "PatientExercises") {
+        if let exercisesData = UserDefaults.standard.data(forKey: "UserExercises") {
             print("📱 DEBUG: APIService - Found exercises data in UserDefaults, size: \(exercisesData.count) bytes")
             
             do {

@@ -20,7 +20,7 @@ POST /update_information
 
 ```json
 {
-  "patient_id": "user123",
+  "user_id": "user123",
   "notification_time": "09:00",  // Optional, format: "HH:MM"
   "ultimate_goal": "Improve knee mobility and reduce pain",  // Optional
   "exercise_routine": [  // Optional
@@ -48,7 +48,7 @@ POST /update_information
 ```json
 {
   "status": "success",
-  "message": "Patient information updated successfully",
+  "message": "User information updated successfully",
   "updated_fields": ["notification_preferences", "ultimate_goal", "exercise_routine"]
 }
 ```
@@ -73,7 +73,7 @@ When notification preferences are updated, this function automatically:
 
 This function interacts with the following Firestore collections:
 
-- `patients`: Contains patient information including notification preferences and exercise routines
+- `users`: Contains user information including notification preferences and exercise routines
 - `activities`: Logs all profile updates and changes
 
 ## Usage by ElevenLabs Agent

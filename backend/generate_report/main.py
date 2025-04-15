@@ -38,18 +38,18 @@ def generate_report(request):
         
         # Get request data
         request_json = request.get_json()
-        patient_id = request_json.get('patient_id')
+        user_id = request_json.get('user_id')
         exercise_id = request_json.get('exercise_id')
         conversation_history = request_json.get('conversation_history', [])
         
         # Debug logging
         print("Received request data:")
-        print(f"Patient ID: {patient_id}")
+        print(f"User ID: {user_id}")
         print(f"Exercise ID: {exercise_id}")
         print("Conversation History:")
         print(json.dumps(conversation_history, indent=2))
         
-        if not patient_id or not exercise_id:
+        if not user_id or not exercise_id:
             return (json.dumps({'error': 'Missing required parameters'}), 400, headers)
         
         # Convert exercise_id to uppercase for consistency
@@ -83,7 +83,7 @@ def generate_report(request):
         print(f"Found exercise data: {json.dumps(serialized_exercise_data, indent=2)}")
             
         # Calculate streak information
-        streak_info = calculate_streak(patient_id)
+        streak_info = calculate_streak(user_id)
         
         # Extract exercise metrics from conversation
         metrics = extract_exercise_metrics(conversation_history)
@@ -112,7 +112,7 @@ Conversation History:
 
 Please analyze the conversation and provide a detailed report including:
 
-1. General Feeling: Patient's overall experience and engagement during the session
+1. General Feeling: User's overall experience and engagement during the session
 2. Performance Quality: Assessment of exercise execution and technique
 3. Pain Report: Any pain or discomfort mentioned
 4. Completion Status: Whether the exercise was completed as prescribed
@@ -166,7 +166,7 @@ Format the response as JSON with these exact keys:
         # Create a copy of report_data for Firestore
         firestore_data = report_data.copy()
         firestore_data.update({
-            'patient_id': patient_id,
+            'user_id': user_id,
             'exercise_id': exercise_id,
             'timestamp': firestore.SERVER_TIMESTAMP,
             'exercise_name': exercise_data.get('name', 'Unknown'),
@@ -181,8 +181,8 @@ Format the response as JSON with these exact keys:
         report_ref = db.collection('exercise_reports').document()
         report_ref.set(firestore_data)
         
-        # Update patient's streak information
-        update_patient_streak(patient_id, streak_info)
+        # Update user's streak information
+        update_user_streak(user_id, streak_info)
         
         # Add timestamp to the response data (use ISO format string directly)
         report_data['timestamp'] = datetime.now().isoformat()
@@ -218,13 +218,13 @@ Format the response as JSON with these exact keys:
         print(f"Error generating report: {str(e)}")
         return (json.dumps({'error': str(e)}), 500, headers)
 
-def calculate_streak(patient_id):
-    """Calculate patient's exercise streak."""
+def calculate_streak(user_id):
+    """Calculate user's exercise streak."""
     today = datetime.now().date()
     
-    # Get patient's exercise reports ordered by date
+    # Get user's exercise reports ordered by date
     reports = db.collection('exercise_reports') \
-        .where('patient_id', '==', patient_id) \
+        .where('user_id', '==', user_id) \
         .order_by('timestamp', direction=firestore.Query.DESCENDING) \
         .get()
     
@@ -235,14 +235,14 @@ def calculate_streak(patient_id):
             'last_exercise_date': today.strftime('%Y-%m-%d')
         }
     
-    # Get patient's streak info
-    patient_ref = db.collection('patients').document(patient_id)
-    patient_doc = patient_ref.get()
+    # Get user's streak info
+    user_ref = db.collection('users').document(user_id)
+    user_doc = user_ref.get()
     best_streak = 1
     
-    if patient_doc.exists:
-        patient_data = patient_doc.to_dict()
-        best_streak = patient_data.get('best_streak', 1)
+    if user_doc.exists:
+        user_data = user_doc.to_dict()
+        best_streak = user_data.get('best_streak', 1)
     
     # Calculate current streak
     current_streak = 1  # Start with today
@@ -277,9 +277,9 @@ def calculate_streak(patient_id):
         'last_exercise_date': last_date.strftime('%Y-%m-%d')
     }
 
-def update_patient_streak(patient_id, streak_info):
-    """Update patient's streak information in Firestore."""
-    patient_ref = db.collection('patients').document(patient_id)
+def update_user_streak(user_id, streak_info):
+    """Update user's streak information in Firestore."""
+    user_ref = db.collection('users').document(user_id)
     
     # Create a copy of streak_info for Firestore
     firestore_data = {
@@ -289,7 +289,7 @@ def update_patient_streak(patient_id, streak_info):
         'last_updated': firestore.SERVER_TIMESTAMP
     }
     
-    patient_ref.set(firestore_data, merge=True)
+    user_ref.set(firestore_data, merge=True)
 
 def extract_exercise_metrics(conversation_history):
     """Extract exercise metrics from conversation history."""
@@ -353,20 +353,20 @@ def serialize_firestore_data(data):
     else:
         return data
 
-def generate_notification_content(patient_name, exercise_names, patient_data):
+def generate_notification_content(user_name, exercise_names, user_data):
     """Generate personalized notification content using OpenAI."""
     try:
         client = OpenAI(api_key=get_secret('openai-api-key'))
         
-        # Get patient's preferences and history
-        preferred_tone = patient_data.get('notification_preferences', {}).get('tone', 'friendly')
-        exercise_history = patient_data.get('exercise_history', [])
+        # Get user's preferences and history
+        preferred_tone = user_data.get('notification_preferences', {}).get('tone', 'friendly')
+        exercise_history = user_data.get('exercise_history', [])
         streak = len(exercise_history)
         
         # Create prompt for OpenAI
-        prompt = f"""Generate a motivational exercise reminder notification for a physical therapy patient with the following details:
+        prompt = f"""Generate a motivational exercise reminder notification for a physical therapy user with the following details:
 
-Patient Name: {patient_name}
+User Name: {user_name}
 Exercises: {', '.join(exercise_names)}
 Current Streak: {streak} days
 Preferred Tone: {preferred_tone}
@@ -403,20 +403,20 @@ Format the response as JSON:
         # Return default content if OpenAI generation fails
         return {
             "title": "Time for your PT exercises!",
-            "body": f"Hi {patient_name}! Ready to continue your progress? Let's work on your exercises today!"
+            "body": f"Hi {user_name}! Ready to continue your progress? Let's work on your exercises today!"
         }
 
 # Update the send_exercise_notification function to use OpenAI-generated content
-def send_exercise_notification(patient_id, fcm_token):
-    """Send an exercise reminder notification to a patient's device via FCM"""
-    # Get patient details
-    patient_doc = db.collection('patients').document(patient_id).get()
-    patient_data = patient_doc.to_dict()
-    patient_name = patient_data.get('name', 'Patient')
+def send_exercise_notification(user_id, fcm_token):
+    """Send an exercise reminder notification to a user's device via FCM"""
+    # Get user details
+    user_doc = db.collection('users').document(user_id).get()
+    user_data = user_doc.to_dict()
+    user_name = user_data.get('name', 'User')
     
-    # Get patient exercises
-    patient_exercises = db.collection('patient_exercises').where('patient_id', '==', patient_id).get()
-    exercise_ids = [doc.to_dict().get('exercise_id') for doc in patient_exercises]
+    # Get user exercises
+    user_exercises = db.collection('user_exercises').where('user_id', '==', user_id).get()
+    exercise_ids = [doc.to_dict().get('exercise_id') for doc in user_exercises]
     
     # Get exercise details
     exercise_names = []
@@ -427,7 +427,7 @@ def send_exercise_notification(patient_id, fcm_token):
             exercise_names.append(ex_data.get('name'))
     
     # Generate notification content using OpenAI
-    notification_content = generate_notification_content(patient_name, exercise_names, patient_data)
+    notification_content = generate_notification_content(user_name, exercise_names, user_data)
     
     # Create notification content
     title = notification_content['title']
@@ -437,7 +437,7 @@ def send_exercise_notification(patient_id, fcm_token):
     notification_id = str(uuid.uuid4())
     notification = {
         'id': notification_id,
-        'patient_id': patient_id,
+        'user_id': user_id,
         'title': title,
         'body': body,
         'scheduled_for': datetime.now(),

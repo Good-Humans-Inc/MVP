@@ -226,7 +226,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             defaults.set(token, forKey: "fcmToken")
             
             // If we have a user ID, update the token on the server
-            if let userId = defaults.string(forKey: "PatientID") {
+            if let userId = defaults.string(forKey: "UserID") {
                 updateFCMTokenOnServer(userId: userId, token: token)
             }
         }
@@ -247,7 +247,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         // Create request body
         let requestBody: [String: Any] = [
-            "patient_id": userId,
+            "user_id": userId,
             "fcm_token": token
         ]
         

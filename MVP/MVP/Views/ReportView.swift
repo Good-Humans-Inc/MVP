@@ -127,7 +127,7 @@ struct ReportView: View {
         
         // Debug print the request data
         print("Sending request to generate report:")
-        print("Patient ID: \(userId)")
+        print("User ID: \(userId)")
         print("Exercise ID: \(exerciseId)")
         print("Conversation History:")
         if let jsonData = try? JSONSerialization.data(withJSONObject: conversationHistory, options: .prettyPrinted),
@@ -136,7 +136,7 @@ struct ReportView: View {
         }
         
         // Call the cloud function
-        generatePTReport(patientId: userId, exerciseId: exerciseId, conversationHistory: conversationHistory) { result in
+        generatePTReport(userId: userId, exerciseId: exerciseId, conversationHistory: conversationHistory) { result in
             DispatchQueue.main.async {
                 self.isLoading = false
                 
@@ -159,7 +159,7 @@ struct ReportView: View {
         }
     }
     
-    private func generatePTReport(patientId: String, exerciseId: String,
+    private func generatePTReport(userId: String, exerciseId: String,
                                 conversationHistory: [[String: Any]],
                                 completion: @escaping (Result<ExerciseReport, Error>) -> Void) {
         // Create URL for API call
@@ -175,7 +175,7 @@ struct ReportView: View {
         
         // Create request body
         let requestBody: [String: Any] = [
-            "patient_id": patientId,
+            "user_id": userId,
             "exercise_id": exerciseId,
             "conversation_history": conversationHistory
         ]

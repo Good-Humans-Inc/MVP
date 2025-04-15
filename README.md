@@ -32,7 +32,7 @@ This document outlines the notification system implementation for the Physical T
 
 2. **Firestore Collections**
    - `notifications`: Stores notification metadata and status
-   - `patients`: Contains patient information including FCM tokens
+   - `users`: Contains user information including FCM tokens
    - `exercises`: Stores exercise details for personalized notifications
 
 ## Features
@@ -132,7 +132,7 @@ This document outlines the notification system implementation for the Physical T
    # Schedule a notification
    POST /schedule_notification
    {
-       "patient_id": "user123",
+       "user_id": "user123",
        "notification_type": "exercise_reminder",
        "scheduled_time": "2024-03-20T10:00:00Z",
        "exercise_id": "exercise123"
@@ -141,7 +141,7 @@ This document outlines the notification system implementation for the Physical T
    # Update FCM token
    POST /update_fcm_token
    {
-       "patient_id": "user123",
+       "user_id": "user123",
        "fcm_token": "fcm_token_here"
    }
    ```

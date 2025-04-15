@@ -76,7 +76,7 @@ class AppState: ObservableObject {
     private func loadPersistedState() {
         print("🔄 DEBUG: AppState - Loading persisted state")
         // Load from UserDefaults
-        if let storedId = UserDefaults.standard.string(forKey: "PatientID") {
+        if let storedId = UserDefaults.standard.string(forKey: "UserID") {
             userId = storedId
             hasUserId = true
             print("📱 DEBUG: AppState - Loaded stored user ID: \(storedId)")
@@ -88,7 +88,7 @@ class AppState: ObservableObject {
         print("🔄 DEBUG: AppState - Updating user ID to: \(id)")
         userId = id
         hasUserId = true
-        UserDefaults.standard.set(id, forKey: "PatientID")
+        UserDefaults.standard.set(id, forKey: "UserID")
     }
     
     func setCurrentExercise(_ exercise: Exercise) {

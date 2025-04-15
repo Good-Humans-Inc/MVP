@@ -17,10 +17,10 @@ db = db = firestore.Client(project='pepmvp', database='pep-mvp')
 @functions_framework.http
 def onboard_user(request):
     """
-    Cloud Function to handle patient onboarding with minimal data.
+    Cloud Function to handle user onboarding with minimal data.
     
     Required fields:
-    - name (str): Patient's name
+    - name (str): User's name
     - injury (str): Description of the injury or pain
     - pain_level (int): Pain level on a scale of 1-10
     """
@@ -57,13 +57,13 @@ def onboard_user(request):
             logger.error(error_msg)
             return (json.dumps({'error': error_msg}), 400, headers)
         
-        # Create patient ID
-        patient_id = str(uuid.uuid4())
+        # Create user ID
+        user_id = str(uuid.uuid4())
         created_at = datetime.now()
 
-        # Create and store patient document with minimal data
-        patient_doc = {
-            'id': patient_id,
+        # Create and store user document with minimal data
+        user_doc = {
+            'id': user_id,
             'name': name,
             'injury': injury,
             'pain_level': pain_level,
@@ -72,14 +72,14 @@ def onboard_user(request):
         }
 
         # Save to Firestore
-        db.collection('patients').document(patient_id).set(patient_doc)
-        logger.info(f"Created patient with ID: {patient_id}")
+        db.collection('users').document(user_id).set(user_doc)
+        logger.info(f"Created user with ID: {user_id}")
 
         # Return success response
         return (json.dumps({
             'status': 'success',
-            'message': 'Patient onboarded successfully',
-            'patient_id': patient_id
+            'message': 'User onboarded successfully',
+            'user_id': user_id
         }), 200, headers)
         
     except Exception as e:
