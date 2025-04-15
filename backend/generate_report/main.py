@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from google.cloud import secretmanager
 from google.cloud.firestore_v1._helpers import DatetimeWithNanoseconds
 import uuid
+import re
 
 # Initialize Firebase Admin with default credentials
 firebase_admin.initialize_app()
@@ -304,7 +305,6 @@ def extract_exercise_metrics(conversation_history):
         
         # Look for sets completed
         if 'set' in content or 'sets' in content:
-            import re
             set_matches = re.findall(r'(\d+)\s*sets?', content)
             if set_matches:
                 metrics['sets_completed'] = max(metrics['sets_completed'], int(set_matches[-1]))

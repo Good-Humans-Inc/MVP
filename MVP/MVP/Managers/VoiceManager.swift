@@ -17,7 +17,7 @@ enum AgentType {
         case .firstExercise:
             return "naMobWlIcnYO3az032lj"   // First exercise agent ID
         case .exercise:
-            return "naMobWlIcnYO3az032lj"   // Exercise coach agent ID
+            return "GEXRBIHrq3oa2fB0TO1v"   // Exercise coach agent ID
         }
     }
     
