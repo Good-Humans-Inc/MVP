@@ -24,6 +24,14 @@ struct ExerciseView: View {
     @EnvironmentObject private var voiceManager: VoiceManager
     @EnvironmentObject private var resourceCoordinator: ResourceCoordinator
     
+    // Add PoseAnalysisManager
+    @StateObject private var poseAnalysisManager: PoseAnalysisManager
+    
+    init(exercise: Exercise, cameraManager: CameraManager) {
+        self.exercise = exercise
+        _poseAnalysisManager = StateObject(wrappedValue: PoseAnalysisManager(cameraManager: cameraManager))
+    }
+    
     var body: some View {
         ZStack {
             // Camera feed with body pose visualization overlay
@@ -39,6 +47,11 @@ struct ExerciseView: View {
                 coachMessageView
             }
             
+            // Add pose analysis progress overlay when active
+            if poseAnalysisManager.isCapturing {
+                poseAnalysisOverlay
+            }
+            
             // Timer and controls overlay
             exerciseControlsView
         }
@@ -48,6 +61,11 @@ struct ExerciseView: View {
             
             // Setup coach feedback notification observer
             setupExerciseCoachObserver()
+            
+            // Start pose analysis after a brief delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                poseAnalysisManager.startAnalysis(for: exercise)
+            }
         }
         .onDisappear {
             cleanupResources()
@@ -69,6 +87,16 @@ struct ExerciseView: View {
                 dismissButton: .default(Text("OK")) {
                     stopExercise()
                 }
+            )
+        }
+        .alert(item: Binding(
+            get: { poseAnalysisManager.error.map { PoseAnalysisError(message: $0) } },
+            set: { _ in poseAnalysisManager.error = nil }
+        )) { error in
+            Alert(
+                title: Text("Pose Analysis Error"),
+                message: Text(error.message),
+                dismissButton: .default(Text("OK"))
             )
         }
     }
@@ -121,6 +149,26 @@ struct ExerciseView: View {
             .padding(.bottom, 32)
             .disabled(isStoppingExercise)
         }
+    }
+    
+    // Add pose analysis overlay
+    private var poseAnalysisOverlay: some View {
+        VStack {
+            Text("Analyzing Your Form")
+                .font(.headline)
+                .foregroundColor(.white)
+            
+            ProgressView(value: poseAnalysisManager.captureProgress)
+                .progressViewStyle(LinearProgressViewStyle())
+                .frame(width: 200)
+                .tint(.blue)
+            
+            Text("\(Int(poseAnalysisManager.captureProgress * 100))%")
+                .foregroundColor(.white)
+        }
+        .padding()
+        .background(Color.black.opacity(0.7))
+        .cornerRadius(10)
     }
     
     // MARK: - Setup Methods
@@ -270,4 +318,10 @@ struct CameraPreview: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+// Helper for pose analysis errors
+struct PoseAnalysisError: Identifiable {
+    let id = UUID()
+    let message: String
 }

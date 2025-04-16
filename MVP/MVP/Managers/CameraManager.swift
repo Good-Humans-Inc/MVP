@@ -44,6 +44,10 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
     // Flag to determine if we should post notifications
     private var shouldPostNotifications = false
     
+    // Add new properties for frame capture
+    private var currentVideoFrame: CMSampleBuffer?
+    private let frameAccessQueue = DispatchQueue(label: "com.app.frameAccess", qos: .userInteractive)
+    
     // Initialize with AppState
     init(appState: AppState, visionManager: VisionManager? = nil) {
         self.appState = appState
@@ -417,6 +421,11 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
     // MARK: - AVCaptureVideoDataOutputSampleBufferDelegate
     
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        // Store the current frame
+        frameAccessQueue.sync {
+            self.currentVideoFrame = sampleBuffer
+        }
+        
         // Forward the frame to VisionManager for processing
         if let visionManager = visionManager {
             visionManager.processFrame(sampleBuffer)
@@ -426,6 +435,15 @@ class CameraManager: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleB
     func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         // Called when a frame is dropped
         print("📷 Camera frame dropped")
+    }
+    
+    // Add method to get current frame
+    func getCurrentFrame() -> CMSampleBuffer? {
+        var frame: CMSampleBuffer?
+        frameAccessQueue.sync {
+            frame = self.currentVideoFrame
+        }
+        return frame
     }
 }
 
