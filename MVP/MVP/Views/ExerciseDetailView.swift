@@ -461,20 +461,39 @@ struct VideoPlayerView: View {
         do {
             let audioSession = AVAudioSession.sharedInstance()
             
-            // Configure audio session for video playback
-            try audioSession.setCategory(
-                .playback,
-                mode: .moviePlayback,
-                options: [.defaultToSpeaker, .allowBluetooth]
-            )
+            // Check if we're using Bluetooth
+            let currentRoute = audioSession.currentRoute
+            let isBluetoothConnected = currentRoute.outputs.contains { 
+                [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE].contains($0.portType)
+            }
+            
+            if isBluetoothConnected {
+                // For Bluetooth, use playAndRecord category
+                try audioSession.setCategory(
+                    .playAndRecord,
+                    mode: .moviePlayback,
+                    options: [.allowBluetooth, .defaultToSpeaker]
+                )
+            } else {
+                // For built-in speaker, just use playback category
+                try audioSession.setCategory(
+                    .playback,
+                    mode: .moviePlayback,
+                    options: [.mixWithOthers]  // Allow mixing with other audio
+                )
+                
+                // Manually route to speaker if needed
+                try audioSession.overrideOutputAudioPort(.speaker)
+            }
             
             // Activate audio session
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            
-            print("✅ Audio session configured for video playback")
+            if !audioSession.isOtherAudioPlaying {
+                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+                print("✅ Audio session configured for video playback")
+            }
         } catch {
-            print("❌ Failed to configure audio session: \(error)")
-            onError?(error)
+            // Only log the error but don't treat it as critical
+            print("ℹ️ Audio session configuration note: \(error.localizedDescription)")
         }
     }
     
@@ -483,12 +502,15 @@ struct VideoPlayerView: View {
         player = nil
         isPlaying = false
         
-        // Deactivate audio session
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            print("✅ Audio session deactivated")
-        } catch {
-            print("❌ Failed to deactivate audio session: \(error)")
+        // Only deactivate if we were the ones who activated it
+        if AVAudioSession.sharedInstance().isOtherAudioPlaying == false {
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                print("✅ Audio session deactivated")
+            } catch {
+                // Just log the error
+                print("ℹ️ Audio session cleanup note: \(error.localizedDescription)")
+            }
         }
     }
 }

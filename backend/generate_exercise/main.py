@@ -41,18 +41,6 @@ def access_secret_version(secret_id, version_id="latest"):
 # Predefined RSI exercises
 RSI_EXERCISES = [
     {
-        "name": "Finger Crawls",
-        "description": "A gentle exercise to improve finger mobility and strength",
-        "target_joints": ["finger", "wrist"],
-        "instructions": [
-            "Start with your hand flat on a table",
-            "Slowly walk your fingers forward like a spider",
-            "Keep your palm flat on the surface",
-            "Return to starting position and repeat"
-        ],
-        "videoURL": "https://storage.googleapis.com/mvp-vids/finger_crawl.mp4"
-    },
-    {
         "name": "Wrist Rotations",
         "description": "Circular wrist movements to improve mobility and reduce stiffness",
         "target_joints": ["wrist"],
@@ -98,19 +86,6 @@ RSI_EXERCISES = [
             "Return to starting position and repeat"
         ],
         "videoURL": "https://storage.googleapis.com/mvp-vids/prayer_stretch.mp4"
-    },
-    {
-        "name": "Finger Bends",
-        "description": "Individual finger exercises to improve mobility",
-        "target_joints": ["finger"],
-        "instructions": [
-            "Start with hand open",
-            "Bend each finger toward the palm individually",
-            "Keep other fingers straight",
-            "Hold for 2 seconds per finger",
-            "Return to starting position and repeat"
-        ],
-        "videoURL": "https://storage.googleapis.com/mvp-vids/finger_bend.mp4"
     },
     {
         "name": "Finger Stretches",
