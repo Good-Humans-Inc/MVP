@@ -8,6 +8,11 @@ from google.cloud import secretmanager
 import base64
 from datetime import datetime
 from openai import OpenAI
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize Firebase Admin
 try:
@@ -27,36 +32,38 @@ for key, value in os.environ.items():
 
 def access_secret_version(secret_id, version_id="latest"):
     """
-    Access the secret version from Secret Manager.
+    Access the secret from GCP Secret Manager
     """
     try:
         client = secretmanager.SecretManagerServiceClient()
-        name = f"projects/{os.environ.get('GOOGLE_CLOUD_PROJECT')}/secrets/{secret_id}/versions/{version_id}"
+        project_id = "pepmvp"  # Replace with your actual project ID
+        name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
         response = client.access_secret_version(request={"name": name})
-        return response.payload.data.decode("UTF-8")
+        # Strip whitespace and newlines to avoid issues with API keys
+        return response.payload.data.decode("UTF-8").strip()
     except Exception as e:
-        print(f"Error accessing secret {secret_id}: {str(e)}")
+        logger.error(f"Error accessing secret '{secret_id}': {str(e)}")
         raise
 
 # Get OpenAI API key from Secret Manager
 try:
-    print("Fetching OpenAI API key from Secret Manager...")
+    logger.info("Fetching OpenAI API key from Secret Manager...")
     openai_api_key = access_secret_version("openai-api-key")
-    print("Successfully retrieved OpenAI API key from Secret Manager")
+    logger.info("Successfully retrieved OpenAI API key from Secret Manager")
 except Exception as e:
-    print(f"Failed to retrieve OpenAI API key: {str(e)}")
+    logger.error(f"Failed to retrieve OpenAI API key: {str(e)}")
     raise
 
 # Initialize OpenAI client
 try:
-    print("Initializing OpenAI client...")
+    logger.info("Initializing OpenAI client...")
     client = OpenAI(
         api_key=openai_api_key,
-        timeout=60.0  # Increase timeout for reliability
+        timeout=60.0
     )
-    print("OpenAI client initialized successfully")
+    logger.info("OpenAI client initialized successfully")
 except Exception as e:
-    print(f"Error initializing OpenAI client: {str(e)}")
+    logger.error(f"Error initializing OpenAI client: {str(e)}")
     raise
 
 def call_gpt4_vision(images, prompt):
