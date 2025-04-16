@@ -71,12 +71,13 @@ def call_gpt4_vision(images, prompt):
     
     # Convert base64 images to URLs or direct base64
     image_contents = []
-    for idx, image_base64 in enumerate(images):
+    for idx, image_base64 in enumerate(images, start=1):
         image_contents.append({
             "type": "image_url",
             "image_url": {
                 "url": f"data:image/jpeg;base64,{image_base64}",
-                "detail": "low" # Use low detail to reduce tokens
+                "detail": "low", # Use low detail to reduce tokens
+                "sequence": idx  # Add sequence number to each image
             }
         })
     
@@ -207,10 +208,11 @@ def analyze_exercise_poses(request):
 The user is performing: {exercise_info['name']}
 Instructions they should follow: {exercise_info['instructions']}
 
-Analyze these {len(images)} sequential images of the exercise and provide:
-1. List of specific issues observed
+Analyze these {len(images)} sequential images of the exercise in order (1 through {len(images)}) and provide:
+1. List of specific issues observed in the sequence
 2. Specific suggestions for improvement
 
+Pay special attention to the progression of the exercise through the sequence of images.
 Format your response with clear sections for Issues and Suggestions, using bullet points.""")
         
         # Store the analysis

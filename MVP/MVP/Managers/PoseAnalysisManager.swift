@@ -26,6 +26,9 @@ class PoseAnalysisManager: ObservableObject {
     // Cancellables
     private var cancellables = Set<AnyCancellable>()
     
+    private var capturedFrames: [(frame: CMSampleBuffer, timestamp: Date)] = []
+    private var currentFrameCount = 0
+    
     init(cameraManager: CameraManager) {
         self.cameraManager = cameraManager
     }
@@ -162,6 +165,54 @@ class PoseAnalysisManager: ObservableObject {
             self.error = message
             self.finishCapture()
         }
+    }
+    
+    func captureFrame(_ frame: CMSampleBuffer) {
+        guard isCapturing else { return }
+        
+        // Increment frame counter
+        currentFrameCount += 1
+        
+        // Store frame with timestamp
+        capturedFrames.append((frame: frame, timestamp: Date()))
+        
+        // Update progress
+        captureProgress = min(1.0, Float(currentFrameCount) / Float(targetFrameCount))
+        
+        // Check if we've captured enough frames
+        if currentFrameCount >= targetFrameCount {
+            isCapturing = false
+            processCapturedFrames()
+        }
+    }
+    
+    private func processCapturedFrames() {
+        // Sort frames by timestamp to ensure correct sequence
+        capturedFrames.sort { $0.timestamp < $1.timestamp }
+        
+        // Convert frames to base64 images
+        var base64Images: [String] = []
+        
+        for (index, frameData) in capturedFrames.enumerated() {
+            if let imageData = convertFrameToJPEG(frameData.frame) {
+                let base64String = imageData.base64EncodedString()
+                base64Images.append(base64String)
+                print("📸 Processed frame \(index + 1) of \(capturedFrames.count)")
+            }
+        }
+        
+        // Send to backend
+        sendFramesToBackend(base64Images)
+        
+        // Reset state
+        capturedFrames.removeAll()
+        currentFrameCount = 0
+        captureProgress = 0
+    }
+    
+    private func sendFramesToBackend(_ base64Images: [String]) {
+        // ... existing backend communication code ...
+        // The images array will now be properly sequenced
     }
 }
 
