@@ -197,9 +197,9 @@ def analyze_exercise_poses(request):
                 'error': f'Missing required fields: {", ".join(missing_fields)}'
             }, 400, headers
             
-        if not images or len(images) != 8:
+        if not images:
             return {
-                'error': 'Exactly 8 images are required'
+                'error': 'At least one image is required'
             }, 400, headers
         
         # Call GPT-4 Vision API
@@ -207,7 +207,7 @@ def analyze_exercise_poses(request):
 The user is performing: {exercise_info['name']}
 Instructions they should follow: {exercise_info['instructions']}
 
-Analyze these 8 sequential images and provide:
+Analyze these {len(images)} sequential images of the exercise and provide:
 1. List of specific issues observed
 2. Specific suggestions for improvement
 
