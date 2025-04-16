@@ -15,8 +15,34 @@ except ValueError:
     # App already initialized
     pass
 
+# Debug: Print environment variables
+print("Environment variables:")
+for key, value in os.environ.items():
+    if 'key' in key.lower():
+        # Print masked version of sensitive values
+        print(f"{key}: {'*' * 8}")
+    else:
+        print(f"{key}: {value}")
+
+# Get OpenAI API key with fallback
+openai_api_key = os.environ.get('OPENAI_API_KEY')
+if not openai_api_key:
+    raise ValueError(
+        "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable. "
+        "Current environment variables: " + ", ".join(os.environ.keys())
+    )
+
 # Initialize OpenAI client
-client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+try:
+    print("Initializing OpenAI client...")
+    client = OpenAI(
+        api_key=openai_api_key,
+        timeout=60.0  # Increase timeout for reliability
+    )
+    print("OpenAI client initialized successfully")
+except Exception as e:
+    print(f"Error initializing OpenAI client: {str(e)}")
+    raise
 
 def call_gpt4_vision(images, prompt):
     """Call GPT-4 Vision API with images and prompt."""
