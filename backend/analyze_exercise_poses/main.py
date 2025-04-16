@@ -4,6 +4,7 @@ import firebase_admin
 import json
 import os
 from google.cloud import storage
+from google.cloud import secretmanager
 import base64
 from datetime import datetime
 from openai import OpenAI
@@ -24,13 +25,27 @@ for key, value in os.environ.items():
     else:
         print(f"{key}: {value}")
 
-# Get OpenAI API key with fallback
-openai_api_key = os.environ.get('OPENAI_API_KEY')
-if not openai_api_key:
-    raise ValueError(
-        "OpenAI API key not found. Please set the OPENAI_API_KEY environment variable. "
-        "Current environment variables: " + ", ".join(os.environ.keys())
-    )
+def access_secret_version(secret_id, version_id="latest"):
+    """
+    Access the secret version from Secret Manager.
+    """
+    try:
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{os.environ.get('GOOGLE_CLOUD_PROJECT')}/secrets/{secret_id}/versions/{version_id}"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode("UTF-8")
+    except Exception as e:
+        print(f"Error accessing secret {secret_id}: {str(e)}")
+        raise
+
+# Get OpenAI API key from Secret Manager
+try:
+    print("Fetching OpenAI API key from Secret Manager...")
+    openai_api_key = access_secret_version("openai-api-key")
+    print("Successfully retrieved OpenAI API key from Secret Manager")
+except Exception as e:
+    print(f"Failed to retrieve OpenAI API key: {str(e)}")
+    raise
 
 # Initialize OpenAI client
 try:

@@ -2,6 +2,7 @@ functions-framework==3.*
 firebase-admin==6.*
 google-cloud-firestore==2.*
 google-cloud-storage==2.*
+google-cloud-secret-manager==2.*
 openai==1.*
 aiohttp==3.*
 async-timeout==4.*
