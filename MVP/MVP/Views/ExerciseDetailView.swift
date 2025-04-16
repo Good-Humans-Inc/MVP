@@ -386,6 +386,7 @@ struct VideoPlayerView: View {
     let asset: AVAsset
     @State private var isPlaying = false
     @State private var player: AVPlayer?
+    @EnvironmentObject private var voiceManager: VoiceManager
     var onError: ((Error) -> Void)?
     
     var body: some View {
@@ -402,8 +403,7 @@ struct VideoPlayerView: View {
                 
                 if !isPlaying {
                     Button(action: {
-                        isPlaying = true
-                        player?.play()
+                        startPlayback()
                     }) {
                         Image(systemName: "play.circle.fill")
                             .font(.system(size: 50))
@@ -424,6 +424,9 @@ struct VideoPlayerView: View {
         let playerItem = AVPlayerItem(asset: asset)
         self.player = AVPlayer(playerItem: playerItem)
         
+        // Configure audio session for video playback
+        configureAudioSession()
+        
         // Add error observation
         NotificationCenter.default.addObserver(
             forName: .AVPlayerItemFailedToPlayToEndTime,
@@ -434,11 +437,58 @@ struct VideoPlayerView: View {
                 onError?(error)
             }
         }
+        
+        // Add completion observer
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { _ in
+            isPlaying = false
+            player?.seek(to: .zero)
+        }
+    }
+    
+    private func startPlayback() {
+        // Ensure audio session is properly configured before playing
+        configureAudioSession()
+        
+        isPlaying = true
+        player?.play()
+    }
+    
+    private func configureAudioSession() {
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            
+            // Configure audio session for video playback
+            try audioSession.setCategory(
+                .playback,
+                mode: .moviePlayback,
+                options: [.defaultToSpeaker, .allowBluetooth]
+            )
+            
+            // Activate audio session
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            
+            print("✅ Audio session configured for video playback")
+        } catch {
+            print("❌ Failed to configure audio session: \(error)")
+            onError?(error)
+        }
     }
     
     private func cleanup() {
         player?.pause()
         player = nil
         isPlaying = false
+        
+        // Deactivate audio session
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            print("✅ Audio session deactivated")
+        } catch {
+            print("❌ Failed to deactivate audio session: \(error)")
+        }
     }
 }
