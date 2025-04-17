@@ -43,14 +43,9 @@ struct ExerciseView: View {
                 .edgesIgnoringSafeArea(.all)
             
             // Coach message bubble if there are messages
-            if !coachMessages.isEmpty, showCoachFeedback {
-                coachMessageView
-            }
-            
-            // Add pose analysis progress overlay when active
-            if poseAnalysisManager.isCapturing {
-                poseAnalysisOverlay
-            }
+            // if !coachMessages.isEmpty, showCoachFeedback {
+            //     coachMessageView
+            // }
             
             // Timer and controls overlay
             exerciseControlsView
@@ -121,17 +116,22 @@ struct ExerciseView: View {
     // Controls view for active exercise
     private var exerciseControlsView: some View {
         VStack {
-            Spacer()
-            
-            // Timer display
+            // Timer display moved to top
             Text(timeString(from: remainingTime))
                 .font(.system(size: 48, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                 .padding()
                 .background(Color.black.opacity(0.5))
                 .cornerRadius(16)
+                .padding(.top, 32)  // Add padding from top edge
             
             Spacer()
+            
+            // Analysis overlay will be positioned here when active
+            if poseAnalysisManager.isCapturing {
+                poseAnalysisOverlay
+                    .padding(.bottom, 20)  // Add space between overlay and stop button
+            }
             
             // Stop button
             Button(action: {

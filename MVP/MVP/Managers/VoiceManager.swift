@@ -273,6 +273,13 @@ class VoiceManager: NSObject, ObservableObject {
                             dynamicVars["user_id"] = .string(userId)
                         }
                         
+                        // Add exercise ID
+                        if let firestoreId = exercise["firestoreId"] as? String {
+                            dynamicVars["exercise_id"] = .string(firestoreId)
+                        } else if let id = exercise["id"] as? String {
+                            dynamicVars["exercise_id"] = .string(id.lowercased())
+                        }
+                        
                         print("✅ Added exercise dynamic variables:")
                         dynamicVars.forEach { key, value in
                             print("- \(key): \(value)")
