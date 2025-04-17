@@ -119,8 +119,8 @@ struct ReportView: View {
             return
         }
         
-        // Get the exerciseId - no need for optional binding since we're using nil coalescing
-        let exerciseId = exercise.firestoreId ?? exercise.id.uuidString
+        // Get the exerciseId and ensure it's lowercase
+        let exerciseId = (exercise.firestoreId ?? exercise.id.uuidString).lowercased()
         
         // Get conversation history for context
         let conversationHistory = voiceManager.getConversationHistory()

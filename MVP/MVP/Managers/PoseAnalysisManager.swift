@@ -9,11 +9,14 @@ class PoseAnalysisManager: ObservableObject {
     @Published var captureProgress: Double = 0
     @Published var error: String?
     
+    // Reference to AppState
+    private let appState: AppState
+    
     // Configuration
     private let setupDelay: TimeInterval = 5.0
     private let captureInterval: TimeInterval = 2.0
     private let totalScreenshots = 8
-    private let startScreenshots = false // client tool flag for elevenlabs
+    private let targetFrameCount = 8
     
     // State
     private var screenshots: [String] = [] // Base64 encoded images
@@ -21,7 +24,9 @@ class PoseAnalysisManager: ObservableObject {
     private var screenshotCount = 0
     private weak var cameraManager: CameraManager?
     private let processingQueue = DispatchQueue(label: "com.app.poseAnalysis", qos: .userInitiated)
-    private let cloudFunctionURL = URL(string: "YOUR_CLOUD_FUNCTION_URL")! // Replace with actual URL
+    
+    // Cloud Function URL
+    private let cloudFunctionURL = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/analyze_exercise_poses")!
     
     // Cancellables
     private var cancellables = Set<AnyCancellable>()
@@ -29,8 +34,9 @@ class PoseAnalysisManager: ObservableObject {
     private var capturedFrames: [(frame: CMSampleBuffer, timestamp: Date)] = []
     private var currentFrameCount = 0
     
-    init(cameraManager: CameraManager) {
+    init(cameraManager: CameraManager, appState: AppState) {
         self.cameraManager = cameraManager
+        self.appState = appState
     }
     
     func startAnalysis(for exercise: Exercise) {
@@ -76,14 +82,18 @@ class PoseAnalysisManager: ObservableObject {
         
         // Update progress on main thread
         DispatchQueue.main.async {
+            // Store the screenshot for batch upload
+            self.screenshots.append(base64String)
             self.screenshotCount += 1
             self.captureProgress = Double(self.screenshotCount) / Double(self.totalScreenshots)
             
-            // Upload screenshot immediately
-            self.uploadScreenshot(base64String, for: exercise)
+            print("📸 Captured screenshot \(self.screenshotCount) of \(self.totalScreenshots)")
             
             // Check if we're done
             if self.screenshotCount >= self.totalScreenshots {
+                print("✅ All screenshots captured, preparing batch upload...")
+                // Upload all screenshots in a single batch
+                self.uploadScreenshots(self.screenshots, for: exercise)
                 self.finishCapture()
             }
         }
@@ -108,54 +118,11 @@ class PoseAnalysisManager: ObservableObject {
         return UIImage(cgImage: cgImage)
     }
     
-    private func uploadScreenshot(_ base64Image: String, for exercise: Exercise) {
-        guard let url = cloudFunctionURL else { return }
-        
-        // Prepare the request body
-        let body: [String: Any] = [
-            "images": [base64Image],
-            "exerciseInfo": [
-                "userId": UserDefaults.standard.string(forKey: "userId") ?? "",
-                "exerciseId": exercise.id.uuidString,
-                "name": exercise.name,
-                "instructions": exercise.instructions.joined(separator: ". ")
-            ]
-        ]
-        
-        // Create the request
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        } catch {
-            handleError("Failed to encode request: \(error.localizedDescription)")
-            return
-        }
-        
-        // Make the request
-        URLSession.shared.dataTaskPublisher(for: request)
-            .map { $0.data }
-            .decode(type: AnalysisResponse.self, decoder: JSONDecoder())
-            .receive(on: DispatchQueue.main)
-            .sink(
-                receiveCompletion: { [weak self] completion in
-                    if case .failure(let error) = completion {
-                        self?.handleError("Upload failed: \(error.localizedDescription)")
-                    }
-                },
-                receiveValue: { response in
-                    print("✅ Screenshot uploaded and processed successfully")
-                }
-            )
-            .store(in: &cancellables)
-    }
-    
     private func finishCapture() {
         captureTimer?.invalidate()
         captureTimer = nil
         isCapturing = false
+        screenshots.removeAll()
         print("✅ Pose analysis capture completed")
     }
     
@@ -177,7 +144,7 @@ class PoseAnalysisManager: ObservableObject {
         capturedFrames.append((frame: frame, timestamp: Date()))
         
         // Update progress
-        captureProgress = min(1.0, Float(currentFrameCount) / Float(targetFrameCount))
+        captureProgress = Double(currentFrameCount) / Double(targetFrameCount)
         
         // Check if we've captured enough frames
         if currentFrameCount >= targetFrameCount {
@@ -193,16 +160,25 @@ class PoseAnalysisManager: ObservableObject {
         // Convert frames to base64 images
         var base64Images: [String] = []
         
+        print("🎯 Processing \(capturedFrames.count) captured frames")
+        
         for (index, frameData) in capturedFrames.enumerated() {
             if let imageData = convertFrameToJPEG(frameData.frame) {
                 let base64String = imageData.base64EncodedString()
                 base64Images.append(base64String)
-                print("📸 Processed frame \(index + 1) of \(capturedFrames.count)")
+                print("📸 Processed frame \(index + 1) of \(capturedFrames.count) - Size: \(imageData.count) bytes")
+            } else {
+                print("❌ Failed to convert frame \(index + 1) to JPEG")
             }
         }
         
+        if base64Images.isEmpty {
+            handleError("No valid images captured")
+            return
+        }
+        
         // Send to backend
-        sendFramesToBackend(base64Images)
+        uploadScreenshots(base64Images, for: appState.currentExercise!)
         
         // Reset state
         capturedFrames.removeAll()
@@ -210,15 +186,155 @@ class PoseAnalysisManager: ObservableObject {
         captureProgress = 0
     }
     
-    private func sendFramesToBackend(_ base64Images: [String]) {
-        // ... existing backend communication code ...
-        // The images array will now be properly sequenced
+    private func convertFrameToJPEG(_ sampleBuffer: CMSampleBuffer) -> Data? {
+        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            print("❌ Failed to get image buffer")
+            return nil
+        }
+        
+        let ciImage = CIImage(cvPixelBuffer: imageBuffer)
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+            print("❌ Failed to create CGImage")
+            return nil
+        }
+        
+        let uiImage = UIImage(cgImage: cgImage)
+        
+        // Try different compression qualities if the image is too large
+        let compressionQualities: [CGFloat] = [0.8, 0.5, 0.3]
+        
+        for quality in compressionQualities {
+            if let data = uiImage.jpegData(compressionQuality: quality) {
+                let sizeInMB = Double(data.count) / 1_000_000.0
+                print("📊 Image size at quality \(quality): \(String(format: "%.2f", sizeInMB))MB")
+                
+                // If size is reasonable, use this version
+                if sizeInMB < 1.0 {  // Less than 1MB
+                    return data
+                }
+            }
+        }
+        
+        // If we get here, try the lowest quality as a last resort
+        return uiImage.jpegData(compressionQuality: 0.1)
+    }
+    
+    private func uploadScreenshots(_ base64Images: [String], for exercise: Exercise) {
+        guard let userId = UserDefaults.standard.string(forKey: "userId") else {
+            handleError("No user ID found")
+            return
+        }
+
+        print("\n🎯 Starting Batch Upload:")
+        print("--------------------------------")
+        print("📤 Request Details:")
+        print("- Number of images: \(base64Images.count)")
+        print("- Exercise ID: \(exercise.id.uuidString.lowercased())")
+        print("- User ID: \(userId)")
+        print("- Exercise Name: \(exercise.name)")
+        
+        // Create the request
+        var request = URLRequest(url: cloudFunctionURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Prepare the request body
+        let body: [String: Any] = [
+            "images": base64Images,
+            "exerciseInfo": [
+                "userId": userId,
+                "exerciseId": exercise.id.uuidString.lowercased(),
+                "name": exercise.name,
+                "instructions": exercise.instructions.joined(separator: ". ")
+            ]
+        ]
+        
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: body)
+            request.httpBody = jsonData
+            
+            print("\n📊 Request Metrics:")
+            print("- Total payload size: \(String(format: "%.2f", Double(jsonData.count) / 1_000_000.0))MB")
+            print("- Average image size: \(String(format: "%.2f", Double(jsonData.count) / Double(base64Images.count) / 1_000_000.0))MB")
+            print("--------------------------------")
+        } catch {
+            print("❌ Batch Upload JSON Serialization Error:")
+            print(error)
+            handleError("Failed to encode batch request: \(error.localizedDescription)")
+            return
+        }
+        
+        print("⏳ Sending batch request to Cloud Function...")
+        
+        URLSession.shared.dataTaskPublisher(for: request)
+            .map { data, response -> Data in
+                print("\n📥 Received Batch Response:")
+                print("--------------------------------")
+                
+                if let httpResponse = response as? HTTPURLResponse {
+                    print("- Status code: \(httpResponse.statusCode)")
+                    print("- Response size: \(String(format: "%.2f", Double(data.count) / 1_000.0))KB")
+                    
+                    if httpResponse.statusCode != 200 {
+                        print("⚠️ Unexpected status code: \(httpResponse.statusCode)")
+                    }
+                }
+                
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("\n📄 Response Body:")
+                    print(responseString)
+                }
+                
+                return data
+            }
+            .decode(type: AnalysisResponse.self, decoder: JSONDecoder())
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    switch completion {
+                    case .failure(let error):
+                        print("\n❌ Batch Upload Error:")
+                        print("--------------------------------")
+                        print("Error type: \(type(of: error))")
+                        print("Error description: \(error.localizedDescription)")
+                        if let decodingError = error as? DecodingError {
+                            print("Decoding error details: \(decodingError)")
+                        }
+                        self?.handleError("Batch upload failed: \(error.localizedDescription)")
+                    case .finished:
+                        print("\n✅ Batch Upload Request Complete")
+                    }
+                },
+                receiveValue: { response in
+                    print("\n🎯 Batch Upload Response:")
+                    print("--------------------------------")
+                    if response.success {
+                        print("✅ All screenshots processed successfully")
+                    } else {
+                        print("⚠️ Server reported failure")
+                    }
+                    print("📝 Server message: \(response.message)")
+                    print("--------------------------------")
+                }
+            )
+            .store(in: &cancellables)
     }
 }
 
 // Response type for cloud function
 struct AnalysisResponse: Codable {
     let success: Bool
-    let message: String?
-    let error: String?
+    let message: String
+    
+    enum CodingKeys: String, CodingKey {
+        case success
+        case message
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        success = try container.decode(Bool.self, forKey: .success)
+        message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+    }
 } 

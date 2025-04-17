@@ -27,9 +27,9 @@ struct ExerciseView: View {
     // Add PoseAnalysisManager
     @StateObject private var poseAnalysisManager: PoseAnalysisManager
     
-    init(exercise: Exercise, cameraManager: CameraManager) {
+    init(exercise: Exercise, cameraManager: CameraManager, appState: AppState) {
         self.exercise = exercise
-        _poseAnalysisManager = StateObject(wrappedValue: PoseAnalysisManager(cameraManager: cameraManager))
+        _poseAnalysisManager = StateObject(wrappedValue: PoseAnalysisManager(cameraManager: cameraManager, appState: appState))
     }
     
     var body: some View {

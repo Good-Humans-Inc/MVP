@@ -13,17 +13,15 @@ except ValueError:
 def get_latest_feedback(request):
     """
     HTTP Cloud Function to get the latest feedback for a user's exercise.
-    Expects a POST request with JSON body containing:
-    {
-        "userId": "string",
-        "exerciseId": "string"
-    }
+    Expects a GET request with query parameters:
+    - userId: string
+    - exerciseId: string
     """
     # Enable CORS
     if request.method == 'OPTIONS':
         headers = {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST',
+            'Access-Control-Allow-Methods': 'GET',
             'Access-Control-Allow-Headers': 'Content-Type',
             'Access-Control-Max-Age': '3600'
         }
@@ -34,13 +32,9 @@ def get_latest_feedback(request):
     }
 
     try:
-        request_json = request.get_json()
-        
-        if not request_json:
-            return {'error': 'No JSON data provided'}, 400, headers
-        
-        user_id = request_json.get('userId')
-        exercise_id = request_json.get('exerciseId')
+        # Get parameters from query string
+        user_id = request.args.get('userId')
+        exercise_id = request.args.get('exerciseId')
         
         if not user_id or not exercise_id:
             return {
