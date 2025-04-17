@@ -84,6 +84,9 @@ def call_LLM(images, prompt):
         })
     
     try:
+        print(f"🤖 Calling LLM with {len(images)} images...")
+        print(f"📝 Prompt: {prompt}")
+        
         response = client.chat.completions.create(
             model="o4-mini",
             messages=[
@@ -99,6 +102,10 @@ def call_LLM(images, prompt):
         
         # Extract the response content
         analysis_text = response.choices[0].message.content
+        print("\n🔍 Raw LLM Response:")
+        print("------------------------")
+        print(analysis_text)
+        print("------------------------\n")
         
         # Parse the response into issues and suggestions
         issues = []
@@ -117,13 +124,23 @@ def call_LLM(images, prompt):
                 elif current_section == 'suggestions':
                     suggestions.append(line[2:])
         
+        print("📊 Parsed Analysis:")
+        print("Issues:")
+        for issue in issues:
+            print(f"  - {issue}")
+        print("\nSuggestions:")
+        for suggestion in suggestions:
+            print(f"  - {suggestion}")
+        print("\n")
+        
         return {
             'issues': issues,
-            'suggestions': suggestions
+            'suggestions': suggestions,
+            'raw_response': analysis_text  # Include raw response for debugging
         }
         
     except Exception as e:
-        print(f"Error calling GPT-4 Vision: {str(e)}")
+        print(f"❌ Error calling LLM: {str(e)}")
         raise
 
 def store_analysis(user_id, exercise_id, analysis):
@@ -139,12 +156,22 @@ def store_analysis(user_id, exercise_id, analysis):
         analysis_ref = exercise_ref.collection('analyses').document()
         
         # Store the analysis with timestamp
-        analysis_ref.set({
+        analysis_data = {
             'timestamp': firestore.SERVER_TIMESTAMP,
             'user_id': user_id,  # Store user_id for reference
             'issues': analysis['issues'],
-            'suggestions': analysis['suggestions']
-        })
+            'suggestions': analysis['suggestions'],
+            'raw_response': analysis['raw_response']  # Store raw response for debugging
+        }
+        
+        print("\n💾 Storing Analysis Data:")
+        print("------------------------")
+        print(f"Exercise ID: {exercise_id}")
+        print(f"User ID: {user_id}")
+        print(f"Analysis Data: {json.dumps(analysis_data, indent=2)}")
+        print("------------------------\n")
+        
+        analysis_ref.set(analysis_data)
         
         print(f"✅ Analysis stored successfully for exercise {exercise_id}")
         return True
