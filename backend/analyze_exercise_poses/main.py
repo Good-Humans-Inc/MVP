@@ -132,25 +132,24 @@ def store_analysis(user_id, exercise_id, analysis):
         # Initialize Firestore DB
         db = firestore.Client(project='pepmvp', database='pep-mvp')
         
-        # Create a new analysis document
-        analysis_ref = (db
-            .collection('users')
-            .document(user_id)
-            .collection('exercises')
-            .document(exercise_id)
-            .collection('analyses')
-            .document())
+        # Create a new analysis document in the exercises collection
+        exercise_ref = db.collection('exercises').document(exercise_id)
+        
+        # Add analyses as a subcollection
+        analysis_ref = exercise_ref.collection('analyses').document()
         
         # Store the analysis with timestamp
         analysis_ref.set({
             'timestamp': firestore.SERVER_TIMESTAMP,
+            'user_id': user_id,  # Store user_id for reference
             'issues': analysis['issues'],
             'suggestions': analysis['suggestions']
         })
         
+        print(f"✅ Analysis stored successfully for exercise {exercise_id}")
         return True
     except Exception as e:
-        print(f"Error storing analysis: {str(e)}")
+        print(f"❌ Error storing analysis: {str(e)}")
         raise
 
 @functions_framework.http
