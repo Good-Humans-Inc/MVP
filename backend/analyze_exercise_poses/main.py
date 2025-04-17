@@ -92,8 +92,7 @@ def call_LLM(images, prompt):
                         *image_contents
                     ]
                 }
-            ],
-            max_tokens=500
+            ]
         )
         
         # Extract the response content
