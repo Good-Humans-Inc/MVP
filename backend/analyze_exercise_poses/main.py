@@ -155,22 +155,31 @@ def store_analysis(user_id, exercise_id, analysis):
         # Add analyses as a subcollection
         analysis_ref = exercise_ref.collection('analyses').document()
         
-        # Store the analysis with timestamp
+        # Create the analysis data for Firestore
         analysis_data = {
             'timestamp': firestore.SERVER_TIMESTAMP,
-            'user_id': user_id,  # Store user_id for reference
+            'user_id': user_id,
             'issues': analysis['issues'],
             'suggestions': analysis['suggestions'],
-            'raw_response': analysis['raw_response']  # Store raw response for debugging
+            'raw_response': analysis['raw_response']
+        }
+        
+        # Create a separate dict for logging (without the SERVER_TIMESTAMP sentinel)
+        log_data = {
+            'user_id': user_id,
+            'issues': analysis['issues'],
+            'suggestions': analysis['suggestions'],
+            'raw_response': analysis['raw_response']
         }
         
         print("\n💾 Storing Analysis Data:")
         print("------------------------")
         print(f"Exercise ID: {exercise_id}")
         print(f"User ID: {user_id}")
-        print(f"Analysis Data: {json.dumps(analysis_data, indent=2)}")
+        print(f"Analysis Data: {json.dumps(log_data, indent=2)}")
         print("------------------------\n")
         
+        # Store in Firestore
         analysis_ref.set(analysis_data)
         
         print(f"✅ Analysis stored successfully for exercise {exercise_id}")
