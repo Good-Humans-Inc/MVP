@@ -93,7 +93,7 @@ def generate_report(request):
         formatted_history = format_conversation_history(conversation_history)
         
         # Create GPT prompt
-        prompt = f"""Based on the following exercise session conversation, generate a comprehensive physical therapy report:
+        prompt = f"""Based on the following exercise session conversation, generate a caring, professional, and encouragingly positive physical therapy report:
 
 Exercise: {exercise_data.get('name', 'Unknown')}
 Date: {datetime.now().strftime('%Y-%m-%d')}
@@ -111,15 +111,17 @@ Exercise Duration: {metrics['duration_minutes']} minutes
 Conversation History:
 {formatted_history}
 
-Please analyze the conversation and provide a personalized and fun report to the user using "you/your" pronouns including:
+Please analyze the conversation and provide a personalized report including:
 
-1. General Feeling: User's overall experience and engagement during the session
-2. Performance Quality: Assessment of exercise execution and technique
-3. Pain Report: Any pain or discomfort mentioned
-4. Completion Status: Whether the exercise was completed as prescribed
-5. Sets and Reps Completed: Actual exercise volume achieved
-6. Day Streak: Current streak with encouraging note about consistency
-7. Motivational Message: Personalized encouragement based on performance and streak
+1. General Feeling: Focus on positive observations about engagement and effort during the session, avoiding phrases like "you seem" or any speculative language.
+2. Performance Quality: Highlight what was done well first, then provide constructive guidance on technique improvements as "opportunities for growth."
+3. Pain Report: Address any discomfort mentioned with validation and specific, actionable guidance.
+4. Completion Status: Celebrate the effort put into the exercise, regardless of completion level.
+5. Sets and Reps Completed: Present as accomplishments rather than just numbers.
+6. Day Streak: Frame consistency as a key achievement and emphasize the health benefits of maintaining the streak.
+7. Motivational Message: End with specific, forward-looking encouragement tied to their progress and next session.
+
+Always use direct, confident language without hedging phrases ("maybe," "seems like," etc.). Focus on specific, observable achievements rather than assumptions about effort. Use second-person "you" language directly. Every statement should serve to reinforce progress and capability.
 
 Format the response as JSON with these exact keys:
 {{
@@ -138,11 +140,23 @@ Format the response as JSON with these exact keys:
             model="gpt-4",
             messages=[
                 {"role": "system", "content": """You are a supportive and professional physical therapist assistant specialized in RSI (Repetitive Strain Injury).
-                Generate detailed reports to the user using "you/your" pronouns based on exercise conversations.
-                Focus on form, technique, and pain management.
-                Be encouraging but maintain professionalism.
-                Pay special attention to any mentions of discomfort or pain."""},
-                {"role": "user", "content": prompt}
+                Generate reports that build confidence and motivation while being clinically accurate.
+
+                TONE GUIDELINES:
+                - Use a confident, warm, and direct tone that conveys expertise and genuine care
+                - Always highlight accomplishments first before discussing areas for improvement
+                - Avoid speculative language like "seems like" or "appears to" - be direct and confident
+                - Frame challenges as opportunities for growth, never as failures
+                - Use concise, clear language that emphasizes capability and agency
+                - Speak directly to the user with "you" statements
+                - Never use discouraging or tentative words
+                - Always validate any reported discomfort while providing constructive guidance
+
+                STRUCTURE GUIDELINES:
+                - Start each section with a specific accomplishment or positive observation
+                - If mentioning areas for improvement, always pair them with practical, actionable guidance
+                - End with forward-looking encouragement that builds anticipation for continued progress
+                """}
             ],
             temperature=0.7,
             max_tokens=1000
