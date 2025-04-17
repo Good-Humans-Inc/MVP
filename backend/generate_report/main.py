@@ -93,85 +93,90 @@ def generate_report(request):
         formatted_history = format_conversation_history(conversation_history)
         
         # Create GPT prompt
-        prompt = f"""Based on the following exercise session conversation, generate a caring, professional, and encouragingly positive physical therapy report:
+        prompt = f"""Based on your exercise session conversation, here's your personalized physical therapy report:
 
 Exercise: {exercise_data.get('name', 'Unknown')}
 Date: {datetime.now().strftime('%Y-%m-%d')}
 
-Current Streak Information:
-- Days in a row: {streak_info['current_streak']}
-- Last exercise: {streak_info['last_exercise_date']}
-- Best streak: {streak_info['best_streak']}
+Your Progress:
+- Your current streak: {streak_info['current_streak']} days in a row
+- Your last exercise: {streak_info['last_exercise_date']}
+- Your best streak: {streak_info['best_streak']} days
 
-Exercise Metrics:
+Your Exercise Stats:
 Sets Completed: {metrics['sets_completed']}
 Reps Completed: {metrics['reps_completed']}
 Exercise Duration: {metrics['duration_minutes']} minutes
 
-Conversation History:
+Your Conversation:
 {formatted_history}
 
-Please analyze the conversation and provide a personalized report including:
+Please provide a personalized report in STRICT JSON format. Your response must be ONLY valid JSON with no additional text or explanation.
 
-1. General Feeling: Focus on positive observations about engagement and effort during the session, avoiding phrases like "you seem" or any speculative language.
-2. Performance Quality: Highlight what was done well first, then provide constructive guidance on technique improvements as "opportunities for growth."
-3. Pain Report: Address any discomfort mentioned with validation and specific, actionable guidance.
-4. Completion Status: Celebrate the effort put into the exercise, regardless of completion level.
-5. Sets and Reps Completed: Present as accomplishments rather than just numbers.
-6. Day Streak: Frame consistency as a key achievement and emphasize the health benefits of maintaining the streak.
-7. Motivational Message: End with specific, forward-looking encouragement tied to their progress and next session.
-
-Always use direct, confident language without hedging phrases ("maybe," "seems like," etc.). Focus on specific, observable achievements rather than assumptions about effort. Use second-person "you" language directly. Every statement should serve to reinforce progress and capability.
-
-Format the response as JSON with these exact keys:
+The JSON must have these exact keys and value types:
 {{
-    "general_feeling": "string",
-    "performance_quality": "string",
-    "pain_report": "string",
+    "general_feeling": "string describing your overall experience, focusing on specific achievements",
+    "performance_quality": "string highlighting your technique strengths and specific areas for growth",
+    "pain_report": "string addressing any discomfort with validation and actionable guidance",
     "completed": boolean,
-    "sets_completed": integer,
-    "reps_completed": integer,
-    "day_streak": integer,
-    "motivational_message": "string"
-}}"""
+    "sets_completed": number,
+    "reps_completed": number,
+    "day_streak": number,
+    "motivational_message": "string with specific encouragement for next session"
+}}
+
+Guidelines for each field:
+- Use direct "you/your" language
+- Focus on specific observations and achievements
+- Provide actionable guidance
+- Be encouraging and supportive
+- Avoid speculative language ("seems like", "appears to")
+- Keep each string field concise but detailed"""
 
         # Call OpenAI API with new format
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="o4-mini",
             messages=[
-                {"role": "system", "content": """You are a supportive and professional physical therapist assistant specialized in RSI (Repetitive Strain Injury).
-                Generate reports that build confidence and motivation while being clinically accurate.
-
-                TONE GUIDELINES:
-                - Use a confident, warm, and direct tone that conveys expertise and genuine care
-                - Always highlight accomplishments first before discussing areas for improvement
-                - Avoid speculative language like "seems like" or "appears to" - be direct and confident
-                - Frame challenges as opportunities for growth, never as failures
-                - Use concise, clear language that emphasizes capability and agency
-                - Speak directly to the user with "you" statements
-                - Never use discouraging or tentative words
-                - Always validate any reported discomfort while providing constructive guidance
-
-                STRUCTURE GUIDELINES:
-                - Start each section with a specific accomplishment or positive observation
-                - If mentioning areas for improvement, always pair them with practical, actionable guidance
-                - End with forward-looking encouragement that builds anticipation for continued progress
-                """}
+                {"role": "system", "content": """You are a supportive physical therapist assistant specialized in RSI (Repetitive Strain Injury).
+                Your task is to generate a JSON report that MUST be valid JSON.
+                DO NOT include any additional text, markdown, or explanation outside the JSON structure.
+                Use second-person pronouns (you/your) to speak directly to the user.
+                Be encouraging while maintaining professionalism.
+                Focus on specific achievements and actionable guidance.
+                
+                CRITICAL: Your entire response must be a single, valid JSON object."""},
+                {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=1000
+            max_tokens=1000,
+            response_format={ "type": "json_object" }  # Enforce JSON response format
         )
         
-        # Parse GPT response
+        # Parse GPT response with better error handling
         try:
-            report_data = json.loads(response.choices[0].message.content)
-            print("GPT Response:")
+            response_content = response.choices[0].message.content.strip()
+            print("Raw GPT response:")
+            print(response_content)
+            
+            # Try to clean the response if it contains markdown code blocks
+            if response_content.startswith('```json'):
+                response_content = response_content.replace('```json', '').replace('```', '').strip()
+            elif response_content.startswith('```'):
+                response_content = response_content.replace('```', '').strip()
+                
+            report_data = json.loads(response_content)
+            print("Parsed JSON response:")
             print(json.dumps(report_data, indent=2))
+            
         except json.JSONDecodeError as e:
             print(f"Error parsing GPT response: {str(e)}")
             print("Raw GPT response:")
             print(response.choices[0].message.content)
-            return (json.dumps({'error': 'Failed to parse GPT response'}), 500, headers)
+            return (json.dumps({
+                'error': 'Failed to parse GPT response',
+                'details': str(e),
+                'raw_response': response.choices[0].message.content
+            }), 500, headers)
         
         # Update with actual metrics and streak
         report_data['sets_completed'] = metrics['sets_completed']
