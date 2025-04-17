@@ -21,6 +21,8 @@ except ValueError:
     # App already initialized
     pass
 
+
+
 # Debug: Print environment variables
 print("Environment variables:")
 for key, value in os.environ.items():
@@ -127,7 +129,8 @@ def call_LLM(images, prompt):
 def store_analysis(user_id, exercise_id, analysis):
     """Store the analysis results in Firestore."""
     try:
-        db = firestore.client()
+        # Initialize Firestore DB
+        db = firestore.Client(project='pepmvp', database='pep-mvp')
         
         # Create a new analysis document
         analysis_ref = (db
