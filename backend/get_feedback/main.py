@@ -47,40 +47,38 @@ def get_latest_feedback(request):
                 'error': 'Missing required parameters. Need userId and exerciseId'
             }, 400, headers
 
-        # Get Firestore client
-        db = firestore.client()
+        # Initialize Firestore DB with specific project and database
+        db = firestore.Client(project='pepmvp', database='pep-mvp')
         
-        # Query the latest analysis
+        # Query the latest analysis from the new structure
         analyses_ref = (db
-            .collection('users')
-            .document(user_id)
             .collection('exercises')
             .document(exercise_id)
             .collection('analyses')
+            .where('user_id', '==', user_id)  # Filter by user_id
             .order_by('timestamp', direction=firestore.Query.DESCENDING)
             .limit(1))
         
         analyses = analyses_ref.get()
         
-        if not analyses or len(analyses) == 0:
+        if not analyses or len(list(analyses)) == 0:
             return {
                 'success': True,
                 'hasAnalysis': False,
                 'message': "No analysis found"
             }, 200, headers
         
-        # Get the latest analysis and return raw data
-        latest_analysis = analyses[0].to_dict()
+        # Get the latest analysis
+        latest_analysis = list(analyses)[0].to_dict()
         
         return {
             'success': True,
             'hasAnalysis': True,
-            'issues': latest_analysis.get('issues', []),
-            'suggestions': latest_analysis.get('suggestions', [])
+            'feedback': latest_analysis.get('raw_response', '')
         }, 200, headers
 
     except Exception as e:
-        print(f"Error in get_latest_feedback: {str(e)}")
+        print(f"❌ Error in get_latest_feedback: {str(e)}")
         return {
             'error': 'Internal server error',
             'message': str(e)
