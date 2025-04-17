@@ -148,7 +148,6 @@ Guidelines for each field:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=1000,
             response_format={ "type": "json_object" }  # Enforce JSON response format
         )
         
