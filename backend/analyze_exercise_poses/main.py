@@ -107,36 +107,8 @@ def call_LLM(images, prompt):
         print(analysis_text)
         print("------------------------\n")
         
-        # Parse the response into issues and suggestions
-        issues = []
-        suggestions = []
-        current_section = None
-        
-        for line in analysis_text.split('\n'):
-            line = line.strip()
-            if 'issues' in line.lower():
-                current_section = 'issues'
-            elif 'suggestions' in line.lower():
-                current_section = 'suggestions'
-            elif line.startswith('- ') or line.startswith('* '):
-                if current_section == 'issues':
-                    issues.append(line[2:])
-                elif current_section == 'suggestions':
-                    suggestions.append(line[2:])
-        
-        print("📊 Parsed Analysis:")
-        print("Issues:")
-        for issue in issues:
-            print(f"  - {issue}")
-        print("\nSuggestions:")
-        for suggestion in suggestions:
-            print(f"  - {suggestion}")
-        print("\n")
-        
         return {
-            'issues': issues,
-            'suggestions': suggestions,
-            'raw_response': analysis_text  # Include raw response for debugging
+            'raw_response': analysis_text
         }
         
     except Exception as e:
@@ -159,16 +131,12 @@ def store_analysis(user_id, exercise_id, analysis):
         analysis_data = {
             'timestamp': firestore.SERVER_TIMESTAMP,
             'user_id': user_id,
-            'issues': analysis['issues'],
-            'suggestions': analysis['suggestions'],
             'raw_response': analysis['raw_response']
         }
         
         # Create a separate dict for logging (without the SERVER_TIMESTAMP sentinel)
         log_data = {
             'user_id': user_id,
-            'issues': analysis['issues'],
-            'suggestions': analysis['suggestions'],
             'raw_response': analysis['raw_response']
         }
         
