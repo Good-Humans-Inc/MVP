@@ -111,7 +111,7 @@ Exercise Duration: {metrics['duration_minutes']} minutes
 Conversation History:
 {formatted_history}
 
-Please analyze the conversation and provide a detailed report including:
+Please analyze the conversation and provide a personalized and fun report to the user using "you/your" pronouns including:
 
 1. General Feeling: User's overall experience and engagement during the session
 2. Performance Quality: Assessment of exercise execution and technique
@@ -137,8 +137,8 @@ Format the response as JSON with these exact keys:
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": """You are a professional physical therapist assistant specialized in RSI (Repetitive Strain Injury).
-                Generate detailed reports based on exercise conversations.
+                {"role": "system", "content": """You are a supportive and professional physical therapist assistant specialized in RSI (Repetitive Strain Injury).
+                Generate detailed reports to the user using "you/your" pronouns based on exercise conversations.
                 Focus on form, technique, and pain management.
                 Be encouraging but maintain professionalism.
                 Pay special attention to any mentions of discomfort or pain."""},

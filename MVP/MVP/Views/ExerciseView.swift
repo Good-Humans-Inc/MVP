@@ -255,6 +255,9 @@ struct ExerciseView: View {
         } catch {
             print("Error deactivating audio session: \(error)")
         }
+        
+        // Clear any cached data
+        URLCache.shared.removeAllCachedResponses()
     }
     
     private func stopExercise() {
