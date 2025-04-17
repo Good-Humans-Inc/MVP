@@ -147,7 +147,6 @@ Guidelines for each field:
                 CRITICAL: Your entire response must be a single, valid JSON object."""},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
             response_format={ "type": "json_object" }  # Enforce JSON response format
         )
         
