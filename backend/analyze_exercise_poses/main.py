@@ -66,7 +66,7 @@ except Exception as e:
     logger.error(f"Error initializing OpenAI client: {str(e)}")
     raise
 
-def call_gpt4_vision(images, prompt):
+def call_LLM(images, prompt):
     """Call GPT-4 Vision API with images and prompt."""
     
     # Convert base64 images to URLs or direct base64
@@ -83,7 +83,7 @@ def call_gpt4_vision(images, prompt):
     
     try:
         response = client.chat.completions.create(
-            model="gpt-4-vision-preview",
+            model="o4-mini",
             messages=[
                 {
                     "role": "user",
@@ -204,7 +204,7 @@ def analyze_exercise_poses(request):
             }, 400, headers
         
         # Call GPT-4 Vision API
-        analysis = call_gpt4_vision(images, f"""You are a professional physical therapist.
+        analysis = call_LLM(images, f"""You are a professional physical therapist.
 The user is performing: {exercise_info['name']}
 Instructions they should follow: {exercise_info['instructions']}
 
