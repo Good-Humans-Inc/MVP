@@ -49,11 +49,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     }
     
     /// Schedule a local notification
-    func scheduleLocalNotification(title: String, body: String, timeInterval: TimeInterval, identifier: String) {
+    func scheduleLocalNotification(title: String, body: String, timeInterval: TimeInterval, identifier: String, isOneTime: Bool = false) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        content.userInfo = ["is_one_time": isOneTime]
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: timeInterval, repeats: false)
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
@@ -68,17 +69,18 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     }
     
     /// Schedule a daily notification at a specific time
-    func scheduleDailyNotification(title: String, body: String, hour: Int, minute: Int, identifier: String) {
+    func scheduleDailyNotification(title: String, body: String, hour: Int, minute: Int, identifier: String, isOneTime: Bool = false) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        content.userInfo = ["is_one_time": isOneTime]
         
         var dateComponents = DateComponents()
         dateComponents.hour = hour
         dateComponents.minute = minute
         
-        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: !isOneTime)
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
         
         notificationCenter.add(request) { error in
@@ -144,24 +146,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         // Schedule new notifications based on preferences
         if notificationPreferences.isEnabled {
-            if notificationPreferences.frequency == .daily {
-                scheduleDailyNotification(
-                    title: "Time for your PT exercises!",
-                    body: "Don't forget to complete your physical therapy exercises today.",
-                    hour: notificationPreferences.hour,
-                    minute: notificationPreferences.minute,
-                    identifier: "daily_exercise_reminder"
-                )
-            } else if notificationPreferences.frequency == .weekly {
-                scheduleWeeklyNotification(
-                    title: "Time for your PT exercises!",
-                    body: "Don't forget to complete your physical therapy exercises today.",
-                    hour: notificationPreferences.hour,
-                    minute: notificationPreferences.minute,
-                    weekdays: notificationPreferences.weekdays,
-                    identifier: "weekly_exercise_reminder"
-                )
-            }
+            scheduleDailyNotification(
+                title: "Time for your PT exercises!",
+                body: "Don't forget to complete your physical therapy exercises today.",
+                hour: notificationPreferences.hour,
+                minute: notificationPreferences.minute,
+                identifier: "daily_exercise_reminder",
+                isOneTime: false
+            )
         }
     }
     
@@ -204,6 +196,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         // Handle notification tap
         let userInfo = response.notification.request.content.userInfo
         
+        // Check if this is a one-time notification
+        let isOneTime = userInfo["is_one_time"] as? Bool ?? false
+        
         // Process the notification data
         if let exerciseId = userInfo["exerciseId"] as? String {
             // Handle exercise notification
@@ -219,57 +214,52 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     
     /// Handle FCM token refresh
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        print("📱 Firebase registration token: \(String(describing: fcmToken))")
+        
+        // Store token
         self.fcmToken = fcmToken
         
-        // Save the token to UserDefaults
+        // Send this token to backend
         if let token = fcmToken {
-            defaults.set(token, forKey: "fcmToken")
-            
-            // If we have a user ID, update the token on the server
-            if let userId = defaults.string(forKey: "UserID") {
-                updateFCMTokenOnServer(userId: userId, token: token)
-            }
+            updateFCMTokenInBackend(token: token)
         }
     }
     
-    /// Update FCM token on the server
-    private func updateFCMTokenOnServer(userId: String, token: String) {
-        // Create URL for API call
-        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_fcm_token") else {
-            print("❌ Invalid URL for FCM token update")
+    // MARK: - Backend Integration
+    
+    private func updateFCMTokenInBackend(token: String) {
+        // Get user ID from UserDefaults or your app's state management
+        guard let userId = UserDefaults.standard.string(forKey: "UserID") else {
+            print("❌ No user ID found for FCM token update")
             return
         }
         
-        // Create request
+        // Prepare the request
+        let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_fcm_token")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        // Create request body
-        let requestBody: [String: Any] = [
+        let body = [
             "user_id": userId,
             "fcm_token": token
         ]
         
-        // Serialize request body
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        } catch {
-            print("❌ Error serializing FCM token update request: \(error)")
-            return
-        }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
-        // Make API call
+        // Make the request
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("❌ Error updating FCM token: \(error)")
+                print("❌ Error updating FCM token: \(error.localizedDescription)")
                 return
             }
             
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                print("✅ FCM token updated successfully")
-            } else {
-                print("❌ Failed to update FCM token: \(response.debugDescription)")
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("✅ FCM token updated successfully in backend")
+                } else {
+                    print("❌ Failed to update FCM token in backend: \(httpResponse.statusCode)")
+                }
             }
         }.resume()
     }

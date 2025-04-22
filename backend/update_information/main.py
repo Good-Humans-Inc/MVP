@@ -1,7 +1,7 @@
 import functions_framework
 import firebase_admin
 from firebase_admin import credentials, firestore
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import uuid
 from google.cloud import secretmanager
@@ -116,9 +116,15 @@ def update_information(request):
             fcm_token = user_data.get('fcm_token')
             
             if fcm_token:
-                # Create a scheduled time for tomorrow at the specified hour and minute
+                # Get the user's original notification time from onboarding
+                user_data = user_doc.to_dict()
+                original_schedule = user_data.get('notification_schedule', {})
+                original_hour = original_schedule.get('hour', 9)  # Default to 9 AM if not set
+                original_minute = original_schedule.get('minute', 0)  # Default to 0 if not set
+                
+                # Create a scheduled time for tomorrow using the new time from the update
                 now = datetime.now()
-                scheduled_time = now.replace(
+                tomorrow_scheduled_time = now.replace(
                     hour=update_data['notification_preferences']['hour'],
                     minute=update_data['notification_preferences']['minute'],
                     second=0,
@@ -126,13 +132,13 @@ def update_information(request):
                 )
                 
                 # If the time has already passed today, schedule for tomorrow
-                if scheduled_time < now:
-                    scheduled_time = scheduled_time.replace(day=now.day + 1)
+                if tomorrow_scheduled_time < now:
+                    tomorrow_scheduled_time = tomorrow_scheduled_time + timedelta(days=1)
                 
                 # Format for ISO 8601
-                scheduled_time_str = scheduled_time.isoformat() + 'Z'
+                tomorrow_scheduled_time_str = tomorrow_scheduled_time.isoformat() + 'Z'
                 
-                # Call the schedule_notification function
+                # Call the schedule_notification function for tomorrow only
                 try:
                     from schedule_notification.main import schedule_notification
                     
@@ -144,15 +150,26 @@ def update_information(request):
                         def get_json(self):
                             return self.json_data
                     
-                    # Create notification request
+                    # Create notification request for tomorrow only
                     notification_request = MockRequest({
                         'user_id': user_id,
-                        'notification_type': 'exercise_reminder',
-                        'scheduled_time': scheduled_time_str
+                        'scheduled_time': tomorrow_scheduled_time_str,
+                        'is_one_time': True  # Flag to indicate this is a one-time notification
                     })
                     
                     # Call the function
                     schedule_notification(notification_request)
+                    
+                    # Update user's next notification time
+                    user_ref.update({
+                        'notification_schedule.next_notification': tomorrow_scheduled_time,
+                        'notification_schedule.temporary_override': {
+                            'hour': update_data['notification_preferences']['hour'],
+                            'minute': update_data['notification_preferences']['minute'],
+                            'until': (tomorrow_scheduled_time + timedelta(days=1)).isoformat() + 'Z'
+                        }
+                    })
+                    
                 except Exception as e:
                     print(f"Error scheduling notification: {str(e)}")
         
