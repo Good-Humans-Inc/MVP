@@ -180,7 +180,7 @@ class VisionManager: NSObject, ObservableObject {
             
             // Log joint stats every 30 frames (about 1 second at 30fps)
             if self.frameCount % 30 == 0 {
-                self.logHandStats(bodyPose)
+                self.logBodyStats(bodyPose)
             }
         }
     }
@@ -190,20 +190,17 @@ class VisionManager: NSObject, ObservableObject {
         
         // Process each hand joint type
         for jointType in HandJointType.allCases {
-            if let visionPoint = jointType.visionPointName,
-               let point = try? observation.recognizedPoint(visionPoint) {
-                let joint = HandJoint(
-                    id: jointType,
-                    position: CGPoint(x: point.location.x, y: 1 - point.location.y),
-                    confidence: point.confidence
-                )
-                handPose.joints[jointType] = joint
+            if let visionPoint = jointType.visionPointName {
+                // Use the direct recognizedPoint method without forKey parameter
+                if let point = try? observation.recognizedPoint(visionPoint) {
+                    let joint = HandJoint(
+                        id: jointType,
+                        position: CGPoint(x: point.location.x, y: 1 - point.location.y),
+                        confidence: point.confidence
+                    )
+                    handPose.joints[jointType] = joint
+                }
             }
-        }
-        
-        // Determine if it's left or right hand
-        if let observation = observation as? VNRecognizedPointsObservation {
-            handPose.isLeftHand = observation.points.count > 0
         }
         
         DispatchQueue.main.async {
@@ -265,14 +262,21 @@ class VisionManager: NSObject, ObservableObject {
     // MARK: - Exercise Recommendation
     func recommendExercises(for painPoints: Set<BodyJointType>) -> [Exercise] {
         var recommendedExercises: [Exercise] = []
+        var seenNames = Set<String>()  // Track unique exercise names
         
         for joint in painPoints {
             let exercises = ExerciseCatalog.getExercisesForJoint(joint)
-            recommendedExercises.append(contentsOf: exercises)
+            for exercise in exercises {
+                // Only add exercises we haven't seen before
+                if !seenNames.contains(exercise.name) {
+                    recommendedExercises.append(exercise)
+                    seenNames.insert(exercise.name)
+                }
+            }
         }
         
-        // Remove duplicates and limit to 5 exercises
-        return Array(Set(recommendedExercises)).prefix(5).map { $0 }
+        // Return first 5 exercises
+        return Array(recommendedExercises.prefix(5))
     }
     
     // MARK: - Exercise Tracking
@@ -302,6 +306,15 @@ class VisionManager: NSObject, ObservableObject {
             
             print("-----------------------------------")
         }
+    }
+    
+    // Add new method for logging body stats
+    private func logBodyStats(_ bodyPose: BodyPose) {
+        print("BODY STATS:")
+        for (jointType, joint) in bodyPose.joints {
+            print("- \(jointType): confidence \(joint.confidence)")
+        }
+        print("-----------------------------------")
     }
     
     // Clean up resources

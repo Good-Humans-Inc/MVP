@@ -39,8 +39,10 @@ struct ExerciseView: View {
                 .edgesIgnoringSafeArea(.all)
             
             // Hand pose overlay
-            HandPoseView(handPose: visionManager.currentHandPose)
-                .edgesIgnoringSafeArea(.all)
+            if let handPose = visionManager.currentHandPose {
+                HandPoseView(handPose: handPose)
+                    .edgesIgnoringSafeArea(.all)
+            }
             
             // Coach message bubble if there are messages
             // if !coachMessages.isEmpty, showCoachFeedback {
