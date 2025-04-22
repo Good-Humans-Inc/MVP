@@ -7,6 +7,8 @@ import requests
 from google.cloud import firestore
 from google.cloud import secretmanager
 from datetime import datetime
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

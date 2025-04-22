@@ -13,11 +13,19 @@ enum BodyJointType: String, CaseIterable {
     
     // Mid body
     case root
+    case spine
     case leftHip, rightHip
     
     // Lower body
     case leftKnee, rightKnee
     case leftAnkle, rightAnkle
+    case leftFoot, rightFoot
+    
+    // Joint groups for exercise targeting
+    static let shoulderGroup: Set<BodyJointType> = [.leftShoulder, .rightShoulder, .leftElbow, .rightElbow]
+    static let kneeGroup: Set<BodyJointType> = [.leftKnee, .rightKnee, .leftHip, .rightHip]
+    static let ankleGroup: Set<BodyJointType> = [.leftAnkle, .rightAnkle, .leftFoot, .rightFoot]
+    static let lowerBackGroup: Set<BodyJointType> = [.root, .spine, .leftHip, .rightHip]
     
     // Map to VNHumanBodyPoseObservation.JointName
     var visionJointName: VNHumanBodyPoseObservation.JointName? {
@@ -35,16 +43,19 @@ enum BodyJointType: String, CaseIterable {
         case .leftWrist: return .leftWrist
         case .rightWrist: return .rightWrist
         case .root: return .root
+        case .spine: return .root // Map spine to root as approximation
         case .leftHip: return .leftHip
         case .rightHip: return .rightHip
         case .leftKnee: return .leftKnee
         case .rightKnee: return .rightKnee
         case .leftAnkle: return .leftAnkle
         case .rightAnkle: return .rightAnkle
+        case .leftFoot: return .leftAnkle // Map foot to ankle as approximation
+        case .rightFoot: return .rightAnkle // Map foot to ankle as approximation
         }
     }
     
-    // Specify joint connections for drawing lines
+    // Update connections to include new joints
     static let connections: [(BodyJointType, BodyJointType)] = [
         // Head
         (.nose, .leftEye), (.nose, .rightEye),
@@ -55,13 +66,18 @@ enum BodyJointType: String, CaseIterable {
         (.leftShoulder, .leftElbow), (.rightShoulder, .rightElbow),
         (.leftElbow, .leftWrist), (.rightElbow, .rightWrist),
         
+        // Spine
+        (.neck, .spine),
+        (.spine, .root),
+        
         // Torso
         (.leftShoulder, .leftHip), (.rightShoulder, .rightHip),
         (.leftHip, .rightHip),
         
         // Legs
         (.leftHip, .leftKnee), (.rightHip, .rightKnee),
-        (.leftKnee, .leftAnkle), (.rightKnee, .rightAnkle)
+        (.leftKnee, .leftAnkle), (.rightKnee, .rightAnkle),
+        (.leftAnkle, .leftFoot), (.rightAnkle, .rightFoot)
     ]
 }
 
