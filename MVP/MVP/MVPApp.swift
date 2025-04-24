@@ -6,7 +6,7 @@ import FirebaseMessaging
 
 typealias Joint = BodyJointType
 // App Delegate to handle Firebase
-class AppDelegate: NSObject, UIApplicationDelegate {
+class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
     // Track if this is first launch of the app
     @AppStorage("isFirstAppLaunch") private var isFirstAppLaunch = true
     
@@ -158,6 +158,72 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 //        } else {
 //            completionHandler(.noData)
 //        }
+    }
+    
+    // MARK: - MessagingDelegate Methods
+    
+    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        print("📱 Firebase registration token received: \(String(describing: fcmToken))")
+        
+        // Store this token for later use
+        if let token = fcmToken {
+            UserDefaults.standard.set(token, forKey: "FCMToken")
+            print("✅ FCM Token saved to UserDefaults")
+            
+            // Get user ID if available
+            if let userId = UserDefaults.standard.string(forKey: "UserID") {
+                // Update token in backend
+                updateFCMTokenInBackend(userId: userId, token: token)
+            } else {
+                print("⚠️ No UserID available to update FCM token in backend")
+            }
+        }
+    }
+    
+    // Helper method to update FCM token in backend
+    private func updateFCMTokenInBackend(userId: String, token: String) {
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_fcm_token") else {
+            print("❌ Invalid FCM token update URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: String] = [
+            "user_id": userId,
+            "fcm_token": token
+        ]
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            print("❌ Failed to serialize FCM token update request: \(error)")
+            return
+        }
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ FCM token update network error: \(error)")
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📊 FCM token update HTTP status: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode == 200 {
+                    print("✅ FCM token successfully updated in backend")
+                } else {
+                    print("❌ FCM token update failed with status: \(httpResponse.statusCode)")
+                }
+            }
+            
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                print("📊 FCM token update response: \(json)")
+            }
+        }.resume()
     }
 }
 
