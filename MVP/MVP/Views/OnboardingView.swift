@@ -14,6 +14,7 @@ struct OnboardingView: View {
     @EnvironmentObject private var resourceCoordinator: ResourceCoordinator
     @EnvironmentObject private var cameraManager: CameraManager
     @EnvironmentObject private var visionManager: VisionManager
+    @EnvironmentObject private var notificationManager: NotificationManager
     
     enum AnimationState {
         case idle, listening, speaking, thinking
@@ -33,6 +34,12 @@ struct OnboardingView: View {
                 .edgesIgnoringSafeArea(.all)
             
             VStack(spacing: 20) {
+                // Debug info for NotificationManager
+                Text("NotificationManager Status: \(notificationManager.isAuthorized ? "Available" : "Not Available")")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.top)
+                
                 // Reset button
                 HStack {
                     Spacer()
@@ -218,58 +225,60 @@ struct OnboardingView: View {
     }
     
     private func handleOnboardingComplete() {
-        // Only proceed if not already completed
-        guard !appState.isOnboardingComplete else { 
-            print("⚠️ DEBUG: OnboardingView - handleOnboardingComplete called but onboarding is already complete")
-            return 
+        print("🎯 DEBUG: OnboardingView - Handling onboarding completion")
+        print("📱 DEBUG: NotificationManager availability check:")
+        print("- Is NotificationManager initialized: \(notificationManager != nil)")
+        print("- Is NotificationManager authorized: \(notificationManager.isAuthorized)")
+        
+        // Get FCM token
+        notificationManager.getFCMToken { token in
+            if let token = token {
+                print("✅ FCM Token obtained after onboarding: \(token)")
+            } else {
+                print("⚠️ Failed to get FCM token after onboarding")
+            }
         }
         
-        print("🎯 DEBUG: OnboardingView - Starting onboarding completion process")
-        print("📊 DEBUG: OnboardingView - Pre-completion state:")
-        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
-        print("- appState.hasUserId: \(appState.hasUserId)")
-        print("- appState.isFirstExercise: \(appState.isFirstExercise)")
-        
-        // End the ElevenLabs session
+        // End the onboarding session
         voiceManager.endElevenLabsSession()
         
         // Small delay to allow session to properly end and cleanup
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            print("🎯 DEBUG: OnboardingView - Setting completion states")
-            
-            // Set completion state in AppState
-            self.appState.isOnboardingComplete = true
-            
-            // Additional cleanup
-            self.animationState = .idle
-            
-            print("📊 DEBUG: OnboardingView - Post-completion state:")
-            print("- appState.isOnboardingComplete: \(self.appState.isOnboardingComplete)")
-            print("- appState.hasUserId: \(self.appState.hasUserId)")
-            print("- appState.isFirstExercise: \(self.appState.isFirstExercise)")
-            
-            // Ensure we have an exercise before transitioning
-            if let exercise = self.appState.currentExercise {
-                print("✅ DEBUG: OnboardingView - Transitioning to ExerciseDetailView with exercise: \(exercise.name)")
-                
-                // Transition to ExerciseDetailView with all required environment objects
-                if let window = UIApplication.shared.windows.first {
-                    window.rootViewController = UIHostingController(rootView: 
-                        ExerciseDetailView(exercise: exercise)
-                            .environmentObject(self.appState)
-                            .environmentObject(self.voiceManager)
-                            .environmentObject(self.resourceCoordinator)
-                            .environmentObject(self.cameraManager)
-                            .environmentObject(self.visionManager)
-                    )
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    print("🎯 DEBUG: OnboardingView - Setting completion states")
+                    
+                    // Set completion state in AppState
+                    self.appState.isOnboardingComplete = true
+                    
+                    // Additional cleanup
+                    self.animationState = .idle
+                    
+                    print("📊 DEBUG: OnboardingView - Post-completion state:")
+                    print("- appState.isOnboardingComplete: \(self.appState.isOnboardingComplete)")
+                    print("- appState.hasUserId: \(self.appState.hasUserId)")
+                    print("- appState.isFirstExercise: \(self.appState.isFirstExercise)")
+                    
+                    // Ensure we have an exercise before transitioning
+                    if let exercise = self.appState.currentExercise {
+                        print("✅ DEBUG: OnboardingView - Transitioning to ExerciseDetailView with exercise: \(exercise.name)")
+                        
+                        // Transition to ExerciseDetailView with all required environment objects
+                        if let window = UIApplication.shared.windows.first {
+                            window.rootViewController = UIHostingController(rootView:
+                                ExerciseDetailView(exercise: exercise)
+                                    .environmentObject(self.appState)
+                                    .environmentObject(self.voiceManager)
+                                    .environmentObject(self.resourceCoordinator)
+                                    .environmentObject(self.cameraManager)
+                                    .environmentObject(self.visionManager)
+                            )
+                        }
+                    } else {
+                        print("⚠️ DEBUG: OnboardingView - No exercise available for transition")
+                    }
+                    
+                    print("✅ DEBUG: OnboardingView - Onboarding completion process finished")
                 }
-            } else {
-                print("⚠️ DEBUG: OnboardingView - No exercise available for transition")
             }
-            
-            print("✅ DEBUG: OnboardingView - Onboarding completion process finished")
-        }
-    }
     
     private func resetOnboarding() {
         print("🔄 DEBUG: OnboardingView - Resetting onboarding")
