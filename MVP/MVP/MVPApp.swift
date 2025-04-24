@@ -20,6 +20,11 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         
         // Configure Firebase
         FirebaseApp.configure()
+        print("🔥 Firebase configured with options: \(String(describing: FirebaseApp.app()?.options))")
+        
+        // Set messaging delegate
+        Messaging.messaging().delegate = self
+        print("📨 Firebase Messaging delegate set")
         
         // Request notification permissions
         requestNotificationPermissions()
@@ -117,10 +122,21 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Convert token to string
         let tokenParts = deviceToken.map { data in String(format: "%02.2hhx", data) }
         let token = tokenParts.joined()
-        print("📱 Device Token: \(token)")
+        print("📱 APNs Device Token: \(token)")
         
         // Set the APNs token in Firebase Messaging
         Messaging.messaging().apnsToken = deviceToken
+        print("🔥 APNs token set in Firebase Messaging")
+        
+        // Request FCM token explicitly
+        Messaging.messaging().token { token, error in
+            if let error = error {
+                print("❌ Error fetching FCM token after APNs registration: \(error)")
+            }
+            if let token = token {
+                print("✅ FCM token generated after APNs registration: \(token)")
+            }
+        }
     }
     
     // Handle failed registration for remote notifications
@@ -176,6 +192,7 @@ struct MVPApp: App {
         
         let notifications = NotificationManager()
         _notificationManager = StateObject(wrappedValue: notifications)
+        print("📱 DEBUG: NotificationManager initialized")
         
         print("🚀 App initialization complete")
     }

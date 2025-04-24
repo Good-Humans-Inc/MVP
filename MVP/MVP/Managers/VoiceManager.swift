@@ -94,6 +94,7 @@ class VoiceManager: NSObject, ObservableObject {
     static let userIdReceivedNotification = Notification.Name("UserIDReceived")
     static let exercisesGeneratedNotification = Notification.Name("ExercisesGenerated")
     static let exerciseCoachReadyNotification = Notification.Name("ExerciseCoachReady")
+    static let reportGeneratedNotification = Notification.Name("ReportGenerated")
     
     override init() {
         super.init()
@@ -601,30 +602,6 @@ class VoiceManager: NSObject, ObservableObject {
             return "User demographics saved successfully"
         }
         
-        // Add exercise feedback tool
-        clientTools.register("provideExerciseFeedback") { parameters in
-            guard let feedbackType = parameters["type"] as? String,
-                  let message = parameters["message"] as? String else {
-                throw ElevenLabsSDK.ClientToolError.invalidParameters
-            }
-            
-            print("🔵 Exercise Feedback (\(feedbackType)): \(message)")
-            
-            // Post notification with feedback information
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: Notification.Name("ExerciseFeedback"),
-                    object: nil,
-                    userInfo: [
-                        "type": feedbackType,
-                        "message": message
-                    ]
-                )
-            }
-            
-            return "Feedback provided successfully"
-        }
-        
         // Debug tool to log any message
         clientTools.register("logMessage") { parameters in
             guard let message = parameters["message"] as? String else {
@@ -635,50 +612,29 @@ class VoiceManager: NSObject, ObservableObject {
             return "Logged: \(message)"
         }
         
-        print("⭐️ Registered first exercise client tools: saveUserDemographics, provideExerciseFeedback, logMessage")
+        print("⭐️ Registered first exercise client tools: saveUserDemographics, logMessage")
     }
     
     // Register tools specific to the regular exercise agent
     private func registerExerciseTools(clientTools: inout ElevenLabsSDK.ClientTools) {
         // Tool to log exercise progress
-        clientTools.register("logExerciseProgress") { [weak self] parameters in
-            guard let self = self else { return "Manager not available" }
-            
-            print("🔵 logExerciseProgress tool called with parameters: \(parameters)")
-            
-            guard let exerciseId = parameters["exercise_id"] as? String,
-                  let progress = parameters["progress"] as? Double else {
+        clientTools.register("logExerciseProgress") { parameters in
+            guard let progress = parameters["progress"] as? String else {
                 throw ElevenLabsSDK.ClientToolError.invalidParameters
             }
             
-            // Here you would log this to your backend or local storage
-            print("📊 Exercise Progress: \(exerciseId) - \(progress)%")
+            print("🔵 Exercise Progress: \(progress)")
             
-            return "Exercise progress logged successfully"
-        }
-        
-        // Tool to provide exercise feedback
-        clientTools.register("provideExerciseFeedback") { parameters in
-            guard let feedbackType = parameters["type"] as? String,
-                  let message = parameters["message"] as? String else {
-                throw ElevenLabsSDK.ClientToolError.invalidParameters
-            }
-            
-            print("🔵 Exercise Feedback (\(feedbackType)): \(message)")
-            
-            // Post notification with feedback information
+            // Post notification with progress information
             DispatchQueue.main.async {
                 NotificationCenter.default.post(
-                    name: Notification.Name("ExerciseFeedback"),
+                    name: Notification.Name("ExerciseProgress"),
                     object: nil,
-                    userInfo: [
-                        "type": feedbackType,
-                        "message": message
-                    ]
+                    userInfo: ["progress": progress]
                 )
             }
             
-            return "Feedback provided successfully"
+            return "Progress logged successfully"
         }
         
         // Debug tool to log any message
@@ -691,7 +647,7 @@ class VoiceManager: NSObject, ObservableObject {
             return "Logged: \(message)"
         }
         
-        print("⭐️ Registered exercise client tools: logExerciseProgress, provideExerciseFeedback, logMessage")
+        print("⭐️ Registered exercise client tools: logExerciseProgress, logMessage")
     }
     
     // Generate exercises for the user
@@ -764,6 +720,11 @@ class VoiceManager: NSObject, ObservableObject {
                                 object: nil,
                                 userInfo: ["exercises_count": 1]
                             )
+                            
+                            // Schedule notification for the exercise
+                            if let exerciseId = exerciseJson["id"] as? String {
+                                self.scheduleNotification(userId: userId, exerciseId: exerciseId)
+                            }
                         }
                         
                         print("✅ Generated exercise and saved to UserDefaults")
@@ -773,6 +734,53 @@ class VoiceManager: NSObject, ObservableObject {
                 }
             } catch {
                 print("❌ Failed to parse exercise generation response: \(error)")
+            }
+        }
+        
+        task.resume()
+    }
+    
+    // Helper function to schedule notification
+    private func scheduleNotification(userId: String, exerciseId: String) {
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/schedule_notification") else {
+            print("❌ Invalid schedule notification URL")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Create request body
+        let requestBody: [String: Any] = [
+            "user_id": userId,
+            "exercise_id": exerciseId,
+            "is_one_time": false  // This is a recurring notification
+        ]
+        
+        // Convert to JSON data
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            print("❌ Failed to serialize notification scheduling request")
+            return
+        }
+        
+        request.httpBody = httpBody
+        
+        // Make API call
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Notification scheduling error: \(error.localizedDescription)")
+                return
+            }
+            
+            // Log HTTP response for debugging
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📊 Notification scheduling HTTP status: \(httpResponse.statusCode)")
+            }
+            
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                print("📊 Notification scheduling response: \(json)")
             }
         }
         
@@ -1192,12 +1200,30 @@ class VoiceManager: NSObject, ObservableObject {
             do {
                 // Parse response
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    completion(.success(json))
+                    // Store report in UserDefaults
+                    if let reportData = try? JSONSerialization.data(withJSONObject: json) {
+                        UserDefaults.standard.set(reportData, forKey: "UserReport")
+                        
+                        DispatchQueue.main.async {
+                            // Post notification that report is ready
+                            NotificationCenter.default.post(
+                                name: VoiceManager.reportGeneratedNotification,
+                                object: nil
+                            )
+                            
+                            // Schedule notification for the report
+                            if let userId = UserDefaults.standard.string(forKey: "UserId") {
+                                self.scheduleNotification(userId: userId, exerciseId: "report")
+                            }
+                        }
+                        
+                        print("✅ Generated report and saved to UserDefaults")
+                    }
                 } else {
-                    completion(.failure(NSError(domain: "VoiceManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid response format"])))
+                    print("❌ Invalid report generation response format")
                 }
             } catch {
-                completion(.failure(error))
+                print("❌ Failed to parse report generation response: \(error)")
             }
         }.resume()
     }

@@ -13,6 +13,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     private let notificationCenter = UNUserNotificationCenter.current()
     private let defaults = UserDefaults.standard
     
+    // Add property to store window reference
+    private var tokenAlertWindow: UIWindow?
+    
     // MARK: - Initialization
     override init() {
         super.init()
@@ -26,6 +29,18 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         // Check current authorization status
         checkAuthorizationStatus()
+        
+        // Request authorization and then register for remote notifications
+        requestAuthorization { granted, error in
+            if granted {
+                print("✅ Notification permission granted, registering for remote notifications")
+                DispatchQueue.main.async {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            } else {
+                print("❌ Notification permission denied: \(String(describing: error))")
+            }
+        }
     }
     
     // MARK: - Public Methods
@@ -37,23 +52,96 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         notificationCenter.requestAuthorization(options: options) { [weak self] granted, error in
             DispatchQueue.main.async {
                 self?.isAuthorized = granted
-                
-                if granted {
-                    // Register for remote notifications
-                    UIApplication.shared.registerForRemoteNotifications()
-                }
-                
                 completion(granted, error)
             }
         }
     }
     
+    /// Show FCM token in a pop-up window
+    private func showFCMTokenAlert(token: String) {
+        DispatchQueue.main.async {
+            // Create alert controller
+            let alertController = UIAlertController(
+                title: "FCM Token",
+                message: token,
+                preferredStyle: .alert
+            )
+            
+            // Add copy action
+            let copyAction = UIAlertAction(title: "Copy", style: .default) { _ in
+                UIPasteboard.general.string = token
+            }
+            
+            // Add dismiss action
+            let dismissAction = UIAlertAction(title: "Dismiss", style: .cancel)
+            
+            // Add actions to alert controller
+            alertController.addAction(copyAction)
+            alertController.addAction(dismissAction)
+            
+            // Present the alert on the top-most window
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first {
+                window.rootViewController?.present(alertController, animated: true)
+            }
+        }
+    }
+    
+    /// Get FCM token only after APNs token is set
+    func getFCMToken(completion: @escaping (String?) -> Void) {
+        // Check if we already have an FCM token
+        if let existingToken = fcmToken {
+            print("✅ Using existing FCM token")
+            showFCMTokenAlert(token: existingToken)
+            completion(existingToken)
+            return
+        }
+        
+        // Check if we're registered for remote notifications
+        if !UIApplication.shared.isRegisteredForRemoteNotifications {
+            print("⚠️ Not registered for remote notifications yet, requesting registration")
+            UIApplication.shared.registerForRemoteNotifications()
+            
+            // Wait a bit and try again
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.getFCMToken(completion: completion)
+            }
+            return
+        }
+        
+        // Try to get FCM token
+        Messaging.messaging().token { [weak self] token, error in
+            if let error = error {
+                print("❌ Error fetching FCM token: \(error.localizedDescription)")
+                completion(nil)
+                return
+            }
+            
+            if let token = token {
+                print("📱 FCM Token: \(token)")
+                self?.fcmToken = token
+                self?.showFCMTokenAlert(token: token)
+                
+                // Send token to backend if we have a user ID
+                if let userId = UserDefaults.standard.string(forKey: "UserID") {
+                    self?.updateFCMTokenInBackend(token: token)
+                }
+                
+                completion(token)
+            } else {
+                print("❌ No FCM token available")
+                completion(nil)
+            }
+        }
+    }
+    
     /// Schedule a local notification
-    func scheduleLocalNotification(title: String, body: String, timeInterval: TimeInterval, identifier: String) {
+    func scheduleLocalNotification(title: String, body: String, timeInterval: TimeInterval, identifier: String, isOneTime: Bool = false) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        content.userInfo = ["is_one_time": isOneTime]
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: timeInterval, repeats: false)
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
@@ -68,17 +156,18 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     }
     
     /// Schedule a daily notification at a specific time
-    func scheduleDailyNotification(title: String, body: String, hour: Int, minute: Int, identifier: String) {
+    func scheduleDailyNotification(title: String, body: String, hour: Int, minute: Int, identifier: String, isOneTime: Bool = false) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        content.userInfo = ["is_one_time": isOneTime]
         
         var dateComponents = DateComponents()
         dateComponents.hour = hour
         dateComponents.minute = minute
         
-        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: !isOneTime)
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
         
         notificationCenter.add(request) { error in
@@ -144,24 +233,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         // Schedule new notifications based on preferences
         if notificationPreferences.isEnabled {
-            if notificationPreferences.frequency == .daily {
-                scheduleDailyNotification(
-                    title: "Time for your PT exercises!",
-                    body: "Don't forget to complete your physical therapy exercises today.",
-                    hour: notificationPreferences.hour,
-                    minute: notificationPreferences.minute,
-                    identifier: "daily_exercise_reminder"
-                )
-            } else if notificationPreferences.frequency == .weekly {
-                scheduleWeeklyNotification(
-                    title: "Time for your PT exercises!",
-                    body: "Don't forget to complete your physical therapy exercises today.",
-                    hour: notificationPreferences.hour,
-                    minute: notificationPreferences.minute,
-                    weekdays: notificationPreferences.weekdays,
-                    identifier: "weekly_exercise_reminder"
-                )
-            }
+            scheduleDailyNotification(
+                title: "Time for your PT exercises!",
+                body: "Don't forget to complete your physical therapy exercises today.",
+                hour: notificationPreferences.hour,
+                minute: notificationPreferences.minute,
+                identifier: "daily_exercise_reminder",
+                isOneTime: false
+            )
         }
     }
     
@@ -204,6 +283,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         // Handle notification tap
         let userInfo = response.notification.request.content.userInfo
         
+        // Check if this is a one-time notification
+        let isOneTime = userInfo["is_one_time"] as? Bool ?? false
+        
         // Process the notification data
         if let exerciseId = userInfo["exerciseId"] as? String {
             // Handle exercise notification
@@ -219,57 +301,72 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     
     /// Handle FCM token refresh
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        print("📱 Firebase registration token: \(String(describing: fcmToken))")
+        
+        // Store token
         self.fcmToken = fcmToken
         
-        // Save the token to UserDefaults
+        // Show token in alert if available
         if let token = fcmToken {
-            defaults.set(token, forKey: "fcmToken")
-            
-            // If we have a user ID, update the token on the server
-            if let userId = defaults.string(forKey: "UserID") {
-                updateFCMTokenOnServer(userId: userId, token: token)
-            }
+            showFCMTokenAlert(token: token)
+        }
+        
+        // Send this token to backend
+        if let token = fcmToken {
+            updateFCMTokenInBackend(token: token)
         }
     }
     
-    /// Update FCM token on the server
-    private func updateFCMTokenOnServer(userId: String, token: String) {
-        // Create URL for API call
+    // MARK: - Backend Integration
+    
+    /// Update FCM token in backend
+    private func updateFCMTokenInBackend(token: String) {
         guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_fcm_token") else {
-            print("❌ Invalid URL for FCM token update")
+            print("❌ Invalid FCM token update URL")
             return
         }
         
-        // Create request
+        // Get user ID from UserDefaults
+        guard let userId = UserDefaults.standard.string(forKey: "UserID") else {
+            print("❌ No user ID available for FCM token update")
+            return
+        }
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        // Create request body
-        let requestBody: [String: Any] = [
+        let requestBody: [String: String] = [
             "user_id": userId,
             "fcm_token": token
         ]
         
-        // Serialize request body
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        } catch {
-            print("❌ Error serializing FCM token update request: \(error)")
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            print("❌ Failed to serialize FCM token update request")
             return
         }
         
-        // Make API call
+        request.httpBody = httpBody
+        
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
-                print("❌ Error updating FCM token: \(error)")
+                print("❌ FCM token update error: \(error.localizedDescription)")
                 return
             }
             
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                print("✅ FCM token updated successfully")
-            } else {
-                print("❌ Failed to update FCM token: \(response.debugDescription)")
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📊 FCM token update HTTP status: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode == 200 {
+                    print("✅ FCM token updated successfully in backend")
+                } else {
+                    print("❌ FCM token update failed with status: \(httpResponse.statusCode)")
+                }
+            }
+            
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                print("📊 FCM token update response: \(json)")
             }
         }.resume()
     }

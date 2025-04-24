@@ -202,6 +202,47 @@ Guidelines for each field:
         # Update user's streak information
         update_user_streak(user_id, streak_info)
         
+        # Generate next day's notification message using GPT
+        try:
+            # Get user's exercise history and preferences
+            user_ref = db.collection('users').document(user_id)
+            user_doc = user_ref.get()
+            user_data = user_doc.to_dict()
+            
+            # Get user's exercises
+            user_exercises = db.collection('user_exercises').where('user_id', '==', user_id).get()
+            exercise_names = []
+            for doc in user_exercises:
+                ex_data = doc.to_dict()
+                ex_id = ex_data.get('exercise_id')
+                if ex_id:
+                    ex_doc = db.collection('exercises').document(ex_id).get()
+                    if ex_doc.exists:
+                        ex_data = ex_doc.to_dict()
+                        exercise_names.append(ex_data.get('name', 'Unknown'))
+            
+            # Generate personalized notification content
+            notification_content = generate_notification_content(
+                user_name=user_data.get('name', 'User'),
+                exercise_names=exercise_names,
+                user_data=user_data
+            )
+            
+            # Save to user's document for next day use
+            user_ref.update({
+                'next_day_notification': {
+                    'title': notification_content['title'],
+                    'body': notification_content['body'],
+                    'created_at': firestore.SERVER_TIMESTAMP
+                }
+            })
+            
+            print(f"✅ Generated and stored next day notification message for user {user_id}")
+            
+        except Exception as e:
+            print(f"⚠️ Error generating notification message: {str(e)}")
+            # Continue with report generation even if notification generation fails
+        
         # Add timestamp to the response data (use ISO format string directly)
         report_data['timestamp'] = datetime.now().isoformat()
         
@@ -389,7 +430,7 @@ Current Streak: {streak} days
 Preferred Tone: {preferred_tone}
 
 The notification should have:
-1. A catchy title (max 50 characters)
+1. A catchy title (max 44 characters)
 2. A motivational message (max 150 characters)
 3. Be {preferred_tone} in tone
 4. Mention specific exercises if provided
@@ -463,5 +504,3 @@ def send_exercise_notification(user_id, fcm_token):
         'created_at': datetime.now(),
         'content_type': 'ai_generated'
     }
-    
-    # ... rest of the existing send_exercise_notification function ...
