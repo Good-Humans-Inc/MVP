@@ -239,11 +239,12 @@ class VoiceManager: NSObject, ObservableObject {
                 // get user info from UserManager
                 let userManager = UserManager.shared
                 // Add user info to dynamic variables
-                dynamicVars["userName"] = .string(userManager.userName)
-                dynamicVars["userAge"] = .int(userManager.userAge)
-                dynamicVars["exerciseHabits"] = .string(userManager.exerciseHabits)
+                dynamicVars["user_name"] = .string(userManager.userName)
+                dynamicVars["user_id"] = .string(userManager.userId!) // userId should always exist
+                dynamicVars["user_age"] = .int(userManager.userAge)
+                dynamicVars["exercise_habits"] = .string(userManager.exerciseHabits)
                 dynamicVars["goals"] = .string(userManager.goals)
-                dynamicVars["painDescription"] = .string(userManager.painDescription)
+                dynamicVars["pain_description"] = .string(userManager.painDescription)
                 
                 // Add dynamic variables for exercise agents
                 if agentType == .firstExercise || agentType == .exercise {
@@ -255,10 +256,10 @@ class VoiceManager: NSObject, ObservableObject {
                         
                         // Add basic exercise info
                         if let name = exercise["name"] as? String {
-                            dynamicVars["exerciseName"] = .string(name)
+                            dynamicVars["exercise_name"] = .string(name)
                         }
                         if let description = exercise["description"] as? String {
-                            dynamicVars["exerciseDescription"] = .string(description)
+                            dynamicVars["exercise_description"] = .string(description)
                         }
                         
                         // Add instructions as a formatted string
@@ -266,7 +267,7 @@ class VoiceManager: NSObject, ObservableObject {
                             let numberedInstructions = instructions.enumerated()
                                 .map { (index, instruction) in "\(index + 1). \(instruction)" }
                                 .joined(separator: "\n")
-                            dynamicVars["exerciseInstructions"] = .string(numberedInstructions)
+                            dynamicVars["exercise_instructions"] = .string(numberedInstructions)
                         }
                         
                         // Add variations as a formatted string
@@ -274,19 +275,19 @@ class VoiceManager: NSObject, ObservableObject {
                             let formattedVariations = variations
                                 .map { "• \($0)" }
                                 .joined(separator: "\n")
-                            dynamicVars["exerciseVariations"] = .string(formattedVariations)
+                            dynamicVars["exercise_variations"] = .string(formattedVariations)
                         }
                         
                         // Add target joints
                         if let targetJoints = exercise["target_joints"] as? [String] {
-                            dynamicVars["targetJoints"] = .string(targetJoints.joined(separator: ", "))
+                            dynamicVars["target_joints"] = .string(targetJoints.joined(separator: ", "))
                         }
                         
                         // Add exercise ID
                         if let firestoreId = exercise["firestoreId"] as? String {
-                            dynamicVars["exerciseId"] = .string(firestoreId)
+                            dynamicVars["exercise_id"] = .string(firestoreId)
                         } else if let id = exercise["id"] as? String {
-                            dynamicVars["exerciseId"] = .string(id.lowercased())
+                            dynamicVars["exercise_id"] = .string(id.lowercased())
                         }
                         
                         print("✅ Added exercise dynamic variables:")

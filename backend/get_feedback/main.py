@@ -33,12 +33,12 @@ def get_latest_feedback(request):
 
     try:
         # Get parameters from query string
-        user_id = request.args.get('userId')
-        exercise_id = request.args.get('exerciseId')
+        user_id = request.args.get('user_id')
+        exercise_id = request.args.get('exercise_id')
         
         if not user_id or not exercise_id:
             return {
-                'error': 'Missing required parameters. Need userId and exerciseId'
+                'error': 'Missing required parameters. Need user_id and exercise_id'
             }, 400, headers
 
         # Initialize Firestore DB with specific project and database
