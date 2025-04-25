@@ -6,6 +6,7 @@ import json
 import uuid
 from google.cloud import secretmanager
 from google.cloud.firestore_v1._helpers import DatetimeWithNanoseconds
+from openai import OpenAI
 
 # Initialize Firebase Admin with default credentials
 firebase_admin.initialize_app()
@@ -17,6 +18,59 @@ def get_secret(secret_id):
     name = f"projects/pepmvp/secrets/{secret_id}/versions/latest"
     response = client.access_secret_version(request={"name": name})
     return response.payload.data.decode("UTF-8")
+
+def generate_notification_content(user_name, exercise_names, user_data):
+    """Generate personalized notification content using OpenAI."""
+    try:
+        client = OpenAI(api_key=get_secret('openai-api-key'))
+        
+        # Get user's preferences and history
+        preferred_tone = user_data.get('notification_preferences', {}).get('tone', 'friendly')
+        exercise_history = user_data.get('exercise_history', [])
+        streak = len(exercise_history)
+        
+        # Create prompt for OpenAI
+        prompt = f"""Generate a motivational exercise reminder notification for a physical therapy user with the following details:
+
+User Name: {user_name}
+Exercises: {', '.join(exercise_names)}
+Current Streak: {streak} days
+Preferred Tone: {preferred_tone}
+
+The notification should have:
+1. A catchy title (max 44 characters)
+2. A motivational message (max 150 characters)
+3. Be {preferred_tone} in tone
+4. Mention specific exercises if provided
+5. Include streak information if significant (>3 days)
+
+Format the response as JSON:
+{{
+    "title": "string",
+    "body": "string"
+}}"""
+
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a motivational physical therapy assistant crafting engaging notifications."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=200
+        )
+        
+        # Parse the response
+        content = json.loads(response.choices[0].message.content)
+        return content
+        
+    except Exception as e:
+        print(f"Error generating notification content: {str(e)}")
+        # Return default content if OpenAI generation fails
+        return {
+            "title": "Time for your PT exercises!",
+            "body": f"Hi {user_name}! Ready to continue your progress? Let's work on your exercises today!"
+        }
 
 @functions_framework.http
 def schedule_notification(request):
@@ -41,7 +95,7 @@ def schedule_notification(request):
         if not user_id:
             return (json.dumps({'error': 'Missing user_id'}), 400, headers)
         
-        # Get user's FCM token
+        # Get user's data
         user_ref = db.collection('users').document(user_id)
         user_doc = user_ref.get()
         
@@ -63,6 +117,20 @@ def schedule_notification(request):
         # Create notification ID
         notification_id = str(uuid.uuid4())
         
+        # Get user's exercises
+        exercises_ref = db.collection('user_exercises').where('user_id', '==', user_id).limit(1).get()
+        exercise_names = []
+        for exercise_doc in exercises_ref:
+            exercise_data = exercise_doc.to_dict()
+            exercise_names.append(exercise_data.get('name', 'your exercise'))
+        
+        # Generate personalized notification content
+        notification_content = generate_notification_content(
+            user_name=user_data.get('name', 'there'),
+            exercise_names=exercise_names,
+            user_data=user_data
+        )
+        
         # Create notification document
         notification_data = {
             'id': notification_id,
@@ -71,36 +139,18 @@ def schedule_notification(request):
             'scheduled_for': scheduled_datetime,
             'status': 'scheduled',
             'created_at': firestore.SERVER_TIMESTAMP,
-            'is_one_time': is_one_time
+            'is_one_time': is_one_time,
+            'content': notification_content
         }
         
         # Add to Firestore
         db.collection('notifications').document(notification_id).set(notification_data)
         
-        # Get user's notification preferences and stored message
-        user_ref = db.collection('users').document(user_id)
-        user_doc = user_ref.get()
-        user_data = user_doc.to_dict()
-        
-        # Get notification time from user preferences or use provided time
-        notification_time = scheduled_time
-        if not is_one_time:
-            # For recurring notifications, use user's preferred time
-            preferred_time = user_data.get('notification_preferences', {}).get('time', {})
-            if preferred_time:
-                notification_time = notification_time.replace(
-                    hour=preferred_time.get('hour', 9),
-                    minute=preferred_time.get('minute', 0)
-                )
-        
-        # Get stored notification message
-        next_day_notification = user_data.get('next_day_notification', {})
-        
         # Create message
         message = messaging.Message(
             notification=messaging.Notification(
-                title=next_day_notification.get('title', "Time for your PT exercises!"),
-                body=next_day_notification.get('body', "Don't forget to complete your physical therapy exercises today.")
+                title=notification_content['title'],
+                body=notification_content['body']
             ),
             data={
                 'notification_id': notification_id,
@@ -126,7 +176,7 @@ def schedule_notification(request):
             )
         )
         
-        # Schedule the message
+        # Send the message
         response = messaging.send(message)
         
         # Update notification status
@@ -136,45 +186,33 @@ def schedule_notification(request):
             'message_id': response
         })
         
-        # If this is a one-time notification, schedule the next one using the original time
+        # If this is a one-time notification, update the next regular notification time
         if is_one_time:
-            # Get the original notification schedule
-            original_schedule = user_data.get('notification_schedule', {})
-            original_hour = original_schedule.get('hour', 9)  # Default to 9 AM if not set
-            original_minute = original_schedule.get('minute', 0)  # Default to 0 if not set
+            # Get the regular notification schedule
+            notification_prefs = user_data.get('notification_preferences', {})
+            regular_hour = notification_prefs.get('hour', 9)  # Default to 9 AM
+            regular_minute = notification_prefs.get('minute', 0)
             
-            # Calculate the next notification time after this one (day after tomorrow)
-            next_notification_time = scheduled_datetime + timedelta(days=1)
-            next_notification_time = next_notification_time.replace(
-                hour=original_hour,
-                minute=original_minute,
+            # Calculate next regular notification time (next day)
+            next_notification = scheduled_datetime + timedelta(days=1)
+            next_notification = next_notification.replace(
+                hour=regular_hour,
+                minute=regular_minute,
                 second=0,
                 microsecond=0
             )
             
-            # Update the user's next notification time to use the original schedule
+            # Update the user's next notification time
             user_ref.update({
-                'notification_schedule.next_notification': next_notification_time,
-                'notification_schedule.temporary_override': firestore.DELETE_FIELD
+                'next_notification_time': next_notification
             })
-            
-            # Schedule the next notification using the original time
-            next_notification_time_str = next_notification_time.isoformat() + 'Z'
-            
-            # Create a new request for the next notification
-            next_notification_request = MockRequest({
-                'user_id': user_id,
-                'scheduled_time': next_notification_time_str,
-                'is_one_time': False  # This will be a regular notification
-            })
-            
-            # Schedule the next notification
-            schedule_notification(next_notification_request)
         
         return (json.dumps({
             'status': 'success',
             'notification_id': notification_id,
-            'message_id': response
+            'message_id': response,
+            'scheduled_for': scheduled_datetime.isoformat(),
+            'content': notification_content
         }), 200, headers)
             
     except Exception as e:
