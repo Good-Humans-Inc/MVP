@@ -1,6 +1,8 @@
 import SwiftUI
 import AVFoundation
 import Firebase
+import FirebaseFirestore
+import FirebaseAppCheck
 import UserNotifications
 import FirebaseMessaging
 
@@ -18,8 +20,27 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
             setupForFirstLaunch()
         }
         
+        // Configure App Check for development
+        #if DEBUG
+        let providerFactory = AppCheckDebugProviderFactory()
+        AppCheck.setAppCheckProviderFactory(providerFactory)
+        print("🔐 App Check configured for development")
+        #endif
+        
         // Configure Firebase
         FirebaseApp.configure()
+        
+        // Configure Firestore settings
+        let settings = FirestoreSettings()
+        settings.host = "firestore.googleapis.com"
+        
+        // Create custom FirebaseOptions to specify the database
+        let db = Firestore.firestore()
+        db.settings = settings
+        
+        // Use the specific database
+        let firestoreDB = try! FirebaseFirestore.Firestore.firestore(database: "pep-mvp")
+        
         print("🔥 Firebase configured with options: \(String(describing: FirebaseApp.app()?.options))")
         
         // Configure notification center delegate

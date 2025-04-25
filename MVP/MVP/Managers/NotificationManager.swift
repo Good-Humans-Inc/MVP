@@ -234,19 +234,43 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             return
         }
         
-        print("🔄 Updating FCM token in Firestore for user: \(userId)")
+        print("�� Updating FCM token via API for user: \(userId)")
         
-        let db = Firestore.firestore()
-        db.collection("users").document(userId).setData([
-            "fcm_token": token,
-            "updated_at": FieldValue.serverTimestamp()
-        ], merge: true) { error in
-            if let error = error {
-                print("❌ Error updating FCM token in Firestore: \(error.localizedDescription)")
-            } else {
-                print("✅ FCM token updated successfully in Firestore")
-            }
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_fcm_token") else {
+            print("❌ Invalid URL for FCM token update")
+            return
         }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: String] = [
+            "user_id": userId,
+            "fcm_token": token
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            print("❌ Failed to serialize request body")
+            return
+        }
+        
+        request.httpBody = jsonData
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Error updating FCM token: \(error.localizedDescription)")
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("✅ FCM token updated successfully via API")
+                } else {
+                    print("❌ FCM token update failed with status: \(httpResponse.statusCode)")
+                }
+            }
+        }.resume()
     }
     
     // MARK: - UNUserNotificationCenterDelegate
@@ -317,3 +341,4 @@ enum NotificationFrequency: String, Codable, CaseIterable {
     case daily
     case weekly
 } 
+
