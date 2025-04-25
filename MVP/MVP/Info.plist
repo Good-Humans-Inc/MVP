@@ -11,6 +11,10 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.pepmvp.app.notification-refresh</string>
+	</array>
 	<key>NSUserNotificationUsageDescription</key>
 	<string>We need to send you notifications to remind you about your physical therapy exercises.</string>
 </dict>

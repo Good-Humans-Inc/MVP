@@ -7,6 +7,7 @@ import uuid
 from google.cloud import secretmanager
 from google.cloud.firestore_v1._helpers import DatetimeWithNanoseconds
 from openai import OpenAI
+from google.cloud.functions.context import Context
 
 # Initialize Firebase Admin with default credentials
 firebase_admin.initialize_app()
@@ -170,9 +171,18 @@ def schedule_notification(request):
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
                         sound='default',
-                        badge=1
+                        badge=1,
+                        content_available=True,  # Enable background notification processing
+                        mutable_content=True,    # Allow notification modification before display
+                        priority=10,             # Highest priority for timely delivery
+                        category='EXERCISE_REMINDER'  # For custom notification actions
                     )
-                )
+                ),
+                headers={
+                    'apns-push-type': 'background',
+                    'apns-priority': '5',
+                    'apns-topic': 'com.pepmvp.app'  # Replace with your app bundle ID
+                }
             )
         )
         
@@ -438,4 +448,76 @@ def check_notification_status(request):
             
     except Exception as e:
         print(f"Error checking notification status: {str(e)}")
-        return (json.dumps({'error': str(e)}), 500, headers) 
+        return (json.dumps({'error': str(e)}), 500, headers)
+
+@functions_framework.cloud_event
+def monitor_notification_changes(cloud_event):
+    """Triggered by a change to a Firestore document."""
+    path_parts = cloud_event.data["value"]["name"].split("/documents/")[1].split("/")
+    collection_path = path_parts[0]
+    document_path = "/".join(path_parts[1:])
+    
+    # Only process user document changes
+    if collection_path != "users":
+        return
+    
+    # Get the changed document data
+    changed_data = cloud_event.data["value"]["fields"]
+    
+    # Check if notification preferences were changed
+    if "notification_preferences" not in str(changed_data):
+        return
+        
+    try:
+        # Get the user document
+        user_id = path_parts[1]  # Extract user_id from path
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        
+        if not user_doc.exists:
+            print(f"❌ User document {user_id} not found")
+            return
+            
+        user_data = user_doc.to_dict()
+        notification_prefs = user_data.get('notification_preferences', {})
+        
+        # Check if notifications are enabled
+        if not notification_prefs.get('is_enabled', True):
+            print(f"ℹ️ Notifications are disabled for user {user_id}")
+            return
+            
+        # Get notification time
+        hour = notification_prefs.get('hour', 9)  # Default to 9 AM
+        minute = notification_prefs.get('minute', 0)
+        
+        # Calculate next notification time
+        now = datetime.now()
+        next_notification = now.replace(
+            hour=hour,
+            minute=minute,
+            second=0,
+            microsecond=0
+        )
+        
+        # If time has passed for today, schedule for tomorrow
+        if next_notification < now:
+            next_notification = next_notification + timedelta(days=1)
+        
+        # Create mock request for schedule_notification
+        mock_request = MockRequest({
+            'user_id': user_id,
+            'scheduled_time': next_notification.isoformat() + 'Z',
+            'is_one_time': False
+        })
+        
+        # Schedule the notification
+        result = schedule_notification(mock_request)
+        print(f"✅ Notification scheduled for user {user_id} at {next_notification}")
+        
+        # Update next notification time in user document
+        user_ref.update({
+            'next_notification_time': next_notification
+        })
+        
+    except Exception as e:
+        print(f"❌ Error processing notification change: {str(e)}") 
