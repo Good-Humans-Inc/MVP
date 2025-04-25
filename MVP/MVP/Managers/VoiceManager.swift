@@ -282,11 +282,6 @@ class VoiceManager: NSObject, ObservableObject {
                             dynamicVars["targetJoints"] = .string(targetJoints.joined(separator: ", "))
                         }
                         
-                        // Add user ID if available
-                        if let userId = exercise["user_id"] as? String {
-                            dynamicVars["userId"] = .string(userId)
-                        }
-                        
                         // Add exercise ID
                         if let firestoreId = exercise["firestoreId"] as? String {
                             dynamicVars["exerciseId"] = .string(firestoreId)
