@@ -385,3 +385,57 @@ def serialize_firestore_data(data):
         return data.datetime.isoformat()
     else:
         return data 
+
+@functions_framework.http
+def check_notification_status(request):
+    # Enable CORS
+    if request.method == 'OPTIONS':
+        headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        }
+        return ('', 204, headers)
+    
+    headers = {'Access-Control-Allow-Origin': '*'}
+    
+    try:
+        # Get request data
+        request_json = request.get_json()
+        notification_id = request_json.get('notification_id')
+        
+        if not notification_id:
+            return (json.dumps({'error': 'Missing notification_id'}), 400, headers)
+        
+        # Get notification document
+        notification_ref = db.collection('notifications').document(notification_id)
+        notification_doc = notification_ref.get()
+        
+        if not notification_doc.exists:
+            return (json.dumps({'error': 'Notification not found'}), 404, headers)
+        
+        notification_data = notification_doc.to_dict()
+        user_id = notification_data.get('user_id')
+        
+        # Get user's FCM token for verification
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        user_data = user_doc.to_dict()
+        
+        # Prepare debug info
+        debug_info = {
+            'notification': serialize_firestore_data(notification_data),
+            'fcm_token_exists': bool(user_data.get('fcm_token')),
+            'fcm_token_last_update': serialize_firestore_data(user_data.get('last_token_update')),
+            'notification_preferences': user_data.get('notification_preferences', {}),
+            'app_notification_status': user_data.get('notification_status', 'unknown')
+        }
+        
+        return (json.dumps({
+            'status': 'success',
+            'debug_info': debug_info
+        }), 200, headers)
+            
+    except Exception as e:
+        print(f"Error checking notification status: {str(e)}")
+        return (json.dumps({'error': str(e)}), 500, headers) 
