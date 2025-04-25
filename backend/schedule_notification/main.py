@@ -470,12 +470,17 @@ def monitor_notification_changes(cloud_event):
     changed_data = cloud_event.data["value"]["fields"]
     print("📄 Changed document data:", changed_data)
     
-    # Check if notification preferences were changed
-    if "notification_preferences" not in str(changed_data):
-        print("❌ Skipping - no notification preferences changed")
-        return
-        
+    # Check if next_day_notification.next_notification_time was changed
     try:
+        next_day_notification = changed_data.get("next_day_notification", {}).get("mapValue", {}).get("fields", {})
+        next_notification_time = next_day_notification.get("next_notification_time", {}).get("timestampValue")
+        
+        if not next_notification_time:
+            print("❌ No next_notification_time change detected")
+            return
+            
+        print(f"⏰ Detected next_notification_time change: {next_notification_time}")
+        
         # Get the user document
         user_id = path_parts[1]  # Extract user_id from path
         print(f"👤 Processing for user: {user_id}")
@@ -488,32 +493,6 @@ def monitor_notification_changes(cloud_event):
             return
             
         user_data = user_doc.to_dict()
-        notification_prefs = user_data.get('notification_preferences', {})
-        print(f"⚙️ Notification preferences:", notification_prefs)
-        
-        # Check if notifications are enabled
-        if not notification_prefs.get('is_enabled', True):
-            print(f"ℹ️ Notifications are disabled for user {user_id}")
-            return
-            
-        # Get notification time
-        hour = notification_prefs.get('hour', 9)  # Default to 9 AM
-        minute = notification_prefs.get('minute', 0)
-        
-        # Calculate next notification time
-        now = datetime.now()
-        next_notification = now.replace(
-            hour=hour,
-            minute=minute,
-            second=0,
-            microsecond=0
-        )
-        
-        # If time has passed for today, schedule for tomorrow
-        if next_notification < now:
-            next_notification = next_notification + timedelta(days=1)
-        
-        print(f"⏰ Calculated next notification time: {next_notification}")
         
         # Check FCM token
         fcm_token = user_data.get('fcm_token')
@@ -523,23 +502,54 @@ def monitor_notification_changes(cloud_event):
             
         print(f"📱 Found FCM token: {fcm_token[:10]}...")
         
-        # Create mock request for schedule_notification
-        mock_request = MockRequest({
-            'user_id': user_id,
-            'scheduled_time': next_notification.isoformat() + 'Z',
-            'is_one_time': False
-        })
+        # Get notification content from next_day_notification
+        next_day_data = user_data.get('next_day_notification', {})
+        notification_content = {
+            'title': next_day_data.get('title', 'Time for Exercise!'),
+            'body': next_day_data.get('body', 'Time to work on your exercises!')
+        }
         
-        # Schedule the notification
-        result = schedule_notification(mock_request)
-        print(f"✅ Notification scheduled for user {user_id} at {next_notification}")
-        print(f"📊 Schedule result:", result)
+        # Create message
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title=notification_content['title'],
+                body=notification_content['body']
+            ),
+            data={
+                'notification_id': str(uuid.uuid4()),
+                'user_id': user_id,
+                'type': 'exercise_reminder'
+            },
+            token=fcm_token,
+            android=messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    priority='high',
+                    channel_id='exercise_reminders'
+                )
+            ),
+            apns=messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        sound='default',
+                        badge=1,
+                        content_available=True,
+                        mutable_content=True,
+                        priority=10,
+                        category='EXERCISE_REMINDER'
+                    )
+                ),
+                headers={
+                    'apns-push-type': 'background',
+                    'apns-priority': '5',
+                    'apns-topic': 'com.pepmvp.app'
+                }
+            )
+        )
         
-        # Update next notification time in user document
-        user_ref.update({
-            'next_notification_time': next_notification
-        })
-        print(f"✅ Updated next_notification_time in database")
+        # Send the message
+        response = messaging.send(message)
+        print(f"✅ Notification sent with response: {response}")
         
     except Exception as e:
         print(f"❌ Error processing notification change: {str(e)}")
