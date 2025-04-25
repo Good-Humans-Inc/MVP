@@ -166,6 +166,14 @@ struct OnboardingView: View {
                 self.appState.updateUserId(userId)
                 animationState = .thinking
                 addMessage(text: "Thanks for sharing that information. I'm generating personalized exercises for you now...", isUser: false)
+                
+                // Update FCM token with the new user ID
+                notificationManager.getFCMToken { token in
+                    if let token = token {
+                        print("✅ Re-syncing FCM token after user ID received: \(token)")
+                        notificationManager.updateFCMTokenInBackend(token: token)
+                    }
+                }
             }
         }
         
@@ -287,15 +295,20 @@ struct OnboardingView: View {
         print("- appState.hasUserId: \(appState.hasUserId)")
         print("- appState.isFirstExercise: \(appState.isFirstExercise)")
         
+        // End current session first
+        voiceManager.endElevenLabsSession()
+        
         // Reset VoiceManager state
         voiceManager.resetOnboarding()
         
         // Reset AppState
-        appState.hasUserId = false
-        appState.userId = nil
-        appState.isOnboardingComplete = false
-        appState.currentExercise = nil
-        appState.isFirstExercise = true  // Reset first exercise flag
+        withAnimation {
+            appState.hasUserId = false
+            appState.userId = nil
+            appState.isOnboardingComplete = false
+            appState.currentExercise = nil
+            appState.isFirstExercise = true  // Reset first exercise flag
+        }
         
         // Reset local view state
         isLoading = false
@@ -308,10 +321,31 @@ struct OnboardingView: View {
         print("- appState.hasUserId: \(appState.hasUserId)")
         print("- appState.isFirstExercise: \(appState.isFirstExercise)")
         
+        // Clear UserDefaults
+        UserDefaults.standard.removeObject(forKey: "UserID")
+        UserDefaults.standard.removeObject(forKey: "UserExercises")
+        
         // Restart onboarding agent after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            voiceManager.startOnboardingAgent()
-            appState.currentAgentType = .onboarding
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            // Ensure we're on the main thread
+            DispatchQueue.main.async {
+                // Reset the view hierarchy to ensure environment objects are maintained
+                if let window = UIApplication.shared.windows.first {
+                    let onboardingView = OnboardingView()
+                        .environmentObject(appState)
+                        .environmentObject(voiceManager)
+                        .environmentObject(resourceCoordinator)
+                        .environmentObject(cameraManager)
+                        .environmentObject(visionManager)
+                        .environmentObject(notificationManager)
+                    
+                    window.rootViewController = UIHostingController(rootView: onboardingView)
+                }
+                
+                // Start the onboarding agent
+                voiceManager.startOnboardingAgent()
+                appState.currentAgentType = .onboarding
+            }
         }
     }
 }

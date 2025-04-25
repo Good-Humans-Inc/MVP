@@ -14,7 +14,7 @@ if not firebase_admin._apps:
         'projectId': project_id,
     })
 
-db = firestore.Client()
+db = firestore.Client(project='pepmvp', database='pep-mvp')
 
 @cross_origin()
 def update_fcm_token(request):
