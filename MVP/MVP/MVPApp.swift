@@ -13,6 +13,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         print("📱 Application launching (first launch: \(isFirstAppLaunch))")
         
+        // Initialize UserManager early
+        _ = UserManager.shared
+        print("✅ UserManager initialized during app launch")
+        
         // Special setup for first launch
         if isFirstAppLaunch {
             setupForFirstLaunch()

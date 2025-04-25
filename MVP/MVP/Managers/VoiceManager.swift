@@ -3,6 +3,10 @@ import AVFoundation
 import Combine
 import ElevenLabsSDK
 import Network
+import SwiftUI
+
+// Import UserManager
+import MVP
 
 // Define agent types
 enum AgentType {
@@ -231,6 +235,15 @@ class VoiceManager: NSObject, ObservableObject {
                 // Debug print UserDefaults values
                 print("🔍 Debug - UserDefaults values:")
                 print("userId: \(UserDefaults.standard.string(forKey: "userId") ?? "nil")")
+
+                // get user info from UserManager
+                let userManager = UserManager.shared
+                // Add user info to dynamic variables
+                dynamicVars["userName"] = .string(userManager.userName)
+                dynamicVars["userAge"] = .int(userManager.userAge)
+                dynamicVars["exerciseHabits"] = .string(userManager.exerciseHabits)
+                dynamicVars["goals"] = .string(userManager.goals)
+                dynamicVars["painDescription"] = .string(userManager.painDescription)
                 
                 // Add dynamic variables for exercise agents
                 if agentType == .firstExercise || agentType == .exercise {
@@ -242,10 +255,10 @@ class VoiceManager: NSObject, ObservableObject {
                         
                         // Add basic exercise info
                         if let name = exercise["name"] as? String {
-                            dynamicVars["exercise_name"] = .string(name)
+                            dynamicVars["exerciseName"] = .string(name)
                         }
                         if let description = exercise["description"] as? String {
-                            dynamicVars["exercise_description"] = .string(description)
+                            dynamicVars["exerciseDescription"] = .string(description)
                         }
                         
                         // Add instructions as a formatted string
@@ -253,7 +266,7 @@ class VoiceManager: NSObject, ObservableObject {
                             let numberedInstructions = instructions.enumerated()
                                 .map { (index, instruction) in "\(index + 1). \(instruction)" }
                                 .joined(separator: "\n")
-                            dynamicVars["exercise_instructions"] = .string(numberedInstructions)
+                            dynamicVars["exerciseInstructions"] = .string(numberedInstructions)
                         }
                         
                         // Add variations as a formatted string
@@ -261,24 +274,24 @@ class VoiceManager: NSObject, ObservableObject {
                             let formattedVariations = variations
                                 .map { "• \($0)" }
                                 .joined(separator: "\n")
-                            dynamicVars["exercise_variations"] = .string(formattedVariations)
+                            dynamicVars["exerciseVariations"] = .string(formattedVariations)
                         }
                         
                         // Add target joints
                         if let targetJoints = exercise["target_joints"] as? [String] {
-                            dynamicVars["target_joints"] = .string(targetJoints.joined(separator: ", "))
+                            dynamicVars["targetJoints"] = .string(targetJoints.joined(separator: ", "))
                         }
                         
                         // Add user ID if available
                         if let userId = exercise["user_id"] as? String {
-                            dynamicVars["user_id"] = .string(userId)
+                            dynamicVars["userId"] = .string(userId)
                         }
                         
                         // Add exercise ID
                         if let firestoreId = exercise["firestoreId"] as? String {
-                            dynamicVars["exercise_id"] = .string(firestoreId)
+                            dynamicVars["exerciseId"] = .string(firestoreId)
                         } else if let id = exercise["id"] as? String {
-                            dynamicVars["exercise_id"] = .string(id.lowercased())
+                            dynamicVars["exerciseId"] = .string(id.lowercased())
                         }
                         
                         print("✅ Added exercise dynamic variables:")
