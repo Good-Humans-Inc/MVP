@@ -453,24 +453,33 @@ def check_notification_status(request):
 @functions_framework.cloud_event
 def monitor_notification_changes(cloud_event):
     """Triggered by a change to a Firestore document."""
+    print("🔔 Function triggered with event data:", cloud_event.data)
+    
     path_parts = cloud_event.data["value"]["name"].split("/documents/")[1].split("/")
     collection_path = path_parts[0]
     document_path = "/".join(path_parts[1:])
     
+    print(f"📁 Processing change for collection: {collection_path}, document: {document_path}")
+    
     # Only process user document changes
     if collection_path != "users":
+        print("❌ Skipping - not a user document change")
         return
     
     # Get the changed document data
     changed_data = cloud_event.data["value"]["fields"]
+    print("📄 Changed document data:", changed_data)
     
     # Check if notification preferences were changed
     if "notification_preferences" not in str(changed_data):
+        print("❌ Skipping - no notification preferences changed")
         return
         
     try:
         # Get the user document
         user_id = path_parts[1]  # Extract user_id from path
+        print(f"👤 Processing for user: {user_id}")
+        
         user_ref = db.collection('users').document(user_id)
         user_doc = user_ref.get()
         
@@ -480,6 +489,7 @@ def monitor_notification_changes(cloud_event):
             
         user_data = user_doc.to_dict()
         notification_prefs = user_data.get('notification_preferences', {})
+        print(f"⚙️ Notification preferences:", notification_prefs)
         
         # Check if notifications are enabled
         if not notification_prefs.get('is_enabled', True):
@@ -503,6 +513,16 @@ def monitor_notification_changes(cloud_event):
         if next_notification < now:
             next_notification = next_notification + timedelta(days=1)
         
+        print(f"⏰ Calculated next notification time: {next_notification}")
+        
+        # Check FCM token
+        fcm_token = user_data.get('fcm_token')
+        if not fcm_token:
+            print(f"❌ No FCM token found for user {user_id}")
+            return
+            
+        print(f"📱 Found FCM token: {fcm_token[:10]}...")
+        
         # Create mock request for schedule_notification
         mock_request = MockRequest({
             'user_id': user_id,
@@ -513,11 +533,15 @@ def monitor_notification_changes(cloud_event):
         # Schedule the notification
         result = schedule_notification(mock_request)
         print(f"✅ Notification scheduled for user {user_id} at {next_notification}")
+        print(f"📊 Schedule result:", result)
         
         # Update next notification time in user document
         user_ref.update({
             'next_notification_time': next_notification
         })
+        print(f"✅ Updated next_notification_time in database")
         
     except Exception as e:
-        print(f"❌ Error processing notification change: {str(e)}") 
+        print(f"❌ Error processing notification change: {str(e)}")
+        import traceback
+        print("Stack trace:", traceback.format_exc()) 
