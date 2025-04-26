@@ -356,9 +356,27 @@ def select_exercise_with_openai(user_data, api_key):
             raise Exception(f"OpenAI API error: {response.text}")
         
         result = response.json()
-        content = result.get('choices', [{}])[0].get('message', {}).get('content', '{}')
+        logger.info(f"OpenAI API response: {result}")  # Log the full response
         
-        response_data = json.loads(content)
+        content = result.get('choices', [{}])[0].get('message', {}).get('content', '{}')
+        logger.info(f"Extracted content: {content}")  # Log the extracted content
+        
+        # Try to clean the content if it contains markdown
+        if '```json' in content:
+            logger.info("Content contains markdown, cleaning...")
+            json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
+                logger.info(f"Cleaned content: {content}")
+        
+        try:
+            response_data = json.loads(content)
+            logger.info(f"Parsed JSON: {response_data}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error: {str(e)}")
+            logger.error(f"Failed content: {content}")
+            raise
+        
         selected_exercise = response_data.get('selected_exercise', {})
         
         # Ensure all required fields are present
