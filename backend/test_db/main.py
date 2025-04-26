@@ -1,45 +1,41 @@
+# monitor_notification_changes.py
 import functions_framework
+from firebase_admin import firestore, initialize_app, messaging
 import json
-import logging
+import uuid
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+initialize_app()
+db = firestore.client()
 
 @functions_framework.cloud_event
-def monitor_db_changes(cloud_event):
-    """Triggered by a change to a Firestore document."""
-    logger.info("🔔 FUNCTION TRIGGERED - STARTING EXECUTION")
-    
-    # Log the event data
-    logger.info(f"Event ID: {cloud_event.id}")
-    logger.info(f"Event Type: {cloud_event.type}")
-    logger.info(f"Event Source: {cloud_event.source}")
-    logger.info(f"Event Subject: {cloud_event.subject}")
-    
-    # Extract document path from event data
-    if hasattr(cloud_event, 'data') and cloud_event.data:
-        try:
-            # Extract document path information
-            path_parts = cloud_event.data["value"]["name"].split("/documents/")[1].split("/")
-            collection_path = path_parts[0]
-            document_path = "/".join(path_parts[1:])
-            
-            logger.info(f"📄 Document change in collection: {collection_path}, document: {document_path}")
-            
-            # Get the changed document data
-            if "fields" in cloud_event.data["value"]:
-                changed_data = cloud_event.data["value"]["fields"]
-                logger.info(f"📊 Document data: {json.dumps(changed_data, indent=2)}")
-            else:
-                logger.info("❌ No fields found in document change")
-                
-        except Exception as e:
-            logger.error(f"❌ Error processing event data: {str(e)}")
-            import traceback
-            logger.error(f"📋 Stack trace: {traceback.format_exc()}")
-    else:
-        logger.warning("❓ No data found in cloud event")
-    
-    logger.info("✅ Function execution completed")
-    return "OK"
+def monitor_notification_changes(cloud_event):
+    print("🔔 Firestore change detected")
+
+    data = cloud_event.data
+    path = data["value"]["name"]
+    if "/users/" not in path:
+        return
+
+    user_id = path.split("/users/")[1]
+    doc = db.collection("users").document(user_id).get()
+
+    if not doc.exists:
+        print(f"User {user_id} not found.")
+        return
+
+    user_data = doc.to_dict()
+    fcm_token = user_data.get("fcm_token")
+    if not fcm_token:
+        print(f"No FCM token for user {user_id}")
+        return
+
+    notification = messaging.Message(
+        notification=messaging.Notification(
+            title="Time to exercise!",
+            body="Let's stick to your PT goals today!"
+        ),
+        token=fcm_token
+    )
+
+    response = messaging.send(notification)
+    print(f"✅ Notification sent: {response}")
