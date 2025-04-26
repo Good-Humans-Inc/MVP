@@ -2,9 +2,16 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
 import time
+import os
+import json
 
 # Initialize Firebase Admin
-cred = credentials.ApplicationDefault()
+cred_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+if not cred_json:
+    raise ValueError("Please set GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable with the service account JSON")
+
+cred = credentials.Certificate(json.loads(cred_json))
+
 firebase_admin.initialize_app(cred, {
     'projectId': 'pepmvp',
 })
