@@ -304,7 +304,6 @@ struct ExerciseDetailView: View {
         print("📊 DEBUG: ExerciseDetailView - Pre-reset state:")
         print("- appState.hasUserId: \(appState.hasUserId)")
         print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
-        print("- appState.isFirstExercise: \(appState.isFirstExercise)")
 
         // Reset VoiceManager state
         voiceManager.resetOnboarding()
@@ -314,12 +313,10 @@ struct ExerciseDetailView: View {
         appState.userId = nil
         appState.isOnboardingComplete = false
         appState.currentAgentType = nil
-        appState.isFirstExercise = true  // Reset first exercise flag
-        
+
         print("📊 DEBUG: ExerciseDetailView - Post-reset state:")
         print("- appState.hasUserId: \(appState.hasUserId)")
         print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
-        print("- appState.isFirstExercise: \(appState.isFirstExercise)")
 
         // Dismiss this view and return to onboarding
         if let window = UIApplication.shared.windows.first {
@@ -344,28 +341,18 @@ struct ExerciseDetailView: View {
                     // Start vision processing
                     visionManager.startProcessing(cameraManager.videoOutput)
                     
-                    // Start ElevenLabs exercise coach agent
-                    if appState.isFirstExercise {
-                        // First-time exercise - use first exercise agent
-                        voiceManager.startElevenLabsSession(agentType: .firstExercise) {
-                            appState.currentAgentType = .firstExercise
-                            
-                            // Show the exercise view
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                isStartingExercise = false
-                                showingExerciseView = true
-                            }
-                        }
-                    } else {
-                        // Returning user - use regular exercise agent
-                        voiceManager.startElevenLabsSession(agentType: .exercise) {
-                            appState.currentAgentType = .exercise
-                            
-                            // Show the exercise view
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                isStartingExercise = false
-                                showingExerciseView = true
-                            }
+                    // Start the unified ElevenLabs exercise coach agent
+                    print("▶️ Starting exercise coach agent")
+                    voiceManager.startElevenLabsSession(agentType: .exerciseCoach) {
+                        print("✅ Exercise coach agent session started completion handler")
+                        // Set current exercise ID after session starts
+                        // Ensure exercise.id is the correct string representation needed
+                        self.voiceManager.setCurrentExercise(id: self.exercise.id.uuidString.lowercased())
+                        
+                        // Show the exercise view
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            self.isStartingExercise = false
+                            self.showingExerciseView = true
                         }
                     }
                 }
