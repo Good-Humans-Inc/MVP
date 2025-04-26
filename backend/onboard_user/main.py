@@ -20,8 +20,8 @@ def onboard_user(request):
     Cloud Function to handle user onboarding with minimal data.
     
     Required fields:
-    - name (str): User's name
-    - injury (str): Description of the injury or pain
+    - user_name (str): User's name
+    - pain_description (str): Description of the pain
     - pain_level (int): Pain level on a scale of 1-10
     """
     # Enable CORS
@@ -47,13 +47,13 @@ def onboard_user(request):
         logger.info(f"Received request: {json.dumps(request_json)}")
         
         # Extract fields
-        name = request_json.get('name')
-        injury = request_json.get('injury')
+        user_name = request_json.get('user_name')
+        pain_description = request_json.get('pain_description')
         pain_level = request_json.get('pain_level')
         
         # Check for missing required fields
-        if not name or not injury:
-            error_msg = "Missing required fields: name, injury, and pain_level are required"
+        if not user_name or not pain_description:
+            error_msg = "Missing required fields: user_name, pain_description, and pain_level are required"
             logger.error(error_msg)
             return (json.dumps({'error': error_msg}), 400, headers)
         
@@ -64,8 +64,8 @@ def onboard_user(request):
         # Create and store user document with minimal data
         user_doc = {
             'id': user_id,
-            'name': name,
-            'injury': injury,
+            'user_name': user_name,
+            'pain_description': pain_description,
             'pain_level': pain_level,
             'created_at': created_at,
             'updated_at': created_at

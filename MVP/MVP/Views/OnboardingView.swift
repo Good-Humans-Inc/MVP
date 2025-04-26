@@ -322,7 +322,7 @@ struct OnboardingView: View {
         print("- appState.isFirstExercise: \(appState.isFirstExercise)")
         
         // Clear UserDefaults
-        UserDefaults.standard.removeObject(forKey: "UserID")
+        UserDefaults.standard.removeObject(forKey: "UserId")
         UserDefaults.standard.removeObject(forKey: "UserExercises")
         
         // Restart onboarding agent after a short delay
