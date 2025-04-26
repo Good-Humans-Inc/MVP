@@ -79,7 +79,7 @@ class AppState: ObservableObject {
     private func loadPersistedState() {
         print("🔄 DEBUG: AppState - Loading persisted state")
         // Load from UserDefaults
-        if let storedId = UserDefaults.standard.string(forKey: "UserID") {
+        if let storedId = UserDefaults.standard.string(forKey: "UserId") {
             userId = storedId
             hasUserId = true
             print("📱 DEBUG: AppState - Loaded stored user ID: \(storedId)")
@@ -110,7 +110,7 @@ class AppState: ObservableObject {
         print("🔄 DEBUG: AppState - Updating user ID to: \(id)")
         userId = id
         hasUserId = true
-        UserDefaults.standard.set(id, forKey: "UserID")
+        UserDefaults.standard.set(id, forKey: "UserId")
         
         // When setting user ID, ensure first exercise flag is true
         isFirstExercise = true
@@ -131,7 +131,7 @@ class AppState: ObservableObject {
     }
     
     // Add method to mark exercise as completed
-    func markExerciseCompleted() {
+    func markFirstExerciseCompleted() {
         isFirstExercise = false
         UserDefaults.standard.set(false, forKey: "IsFirstExercise")
         print("📱 DEBUG: AppState - Marked exercise as completed")

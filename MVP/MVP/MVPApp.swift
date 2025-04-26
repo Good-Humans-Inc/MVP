@@ -17,7 +17,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
         
         // Initialize UserManager early
         _ = UserManager.shared
-        print("✅ UserManager initialized during app launch")
+        print("✅ MVPApp: UserManager initialized during app launch")
         
         // Special setup for first launch
         if isFirstAppLaunch {
@@ -209,7 +209,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
         }
         
         // Get user ID from UserDefaults
-        guard let userId = UserDefaults.standard.string(forKey: "UserID") else {
+        guard let userId = UserDefaults.standard.string(forKey: "UserId") else {
             print("❌ No user ID available for device registration")
             return
         }

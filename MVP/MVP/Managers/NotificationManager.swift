@@ -198,7 +198,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 self?.fcmToken = token
                 
                 // Send token to backend if we have a user ID
-                if let userId = UserDefaults.standard.string(forKey: "UserID") {
+                if let userId = UserDefaults.standard.string(forKey: "UserId") {
                     self?.updateFCMTokenInBackend(token: token)
                 }
                 
@@ -229,7 +229,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     
     /// Update FCM token in backend
     func updateFCMTokenInBackend(token: String) {
-        guard let userId = UserDefaults.standard.string(forKey: "UserID") else {
+        guard let userId = UserDefaults.standard.string(forKey: "UserId") else {
             print("❌ No user ID available for FCM token update - will retry when user ID is available")
             return
         }

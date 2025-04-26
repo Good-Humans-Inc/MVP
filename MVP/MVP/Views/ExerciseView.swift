@@ -277,9 +277,21 @@ struct ExerciseView: View {
         voiceManager.setCurrentExercise(id: exerciseId)
         voiceManager.endExerciseSession()
         
-        // If this was the first exercise, mark it as completed
+        // If this was the first exercise, check required fields before marking as completed
         if appState.isFirstExercise {
-            appState.markExerciseCompleted()
+            let userManager = UserManager.shared
+            // pull latest user data from firestore
+            userManager.loadUserData()
+            if !userManager.exerciseRoutine.isEmpty && 
+               !userManager.userGoals.isEmpty && 
+               !userManager.notificationTime.isEmpty {
+                appState.markFirstExerciseCompleted()
+            } else {
+                print("⚠️ Cannot mark first exercise as completed - missing required fields:")
+                print("- exercise_routine: \(userManager.exerciseRoutine.isEmpty ? "missing" : "present")")
+                print("- ultimate_goal: \(userManager.userGoals.isEmpty ? "missing" : "present")")
+                print("- notification_time: \(userManager.notificationTime.isEmpty ? "missing" : "present")")
+            }
         }
         
         // Clean up resources
