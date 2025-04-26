@@ -641,33 +641,32 @@ class VoiceManager: NSObject, ObservableObject {
         }
         
         // Tool to start pose analysis
-        clientTools.register("startPoseAnalysis") { [weak self] parameters in
-            guard let self = self else {
-                print("❌ startPoseAnalysis: VoiceManager instance is nil")
-                throw ElevenLabsSDK.ClientToolError.internalError(description: "VoiceManager instance is nil")
-            }
+        // clientTools.register("startPoseAnalysis") { [weak self] parameters in
+        //     guard let self = self else {
+        //         print("❌ startPoseAnalysis: VoiceManager instance is nil")
+        //     }
             
-            UserManager.shared.loadUserData()
-            guard let userId = UserManager.shared.userId else {
-                print("❌ startPoseAnalysis: User ID is missing")
-                // Maybe inform the agent or just log? Let's inform.
-                return "Can't start pose analysis because userId is missing."
-            }
+        //     UserManager.shared.loadUserData()
+        //     guard let userId = UserManager.shared.userId else {
+        //         print("❌ startPoseAnalysis: User ID is missing")
+        //         // Maybe inform the agent or just log? Let's inform.
+        //         return "Can't start pose analysis because userId is missing."
+        //     }
             
-            guard let exerciseId = self.currentExerciseId else {
-                print("❌ startPoseAnalysis: Current exercise ID is missing")
-                return "Can't start pose analysis because the current exerciseId is missing."
-            }
+        //     guard let exerciseId = self.currentExerciseId else {
+        //         print("❌ startPoseAnalysis: Current exercise ID is missing")
+        //         return "Can't start pose analysis because the current exerciseId is missing."
+        //     }
             
-            print("🔵 Starting pose analysis for user: \(userId), exercise: \(exerciseId)")
+        //     print("🔵 Starting pose analysis for user: \(userId), exercise: \(exerciseId)")
             
-            // Assuming startAnalysis takes exerciseId and userId.
-            // Adjust if the actual method signature is different.
-            // You might need to fetch the full Exercise object if required.
-            self.poseAnalysisManager.startAnalysis(exerciseId: exerciseId, userId: userId)
+        //     // Assuming startAnalysis takes exerciseId and userId.
+        //     // Adjust if the actual method signature is different.
+        //     // You might need to fetch the full Exercise object if required.
+        //     // self.poseAnalysisManager.startAnalysis(exerciseId: exerciseId, userId: userId)
             
-            return "Taking a look at the user's pose and movement now."
-        }
+        //     return "Taking a look at the user's pose and movement now."
+        // }
         
         // Debug tool to log any message
         clientTools.register("logMessage") { parameters in
