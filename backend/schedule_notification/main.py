@@ -1,7 +1,7 @@
 import functions_framework
 import firebase_admin
 from firebase_admin import credentials, firestore, messaging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import uuid
 from google.cloud import secretmanager
@@ -454,21 +454,42 @@ def check_notification_status(request):
 def monitor_notification_changes(cloud_event):
     """Triggered by a change to a Firestore document."""
     import sys
+    from datetime import datetime, timezone
     print("🔔 FUNCTION TRIGGERED - STARTING EXECUTION", file=sys.stderr)
     
     try:
         # Safely print event data by converting bytes to string if needed
         def convert_bytes(obj):
             if isinstance(obj, bytes):
-                return obj.decode('utf-8')
+                try:
+                    # Try UTF-8 first
+                    return obj.decode('utf-8')
+                except UnicodeDecodeError:
+                    try:
+                        # Try Latin-1 as fallback (will always work but might not be correct)
+                        return obj.decode('latin1')
+                    except:
+                        # If all else fails, return hex representation
+                        return obj.hex()
             if isinstance(obj, dict):
                 return {key: convert_bytes(value) for key, value in obj.items()}
             if isinstance(obj, list):
                 return [convert_bytes(item) for item in obj]
             return obj
         
-        event_data = convert_bytes(cloud_event.data)
-        print("📦 Event data:", json.dumps(event_data, indent=2), file=sys.stderr)
+        # First, try to access the data directly without conversion
+        try:
+            path_parts = cloud_event.data["value"]["name"].split("/documents/")[1].split("/")
+            collection_path = path_parts[0]
+            document_path = "/".join(path_parts[1:])
+            
+            # If we got here, the data is already in the correct format
+            event_data = cloud_event.data
+        except (TypeError, KeyError):
+            # If direct access fails, try conversion
+            event_data = convert_bytes(cloud_event.data)
+        
+        print("📦 Event data:", json.dumps(event_data, indent=2, default=str), file=sys.stderr)
         
         # Extract document path information
         path_parts = event_data["value"]["name"].split("/documents/")[1].split("/")
@@ -490,12 +511,41 @@ def monitor_notification_changes(cloud_event):
             return
 
         changed_data = event_data["value"]["fields"]
-        print("🔄 Document fields:", json.dumps(changed_data, indent=2), file=sys.stderr)
+        print("🔄 Document fields:", json.dumps(changed_data, indent=2, default=str), file=sys.stderr)
         
         # Access top-level next_notification_time field
         next_time = changed_data.get("next_notification_time", {}).get("timestampValue")
         if not next_time:
             print("⚠️ No next_notification_time found in top-level fields", file=sys.stderr)
+            return
+            
+        # Convert next_time string to datetime
+        try:
+            next_time_dt = datetime.fromisoformat(next_time.replace('Z', '+00:00'))
+            current_time = datetime.now(timezone.utc)
+            
+            # Check if notification time is within a reasonable window (5 minutes before or after)
+            time_diff = abs((next_time_dt - current_time).total_seconds())
+            if time_diff > 300:  # 5 minutes in seconds
+                print(f"⏭️ Skipping - notification time {next_time} is not within the current time window", file=sys.stderr)
+                return
+                
+            print(f"⏰ Notification time {next_time} is within the current window", file=sys.stderr)
+        except ValueError as e:
+            print(f"❌ Error parsing next_notification_time: {str(e)}", file=sys.stderr)
+            return
+        
+        # Check for duplicate notifications
+        five_mins_ago = current_time - timedelta(minutes=5)
+        recent_notifications = db.collection('notifications') \
+            .where('user_id', '==', user_id) \
+            .where('created_at', '>', five_mins_ago) \
+            .where('type', '==', 'exercise_reminder') \
+            .limit(1) \
+            .get()
+            
+        if len(list(recent_notifications)):
+            print("⏭️ Skipping - recent notification already sent", file=sys.stderr)
             return
         
         # Fetch user document from Firestore
@@ -514,6 +564,9 @@ def monitor_notification_changes(cloud_event):
             return
         
         print(f"📱 Found FCM token: {fcm_token[:10]}...", file=sys.stderr)
+        
+        # Get the app bundle ID from user data or use default
+        bundle_id = user_data.get('app_bundle_id', 'com.pepmvp.app')
         
         # Prepare notification content
         next_day_data = user_data.get('next_day_notification', {})
@@ -534,7 +587,8 @@ def monitor_notification_changes(cloud_event):
             data={
                 'notification_id': notification_id,
                 'user_id': user_id,
-                'type': 'exercise_reminder'
+                'type': 'exercise_reminder',
+                'scheduled_time': next_time
             },
             token=fcm_token,
             android=messaging.AndroidConfig(
@@ -558,7 +612,7 @@ def monitor_notification_changes(cloud_event):
                 headers={
                     'apns-push-type': 'background',
                     'apns-priority': '5',
-                    'apns-topic': 'yanfryy.xyz.MVP'
+                    'apns-topic': bundle_id
                 }
             )
         )
@@ -568,7 +622,7 @@ def monitor_notification_changes(cloud_event):
             'id': notification_id,
             'user_id': user_id,
             'type': 'exercise_reminder',
-            'scheduled_for': firestore.SERVER_TIMESTAMP,
+            'scheduled_for': next_time_dt,
             'status': 'scheduled',
             'created_at': firestore.SERVER_TIMESTAMP,
             'content': notification_content
@@ -587,6 +641,22 @@ def monitor_notification_changes(cloud_event):
             })
             print("✅ Notification status updated to 'sent'", file=sys.stderr)
 
+        except messaging.ApiCallError as fcm_error:
+            error_msg = str(fcm_error)
+            print(f"❌ FCM API Error: {error_msg}", file=sys.stderr)
+            
+            # Handle token expiration
+            if 'registration-token-not-registered' in error_msg.lower():
+                print("🔄 FCM token expired, updating user document", file=sys.stderr)
+                user_ref.update({
+                    'fcm_token': firestore.DELETE_FIELD,
+                    'notification_status': 'token_expired'
+                })
+            
+            db.collection('notifications').document(notification_id).update({
+                'status': 'failed',
+                'error': error_msg
+            })
         except Exception as send_error:
             print(f"❌ Error sending notification: {str(send_error)}", file=sys.stderr)
             db.collection('notifications').document(notification_id).update({
