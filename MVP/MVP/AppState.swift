@@ -61,9 +61,6 @@ class AppState: ObservableObject {
     // MARK: - Private Properties
     private var cancellables = Set<AnyCancellable>()
     
-    // Add flag to track first exercise
-    @Published var isFirstExercise: Bool = true
-    
     // MARK: - Initialization
     init() {
         self.voiceState = VoiceState()
@@ -85,10 +82,6 @@ class AppState: ObservableObject {
             print("📱 DEBUG: AppState - Loaded stored user ID: \(storedId)")
         }
         
-        // Load first exercise flag
-        isFirstExercise = UserDefaults.standard.bool(forKey: "IsFirstExercise")
-        print("📱 DEBUG: AppState - Loaded isFirstExercise: \(isFirstExercise)")
-        
         // Print all state flags
         printStateFlags()
     }
@@ -100,7 +93,6 @@ class AppState: ObservableObject {
         - hasUserId: \(hasUserId)
         - userId: \(userId ?? "nil")
         - isOnboardingComplete: \(isOnboardingComplete)
-        - isFirstExercise: \(isFirstExercise)
         - currentExercise: \(currentExercise?.name ?? "nil")
         """)
     }
@@ -111,10 +103,6 @@ class AppState: ObservableObject {
         userId = id
         hasUserId = true
         UserDefaults.standard.set(id, forKey: "UserId")
-        
-        // When setting user ID, ensure first exercise flag is true
-        isFirstExercise = true
-        UserDefaults.standard.set(true, forKey: "IsFirstExercise")
         
         printStateFlags()
     }
@@ -130,14 +118,6 @@ class AppState: ObservableObject {
         exerciseReport = report
     }
     
-    // Add method to mark exercise as completed
-    func markFirstExerciseCompleted() {
-        isFirstExercise = false
-        UserDefaults.standard.set(false, forKey: "IsFirstExercise")
-        print("📱 DEBUG: AppState - Marked exercise as completed")
-        printStateFlags()
-    }
-    
     // MARK: - Cleanup
     func cleanup() {
         voiceState.cleanup()
@@ -151,8 +131,7 @@ class AppState: ObservableObject {
 // MARK: - Voice Agent Type Enum (for internal AppState usage)
 enum VoiceAgentType {
     case onboarding
-    case firstExercise
-    case exercise
+    case exerciseCoach
 }
 
 // MARK: - Exercise Report Model

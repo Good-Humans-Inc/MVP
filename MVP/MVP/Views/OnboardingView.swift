@@ -263,7 +263,6 @@ struct OnboardingView: View {
                     print("📊 DEBUG: OnboardingView - Post-completion state:")
                     print("- appState.isOnboardingComplete: \(self.appState.isOnboardingComplete)")
                     print("- appState.hasUserId: \(self.appState.hasUserId)")
-                    print("- appState.isFirstExercise: \(self.appState.isFirstExercise)")
                     
                     // Ensure we have an exercise before transitioning
                     if let exercise = self.appState.currentExercise {
