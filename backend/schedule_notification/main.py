@@ -455,11 +455,23 @@ def monitor_notification_changes(cloud_event):
     """Triggered by a change to a Firestore document."""
     import sys
     print("🔔 FUNCTION TRIGGERED - STARTING EXECUTION", file=sys.stderr)
-    print("📦 Event data:", json.dumps(cloud_event.data, indent=2), file=sys.stderr)
     
     try:
+        # Safely print event data by converting bytes to string if needed
+        def convert_bytes(obj):
+            if isinstance(obj, bytes):
+                return obj.decode('utf-8')
+            if isinstance(obj, dict):
+                return {key: convert_bytes(value) for key, value in obj.items()}
+            if isinstance(obj, list):
+                return [convert_bytes(item) for item in obj]
+            return obj
+        
+        event_data = convert_bytes(cloud_event.data)
+        print("📦 Event data:", json.dumps(event_data, indent=2), file=sys.stderr)
+        
         # Extract document path information
-        path_parts = cloud_event.data["value"]["name"].split("/documents/")[1].split("/")
+        path_parts = event_data["value"]["name"].split("/documents/")[1].split("/")
         collection_path = path_parts[0]
         document_path = "/".join(path_parts[1:])
         
@@ -473,17 +485,18 @@ def monitor_notification_changes(cloud_event):
         print(f"👤 User ID: {user_id}", file=sys.stderr)
         
         # Extract changed document fields
-        if "fields" not in cloud_event.data["value"]:
+        if "fields" not in event_data["value"]:
             print("❌ No fields found in document change", file=sys.stderr)
             return
 
-        changed_data = cloud_event.data["value"]["fields"]
+        changed_data = event_data["value"]["fields"]
         print("🔄 Document fields:", json.dumps(changed_data, indent=2), file=sys.stderr)
         
         # Access top-level next_notification_time field
         next_time = changed_data.get("next_notification_time", {}).get("timestampValue")
         if not next_time:
             print("⚠️ No next_notification_time found in top-level fields", file=sys.stderr)
+            return
         
         # Fetch user document from Firestore
         user_ref = db.collection('users').document(user_id)
@@ -545,7 +558,7 @@ def monitor_notification_changes(cloud_event):
                 headers={
                     'apns-push-type': 'background',
                     'apns-priority': '5',
-                    'apns-topic': 'yanfryy.xyz.MVP'  # Your actual iOS bundle ID
+                    'apns-topic': 'yanfryy.xyz.MVP'
                 }
             )
         )
