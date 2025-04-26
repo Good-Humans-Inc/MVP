@@ -111,67 +111,13 @@ def update_information(request):
         
         # If notification time was updated, schedule a notification
         if 'notification_preferences' in update_data:
-            # Get user's FCM token
-            user_data = user_doc.to_dict()
-            fcm_token = user_data.get('fcm_token')
-            
-            if fcm_token:
-                # Get the user's original notification time from onboarding
-                user_data = user_doc.to_dict()
-                original_schedule = user_data.get('notification_schedule', {})
-                original_hour = original_schedule.get('hour', 9)  # Default to 9 AM if not set
-                original_minute = original_schedule.get('minute', 0)  # Default to 0 if not set
-                
-                # Create a scheduled time for tomorrow using the new time from the update
-                now = datetime.now()
-                tomorrow_scheduled_time = now.replace(
-                    hour=update_data['notification_preferences']['hour'],
-                    minute=update_data['notification_preferences']['minute'],
-                    second=0,
-                    microsecond=0
-                )
-                
-                # If the time has already passed today, schedule for tomorrow
-                if tomorrow_scheduled_time < now:
-                    tomorrow_scheduled_time = tomorrow_scheduled_time + timedelta(days=1)
-                
-                # Format for ISO 8601
-                tomorrow_scheduled_time_str = tomorrow_scheduled_time.isoformat() + 'Z'
-                
-                # Call the schedule_notification function for tomorrow only
-                try:
-                    from schedule_notification.main import schedule_notification
-                    
-                    # Create a mock request object
-                    class MockRequest:
-                        def __init__(self, json_data):
-                            self.json_data = json_data
-                        
-                        def get_json(self):
-                            return self.json_data
-                    
-                    # Create notification request for tomorrow only
-                    notification_request = MockRequest({
-                        'user_id': user_id,
-                        'scheduled_time': tomorrow_scheduled_time_str,
-                        'is_one_time': True  # Flag to indicate this is a one-time notification
-                    })
-                    
-                    # Call the function
-                    schedule_notification(notification_request)
-                    
-                    # Update user's next notification time
-                    user_ref.update({
-                        'notification_schedule.next_notification': tomorrow_scheduled_time,
-                        'notification_schedule.temporary_override': {
-                            'hour': update_data['notification_preferences']['hour'],
-                            'minute': update_data['notification_preferences']['minute'],
-                            'until': (tomorrow_scheduled_time + timedelta(days=1)).isoformat() + 'Z'
-                        }
-                    })
-                    
-                except Exception as e:
-                    print(f"Error scheduling notification: {str(e)}")
+            success, error = schedule_next_notification(
+                user_id,
+                update_data['notification_preferences']['hour'],
+                update_data['notification_preferences']['minute']
+            )
+            if not success:
+                print(f"Error scheduling notification: {error}")
         
         return (json.dumps({
             'status': 'success',
@@ -182,6 +128,114 @@ def update_information(request):
     except Exception as e:
         print(f"Error updating user information: {str(e)}")
         return (json.dumps({'error': str(e)}), 500, headers)
+
+@functions_framework.http
+def check_notifications(request):
+    """Check scheduled notifications for a user."""
+    # Enable CORS
+    if request.method == 'OPTIONS':
+        headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        }
+        return ('', 204, headers)
+    
+    headers = {'Access-Control-Allow-Origin': '*'}
+    
+    try:
+        request_json = request.get_json()
+        user_id = request_json.get('user_id')
+        
+        if not user_id:
+            return (json.dumps({'error': 'Missing user_id'}), 400, headers)
+        
+        # Get user data
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        
+        if not user_doc.exists:
+            return (json.dumps({'error': 'User not found'}), 404, headers)
+        
+        user_data = user_doc.to_dict()
+        
+        # Get notification preferences
+        notification_prefs = user_data.get('notification_preferences', {})
+        next_notification_time = user_data.get('next_notification_time')
+        
+        # Get recent and upcoming notifications
+        now = datetime.now()
+        yesterday = now - timedelta(days=1)
+        
+        notifications = db.collection('notifications') \
+            .where('user_id', '==', user_id) \
+            .where('scheduled_for', '>', yesterday) \
+            .order_by('scheduled_for', direction=firestore.Query.DESCENDING) \
+            .limit(10) \
+            .stream()
+        
+        notifications_list = []
+        for notif in notifications:
+            notif_data = notif.to_dict()
+            notifications_list.append(serialize_firestore_data(notif_data))
+        
+        return (json.dumps({
+            'status': 'success',
+            'notification_preferences': notification_prefs,
+            'next_notification_time': serialize_firestore_data(next_notification_time),
+            'recent_notifications': notifications_list
+        }), 200, headers)
+            
+    except Exception as e:
+        print(f"Error checking notifications: {str(e)}")
+        return (json.dumps({'error': str(e)}), 500, headers)
+
+# Update the notification scheduling part in update_information
+def schedule_next_notification(user_id, hour, minute):
+    """Helper function to schedule the next notification."""
+    try:
+        # Calculate next notification time
+        now = datetime.now()
+        next_time = now.replace(
+            hour=hour,
+            minute=minute,
+            second=0,
+            microsecond=0
+        )
+        
+        # If the time has already passed today, schedule for tomorrow
+        if next_time <= now:
+            next_time = next_time + timedelta(days=1)
+        
+        # Update user's next notification time
+        user_ref = db.collection('users').document(user_id)
+        user_ref.update({
+            'next_notification_time': next_time
+        })
+        
+        # Schedule the notification
+        from schedule_notification.main import schedule_notification
+        
+        # Create a mock request object
+        class MockRequest:
+            def __init__(self, json_data):
+                self.json_data = json_data
+            
+            def get_json(self):
+                return self.json_data
+        
+        # Schedule the notification
+        notification_request = MockRequest({
+            'user_id': user_id,
+            'scheduled_time': next_time.isoformat() + 'Z',
+            'is_one_time': False  # This is a regular scheduled notification
+        })
+        
+        schedule_notification(notification_request)
+        return True, None
+        
+    except Exception as e:
+        return False, str(e)
 
 # Helper function to serialize Firestore data for JSON
 def serialize_firestore_data(data):
