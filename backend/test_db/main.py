@@ -1,17 +1,20 @@
-import functions_framework
+# monitor_user_changes.py
+from firebase_functions import firestore_fn
+from firebase_admin import initialize_app
 
-@functions_framework.cloud_event
-def monitor_user_changes(cloud_event):
-    """Triggered by a Firestore document change."""
-    data = cloud_event.data
+# Initialize Firebase Admin SDK
+app = initialize_app()
 
-    old_fields = data.get('oldValue', {}).get('fields', {})
-    new_fields = data.get('value', {}).get('fields', {})
-    
-    old_name = old_fields.get('name', {}).get('stringValue')
-    new_name = new_fields.get('name', {}).get('stringValue')
+@firestore_fn.on_document_updated(collection="users/{userId}")
+def monitor_user_changes(event: firestore_fn.Event[dict]) -> None:
+    """Triggered when a user's Firestore document is updated."""
+    old_data = event.data.before
+    new_data = event.data.after
+
+    old_name = old_data.get('name')
+    new_name = new_data.get('name')
 
     if old_name != new_name:
-        print("🚨 NAME CHANGED")
+        print(f"🚨 NAME CHANGED from '{old_name}' to '{new_name}'")
     else:
         print("ℹ️ No name change detected.")
