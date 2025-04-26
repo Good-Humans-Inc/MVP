@@ -5,7 +5,7 @@ from firebase_admin import initialize_app
 # Initialize Firebase Admin SDK
 app = initialize_app()
 
-@firestore_fn.on_document_updated(collection="users/{userId}")
+@firestore_fn.on_document_updated(document="users/{userId}")
 def monitor_user_changes(event: firestore_fn.Event[dict]) -> None:
     """Triggered when a user's Firestore document is updated."""
     old_data = event.data.before
