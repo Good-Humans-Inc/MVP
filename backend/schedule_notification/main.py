@@ -458,211 +458,182 @@ def monitor_notification_changes(cloud_event):
     print("🔔 FUNCTION TRIGGERED - STARTING EXECUTION", file=sys.stderr)
     
     try:
-        # Safely print event data by converting bytes to string if needed
-        def convert_bytes(obj):
-            if isinstance(obj, bytes):
+        # Get the raw event data
+        raw_data = cloud_event.data
+        print("📦 Raw event data:", raw_data, file=sys.stderr)
+        
+        # Extract the document path from the raw data string
+        if isinstance(raw_data, str):
+            # Look for users/{user_id} pattern in the raw string
+            import re
+            match = re.search(r'users/([^/\s]+)', raw_data)
+            if not match:
+                print("❌ Could not find user ID in event data", file=sys.stderr)
+                return
+            
+            user_id = match.group(1)
+            print(f"👤 Found User ID: {user_id}", file=sys.stderr)
+            
+            # Look for next_notification_time in the raw string
+            time_match = re.search(r'next_notification_time.*?R\x06\x08([\x00-\xff]*?)\x98', raw_data)
+            if not time_match:
+                print("⚠️ No next_notification_time found in event data", file=sys.stderr)
+                return
+            
+            # Fetch user document from Firestore to get accurate data
+            user_ref = db.collection('users').document(user_id)
+            user_doc = user_ref.get()
+            if not user_doc.exists:
+                print(f"❌ User document {user_id} not found", file=sys.stderr)
+                return
+            
+            user_data = user_doc.to_dict()
+            print(f"📋 User data retrieved: {user_data.get('name', 'Unknown user')}", file=sys.stderr)
+            
+            # Get next notification time from user data
+            next_time = user_data.get('next_notification_time')
+            if not next_time:
+                print("⚠️ No next_notification_time found in user data", file=sys.stderr)
+                return
+            
+            # Convert to datetime if it's a Firestore timestamp
+            if hasattr(next_time, 'timestamp'):
+                next_time_dt = datetime.fromtimestamp(next_time.timestamp(), tz=timezone.utc)
+            else:
                 try:
-                    # Try UTF-8 first
-                    return obj.decode('utf-8')
-                except UnicodeDecodeError:
-                    try:
-                        # Try Latin-1 as fallback (will always work but might not be correct)
-                        return obj.decode('latin1')
-                    except:
-                        # If all else fails, return hex representation
-                        return obj.hex()
-            if isinstance(obj, dict):
-                return {key: convert_bytes(value) for key, value in obj.items()}
-            if isinstance(obj, list):
-                return [convert_bytes(item) for item in obj]
-            return obj
-        
-        # First, try to access the data directly without conversion
-        try:
-            path_parts = cloud_event.data["value"]["name"].split("/documents/")[1].split("/")
-            collection_path = path_parts[0]
-            document_path = "/".join(path_parts[1:])
+                    next_time_dt = datetime.fromisoformat(str(next_time).replace('Z', '+00:00'))
+                except ValueError as e:
+                    print(f"❌ Error parsing next_notification_time: {str(e)}", file=sys.stderr)
+                    return
             
-            # If we got here, the data is already in the correct format
-            event_data = cloud_event.data
-        except (TypeError, KeyError):
-            # If direct access fails, try conversion
-            event_data = convert_bytes(cloud_event.data)
-        
-        print("📦 Event data:", json.dumps(event_data, indent=2, default=str), file=sys.stderr)
-        
-        # Extract document path information
-        path_parts = event_data["value"]["name"].split("/documents/")[1].split("/")
-        collection_path = path_parts[0]
-        document_path = "/".join(path_parts[1:])
-        
-        print(f"📄 Processing change for: {collection_path}/{document_path}", file=sys.stderr)
-        
-        if collection_path != "users":
-            print("⏭️ Skipping - not a user document change", file=sys.stderr)
-            return
-
-        user_id = path_parts[1]
-        print(f"👤 User ID: {user_id}", file=sys.stderr)
-        
-        # Extract changed document fields
-        if "fields" not in event_data["value"]:
-            print("❌ No fields found in document change", file=sys.stderr)
-            return
-
-        changed_data = event_data["value"]["fields"]
-        print("🔄 Document fields:", json.dumps(changed_data, indent=2, default=str), file=sys.stderr)
-        
-        # Access top-level next_notification_time field
-        next_time = changed_data.get("next_notification_time", {}).get("timestampValue")
-        if not next_time:
-            print("⚠️ No next_notification_time found in top-level fields", file=sys.stderr)
-            return
-            
-        # Convert next_time string to datetime
-        try:
-            next_time_dt = datetime.fromisoformat(next_time.replace('Z', '+00:00'))
             current_time = datetime.now(timezone.utc)
             
             # Check if notification time is within a reasonable window (5 minutes before or after)
             time_diff = abs((next_time_dt - current_time).total_seconds())
             if time_diff > 300:  # 5 minutes in seconds
-                print(f"⏭️ Skipping - notification time {next_time} is not within the current time window", file=sys.stderr)
+                print(f"⏭️ Skipping - notification time {next_time_dt} is not within the current time window", file=sys.stderr)
                 return
                 
-            print(f"⏰ Notification time {next_time} is within the current window", file=sys.stderr)
-        except ValueError as e:
-            print(f"❌ Error parsing next_notification_time: {str(e)}", file=sys.stderr)
-            return
-        
-        # Check for duplicate notifications
-        five_mins_ago = current_time - timedelta(minutes=5)
-        recent_notifications = db.collection('notifications') \
-            .where('user_id', '==', user_id) \
-            .where('created_at', '>', five_mins_ago) \
-            .where('type', '==', 'exercise_reminder') \
-            .limit(1) \
-            .get()
+            print(f"⏰ Notification time {next_time_dt} is within the current window", file=sys.stderr)
             
-        if len(list(recent_notifications)):
-            print("⏭️ Skipping - recent notification already sent", file=sys.stderr)
-            return
-        
-        # Fetch user document from Firestore
-        user_ref = db.collection('users').document(user_id)
-        user_doc = user_ref.get()
-        if not user_doc.exists:
-            print(f"❌ User document {user_id} not found", file=sys.stderr)
-            return
-        
-        user_data = user_doc.to_dict()
-        print(f"📋 User data retrieved: {user_data.get('name', 'Unknown user')}", file=sys.stderr)
-        
-        fcm_token = user_data.get('fcm_token')
-        if not fcm_token:
-            print(f"❌ No FCM token found for user {user_id}", file=sys.stderr)
-            return
-        
-        print(f"📱 Found FCM token: {fcm_token[:10]}...", file=sys.stderr)
-        
-        # Get the app bundle ID from user data or use default
-        bundle_id = user_data.get('app_bundle_id', 'com.pepmvp.app')
-        
-        # Prepare notification content
-        next_day_data = user_data.get('next_day_notification', {})
-        notification_content = {
-            'title': next_day_data.get('title', 'Time for Exercise!'),
-            'body': next_day_data.get('body', 'Time to work on your exercises!')
-        }
-        print(f"📬 Notification content: {notification_content}", file=sys.stderr)
-        
-        notification_id = str(uuid.uuid4())
+            # Check for duplicate notifications
+            five_mins_ago = current_time - timedelta(minutes=5)
+            recent_notifications = db.collection('notifications') \
+                .where('user_id', '==', user_id) \
+                .where('created_at', '>', five_mins_ago) \
+                .where('type', '==', 'exercise_reminder') \
+                .limit(1) \
+                .get()
+                
+            if len(list(recent_notifications)):
+                print("⏭️ Skipping - recent notification already sent", file=sys.stderr)
+                return
+            
+            fcm_token = user_data.get('fcm_token')
+            if not fcm_token:
+                print(f"❌ No FCM token found for user {user_id}", file=sys.stderr)
+                return
+            
+            print(f"📱 Found FCM token: {fcm_token[:10]}...", file=sys.stderr)
+            
+            # Get the app bundle ID from user data or use default
+            bundle_id = user_data.get('app_bundle_id', 'com.pepmvp.app')
+            
+            # Prepare notification content
+            next_day_data = user_data.get('next_day_notification', {})
+            notification_content = {
+                'title': next_day_data.get('title', 'Time for Exercise!'),
+                'body': next_day_data.get('body', 'Time to work on your exercises!')
+            }
+            print(f"📬 Notification content: {notification_content}", file=sys.stderr)
+            
+            notification_id = str(uuid.uuid4())
 
-        # Compose message
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=notification_content['title'],
-                body=notification_content['body']
-            ),
-            data={
-                'notification_id': notification_id,
-                'user_id': user_id,
-                'type': 'exercise_reminder',
-                'scheduled_time': next_time
-            },
-            token=fcm_token,
-            android=messaging.AndroidConfig(
-                priority='high',
-                notification=messaging.AndroidNotification(
+            # Compose message
+            message = messaging.Message(
+                notification=messaging.Notification(
+                    title=notification_content['title'],
+                    body=notification_content['body']
+                ),
+                data={
+                    'notification_id': notification_id,
+                    'user_id': user_id,
+                    'type': 'exercise_reminder',
+                    'scheduled_time': next_time
+                },
+                token=fcm_token,
+                android=messaging.AndroidConfig(
                     priority='high',
-                    channel_id='exercise_reminders'
-                )
-            ),
-            apns=messaging.APNSConfig(
-                payload=messaging.APNSPayload(
-                    aps=messaging.Aps(
-                        sound='default',
-                        badge=1,
-                        content_available=True,
-                        mutable_content=True,
-                        priority=10,
-                        category='EXERCISE_REMINDER'
+                    notification=messaging.AndroidNotification(
+                        priority='high',
+                        channel_id='exercise_reminders'
                     )
                 ),
-                headers={
-                    'apns-push-type': 'background',
-                    'apns-priority': '5',
-                    'apns-topic': bundle_id
-                }
+                apns=messaging.APNSConfig(
+                    payload=messaging.APNSPayload(
+                        aps=messaging.Aps(
+                            sound='default',
+                            badge=1,
+                            content_available=True,
+                            mutable_content=True,
+                            priority=10,
+                            category='EXERCISE_REMINDER'
+                        )
+                    ),
+                    headers={
+                        'apns-push-type': 'background',
+                        'apns-priority': '5',
+                        'apns-topic': bundle_id
+                    }
+                )
             )
-        )
 
-        # Save notification in Firestore
-        notification_data = {
-            'id': notification_id,
-            'user_id': user_id,
-            'type': 'exercise_reminder',
-            'scheduled_for': next_time_dt,
-            'status': 'scheduled',
-            'created_at': firestore.SERVER_TIMESTAMP,
-            'content': notification_content
-        }
-        db.collection('notifications').document(notification_id).set(notification_data)
-        print(f"✅ Notification document created: {notification_id}", file=sys.stderr)
+            # Save notification in Firestore
+            notification_data = {
+                'id': notification_id,
+                'user_id': user_id,
+                'type': 'exercise_reminder',
+                'scheduled_for': next_time_dt,
+                'status': 'scheduled',
+                'created_at': firestore.SERVER_TIMESTAMP,
+                'content': notification_content
+            }
+            db.collection('notifications').document(notification_id).set(notification_data)
+            print(f"✅ Notification document created: {notification_id}", file=sys.stderr)
 
-        try:
-            response = messaging.send(message)
-            print(f"✅ Notification sent: {response}", file=sys.stderr)
+            try:
+                response = messaging.send(message)
+                print(f"✅ Notification sent: {response}", file=sys.stderr)
 
-            db.collection('notifications').document(notification_id).update({
-                'status': 'sent',
-                'sent_at': firestore.SERVER_TIMESTAMP,
-                'message_id': response
-            })
-            print("✅ Notification status updated to 'sent'", file=sys.stderr)
-
-        except messaging.ApiCallError as fcm_error:
-            error_msg = str(fcm_error)
-            print(f"❌ FCM API Error: {error_msg}", file=sys.stderr)
-            
-            # Handle token expiration
-            if 'registration-token-not-registered' in error_msg.lower():
-                print("🔄 FCM token expired, updating user document", file=sys.stderr)
-                user_ref.update({
-                    'fcm_token': firestore.DELETE_FIELD,
-                    'notification_status': 'token_expired'
+                db.collection('notifications').document(notification_id).update({
+                    'status': 'sent',
+                    'sent_at': firestore.SERVER_TIMESTAMP,
+                    'message_id': response
                 })
-            
-            db.collection('notifications').document(notification_id).update({
-                'status': 'failed',
-                'error': error_msg
-            })
-        except Exception as send_error:
-            print(f"❌ Error sending notification: {str(send_error)}", file=sys.stderr)
-            db.collection('notifications').document(notification_id).update({
-                'status': 'failed',
-                'error': str(send_error)
-            })
+                print("✅ Notification status updated to 'sent'", file=sys.stderr)
+
+            except messaging.ApiCallError as fcm_error:
+                error_msg = str(fcm_error)
+                print(f"❌ FCM API Error: {error_msg}", file=sys.stderr)
+                
+                # Handle token expiration
+                if 'registration-token-not-registered' in error_msg.lower():
+                    print("🔄 FCM token expired, updating user document", file=sys.stderr)
+                    user_ref.update({
+                        'fcm_token': firestore.DELETE_FIELD,
+                        'notification_status': 'token_expired'
+                    })
+                
+                db.collection('notifications').document(notification_id).update({
+                    'status': 'failed',
+                    'error': error_msg
+                })
+            except Exception as send_error:
+                print(f"❌ Error sending notification: {str(send_error)}", file=sys.stderr)
+                db.collection('notifications').document(notification_id).update({
+                    'status': 'failed',
+                    'error': str(send_error)
+                })
 
     except Exception as e:
         print(f"❌ ERROR: {str(e)}", file=sys.stderr)
