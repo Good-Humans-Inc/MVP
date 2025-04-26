@@ -3,7 +3,8 @@ from firebase_admin import credentials, firestore
 import datetime
 
 # Initialize Firebase
-firebase_admin.initialize_app()
+cred = credentials.ApplicationDefault()
+firebase_admin.initialize_app(cred)
 
 # Connect to Firestore
 db = firestore.client()
