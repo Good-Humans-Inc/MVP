@@ -174,7 +174,6 @@ def schedule_notification(request):
                         badge=1,
                         content_available=True,  # Enable background notification processing
                         mutable_content=True,    # Allow notification modification before display
-                        priority=10,             # Highest priority for timely delivery
                         category='EXERCISE_REMINDER'  # For custom notification actions
                     )
                 ),
@@ -347,9 +346,17 @@ def send_exercise_notification(request):
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
                         sound='default',
-                        badge=1
+                        badge=1,
+                        content_available=True,
+                        mutable_content=True,
+                        category='EXERCISE_REMINDER'
                     )
-                )
+                ),
+                headers={
+                    'apns-push-type': 'background',
+                    'apns-priority': '5',
+                    'apns-topic': 'com.pepmvp.app'
+                }
             )
         )
         
@@ -648,7 +655,6 @@ def monitor_notification_changes(cloud_event):
                         badge=1,
                         content_available=True,
                         mutable_content=True,
-                        priority=10,
                         category='EXERCISE_REMINDER'
                     )
                 ),
