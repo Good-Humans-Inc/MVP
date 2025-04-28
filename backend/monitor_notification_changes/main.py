@@ -5,6 +5,8 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 import json
 import requests
 from datetime import datetime, timedelta, timezone
+import base64
+import io
 
 # Initialize Firebase app
 try:
@@ -20,16 +22,51 @@ def monitor_notification_changes(cloud_event):
     Firebase trigger function that monitors changes to user notification preferences.
     This function is triggered by Firestore document updates in the users collection.
     """
-    # For Firestore triggers in Gen2, need to parse the data properly
-    import json
+    # Log event type and attributes for debugging
+    print(f"Event type: {cloud_event.type}")
+    print(f"Event ID: {cloud_event.id}")
+    print(f"Event source: {cloud_event.source}")
     
-    # First handle the data properly - it could be bytes or already parsed
-    if isinstance(cloud_event.data, bytes):
-        event_json = json.loads(cloud_event.data)
-    else:
-        event_json = cloud_event.data
+    # Handle the data properly based on the event format
+    try:
+        # For CE_PUBSUB_BINDING mode, we need to check for special formats
+        if hasattr(cloud_event, 'data_base64') and cloud_event.data_base64:
+            # Handle base64 encoded data
+            decoded_data = base64.b64decode(cloud_event.data_base64)
+            try:
+                event_json = json.loads(decoded_data)
+            except json.JSONDecodeError:
+                print(f"Warning: Unable to decode data as JSON. Received data type: {type(decoded_data)}")
+                # Print first 100 bytes for debugging
+                print(f"First 100 bytes: {decoded_data[:100]}")
+                return
+        elif isinstance(cloud_event.data, bytes):
+            # Try different decoding methods
+            try:
+                # Try UTF-8 first
+                event_json = json.loads(cloud_event.data.decode('utf-8'))
+            except UnicodeDecodeError:
+                # If UTF-8 fails, try to decode as base64
+                try:
+                    decoded_data = base64.b64decode(cloud_event.data)
+                    event_json = json.loads(decoded_data)
+                except Exception:
+                    # If all decoding fails, print diagnostic info and return
+                    print(f"Warning: Unable to decode binary data. Received data length: {len(cloud_event.data)}")
+                    print(f"First 100 bytes: {cloud_event.data[:100]}")
+                    return
+        elif isinstance(cloud_event.data, dict):
+            event_json = cloud_event.data
+        elif isinstance(cloud_event.data, str):
+            event_json = json.loads(cloud_event.data)
+        else:
+            print(f"Unexpected data type: {type(cloud_event.data)}")
+            return
+    except Exception as e:
+        print(f"Error processing event data: {str(e)}")
+        return
         
-    # Now get the value field
+    # Now get the value field 
     if "value" not in event_json:
         print(f"Missing 'value' in event data: {event_json}")
         return
