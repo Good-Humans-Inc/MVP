@@ -479,9 +479,6 @@ def monitor_notification_changes(cloud_event):
         data_str = str(raw_data) if raw_data else ""
         print(f"📦 Raw event data: {data_str[:200]}...", file=sys.stderr)
         
-        # Force-run mode for debugging (set to True to bypass time window check)
-        force_run = False
-        
         # Extract user ID using regex - look for two different patterns from the logs
         # Pattern 1: users/{userId} in the main path
         match = re.search(r'users/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', data_str)
@@ -518,14 +515,15 @@ def monitor_notification_changes(cloud_event):
         user_data = user_doc.to_dict()
         username = user_data.get('name', 'Unknown user')
         print(f"📋 User data retrieved: {username}", file=sys.stderr)
-        print(f"🔍 User notification preferences: {user_data.get('notification_preferences', {})}", file=sys.stderr)
+        
+        notification_prefs = user_data.get('notification_preferences', {})
+        print(f"🔍 User notification preferences: {notification_prefs}", file=sys.stderr)
         
         # Get the next notification time from user data
         next_time = user_data.get('next_notification_time')
         if not next_time:
             print("⚠️ No next_notification_time found in user data, checking other fields", file=sys.stderr)
             # Check for notification_preferences as fallback
-            notification_prefs = user_data.get('notification_preferences', {})
             if notification_prefs.get('is_enabled'):
                 hour = notification_prefs.get('hour')
                 minute = notification_prefs.get('minute')
@@ -566,17 +564,18 @@ def monitor_notification_changes(cloud_event):
             print(f"❌ No FCM token found for user {user_id}", file=sys.stderr)
             return
         
-        # Verify if the next_notification_time is within 5 minutes of now
+        # Verify if the notification time is now or in the past - NO TIME WINDOW RESTRICTION
         current_time = datetime.now(timezone.utc)
-        time_diff = abs((next_time_dt - current_time).total_seconds())
+        time_diff = (next_time_dt - current_time).total_seconds()
         
         print(f"⏱️ Time difference: {time_diff} seconds (current: {current_time.isoformat()}, next: {next_time_dt.isoformat()})", file=sys.stderr)
         
-        if time_diff > 300 and not force_run:
-            print(f"⏭️ Skipping - Notification time {next_time_dt} is not within 5 minutes window of {current_time}", file=sys.stderr)
+        # Only skip if notification time is more than 30 minutes in the future
+        if time_diff > 1800:  # 30 minutes in seconds
+            print(f"⏭️ Skipping - Notification time {next_time_dt} is more than 30 minutes in the future", file=sys.stderr)
             return
-        
-        print(f"✅ Notification time {next_time_dt} is within the current window", file=sys.stderr)
+            
+        print(f"✅ Processing notification for time {next_time_dt}", file=sys.stderr)
         
         # Check for duplicate notifications in the last 5 minutes
         five_mins_ago = current_time - timedelta(minutes=5)
@@ -587,7 +586,7 @@ def monitor_notification_changes(cloud_event):
             .limit(1) \
             .get()
         
-        if len(list(recent_notifications)) and not force_run:
+        if len(list(recent_notifications)):
             print("⏭️ Skipping - Recent notification already sent", file=sys.stderr)
             return
         
@@ -614,6 +613,8 @@ def monitor_notification_changes(cloud_event):
         
         # App bundle ID for APNs
         bundle_id = user_data.get('app_bundle_id', 'com.pepmvp.app')
+        device_type = user_data.get('device_type', 'unknown')
+        print(f"📲 Device type: {device_type}, Bundle ID: {bundle_id}", file=sys.stderr)
         
         # Save notification record first
         notification_data = {
@@ -623,32 +624,38 @@ def monitor_notification_changes(cloud_event):
             'scheduled_for': next_time_dt,
             'status': 'scheduled',
             'created_at': firestore.SERVER_TIMESTAMP,
-            'content': notification_content
+            'content': notification_content,
+            'is_one_time': True  # Adding is_one_time flag
         }
         db.collection('notifications').document(notification_id).set(notification_data)
         print(f"✅ Notification document created: {notification_id}", file=sys.stderr)
         
-        # Compose FCM message
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=notification_content['title'],
-                body=notification_content['body']
-            ),
-            data={
-                'notification_id': notification_id,
-                'user_id': user_id,
-                'type': 'exercise_reminder',
-                'scheduled_time': next_time_dt.isoformat()
-            },
-            token=fcm_token,
-            android=messaging.AndroidConfig(
-                priority='high',
-                notification=messaging.AndroidNotification(
-                    priority='high',
-                    channel_id='exercise_reminders'
-                )
-            ),
-            apns=messaging.APNSConfig(
+        # APNS configuration based on device type
+        if device_type and device_type.lower() == 'ios':
+            # Enhanced iOS configuration with alert
+            apns_config = messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        alert=messaging.ApsAlert(
+                            title=notification_content['title'],
+                            body=notification_content['body']
+                        ),
+                        sound='default',
+                        badge=1,
+                        content_available=True,
+                        mutable_content=True,
+                        category='EXERCISE_REMINDER'
+                    )
+                ),
+                headers={
+                    'apns-push-type': 'alert',
+                    'apns-priority': '10',  # High priority for immediate delivery
+                    'apns-topic': bundle_id
+                }
+            )
+        else:
+            # Standard configuration for other devices
+            apns_config = messaging.APNSConfig(
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
                         sound='default',
@@ -664,6 +671,29 @@ def monitor_notification_changes(cloud_event):
                     'apns-topic': bundle_id
                 }
             )
+        
+        # Compose FCM message
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title=notification_content['title'],
+                body=notification_content['body']
+            ),
+            data={
+                'notification_id': notification_id,
+                'user_id': user_id,
+                'type': 'exercise_reminder',
+                'scheduled_time': next_time_dt.isoformat(),
+                'is_one_time': 'true'  # Include is_one_time in data payload
+            },
+            token=fcm_token,
+            android=messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    priority='high',
+                    channel_id='exercise_reminders'
+                )
+            ),
+            apns=apns_config
         )
         
         # Try sending the notification
@@ -678,14 +708,20 @@ def monitor_notification_changes(cloud_event):
             })
             print("✅ Notification status updated to 'sent'", file=sys.stderr)
             
-            # Schedule next notification (for tomorrow)
-            notification_prefs = user_data.get('notification_preferences', {})
+            # Schedule next notification using preferences
             if notification_prefs.get('is_enabled') and notification_prefs.get('frequency') == 'daily':
                 hour = notification_prefs.get('hour')
                 minute = notification_prefs.get('minute')
                 if hour is not None and minute is not None:
-                    next_notification = next_time_dt + timedelta(days=1)
-                    next_notification = next_notification.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                    # Calculate next day at the same hour/minute
+                    tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
+                    next_notification = tomorrow.replace(
+                        hour=hour, 
+                        minute=minute, 
+                        second=0, 
+                        microsecond=0
+                    )
+                    
                     user_ref.update({
                         'next_notification_time': next_notification
                     })

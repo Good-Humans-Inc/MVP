@@ -1,8 +1,6 @@
 #!/bin/bash
 
-# This script should be run in Google Cloud Shell where gcloud is available
-
-# Deploy monitor_notification_changes function
+# Deploy the monitor_notification_changes function
 echo "Deploying monitor_notification_changes function..."
 gcloud functions deploy monitor_notification_changes \
   --gen2 \
