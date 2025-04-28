@@ -20,9 +20,22 @@ def monitor_notification_changes(cloud_event):
     Firebase trigger function that monitors changes to user notification preferences.
     This function is triggered by Firestore document updates in the users collection.
     """
-    # Get the Firestore event data
-    event_data = cloud_event.data["value"]
-    resource_name = cloud_event.data["value"]["name"]
+    # For Firestore triggers in Gen2, need to parse the data properly
+    import json
+    
+    # First handle the data properly - it could be bytes or already parsed
+    if isinstance(cloud_event.data, bytes):
+        event_json = json.loads(cloud_event.data)
+    else:
+        event_json = cloud_event.data
+        
+    # Now get the value field
+    if "value" not in event_json:
+        print(f"Missing 'value' in event data: {event_json}")
+        return
+    
+    event_data = event_json["value"]
+    resource_name = event_data.get("name", "")
     
     # Extract the user ID from the resource name
     # Format: projects/{project_id}/databases/{database}/documents/users/{user_id}
