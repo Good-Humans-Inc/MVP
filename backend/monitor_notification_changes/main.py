@@ -6,7 +6,6 @@ import json
 import requests
 from datetime import datetime, timedelta, timezone
 import base64
-import io
 
 # Initialize Firebase app
 try:
@@ -22,82 +21,101 @@ def monitor_notification_changes(cloud_event):
     Firebase trigger function that monitors changes to user notification preferences.
     This function is triggered by Firestore document updates in the users collection.
     """
-    # Log event type and attributes for debugging
-    print(f"Event type: {cloud_event.type}")
-    print(f"Event ID: {cloud_event.id}")
-    print(f"Event source: {cloud_event.source}")
+    # Print basic information about the event
+    print(f"Received cloud event: {str(cloud_event)[:200]}...")
+    print(f"Cloud event data type: {type(cloud_event.data)}")
     
-    # Handle the data properly based on the event format
+    # For Firestore triggers in Gen2, need to parse the data properly
     try:
-        # For CE_PUBSUB_BINDING mode, we need to check for special formats
-        if hasattr(cloud_event, 'data_base64') and cloud_event.data_base64:
-            # Handle base64 encoded data
-            decoded_data = base64.b64decode(cloud_event.data_base64)
+        # Try to extract the data based on its type
+        if isinstance(cloud_event.data, bytes):
+            # Try different methods to decode the bytes
             try:
-                event_json = json.loads(decoded_data)
-            except json.JSONDecodeError:
-                print(f"Warning: Unable to decode data as JSON. Received data type: {type(decoded_data)}")
-                # Print first 100 bytes for debugging
-                print(f"First 100 bytes: {decoded_data[:100]}")
-                return
-        elif isinstance(cloud_event.data, bytes):
-            # Try different decoding methods
-            try:
-                # Try UTF-8 first
-                event_json = json.loads(cloud_event.data.decode('utf-8'))
-            except UnicodeDecodeError:
-                # If UTF-8 fails, try to decode as base64
+                # Try protobuf approach first
+                from google.events.cloud.firestore_v1 import DocumentEventData
+                event_data = DocumentEventData.deserialize(cloud_event.data)
+                # Extract document path from the value name
+                if hasattr(event_data.value, 'name'):
+                    resource_name = event_data.value.name
+                else:
+                    print("No name in event_data.value")
+                    return
+            except Exception as decode_error:
+                print(f"Protobuf deserialization failed: {decode_error}")
+                # Try JSON approach
                 try:
-                    decoded_data = base64.b64decode(cloud_event.data)
-                    event_json = json.loads(decoded_data)
-                except Exception:
-                    # If all decoding fails, print diagnostic info and return
-                    print(f"Warning: Unable to decode binary data. Received data length: {len(cloud_event.data)}")
-                    print(f"First 100 bytes: {cloud_event.data[:100]}")
+                    data_str = cloud_event.data.decode('utf-8')
+                    event_json = json.loads(data_str)
+                    if "value" not in event_json:
+                        print(f"Missing 'value' in event data")
+                        return
+                    event_data = event_json["value"]
+                    resource_name = event_data.get("name", "")
+                except Exception as json_error:
+                    print(f"JSON decoding failed: {json_error}")
                     return
         elif isinstance(cloud_event.data, dict):
-            event_json = cloud_event.data
-        elif isinstance(cloud_event.data, str):
-            event_json = json.loads(cloud_event.data)
+            # Data is already a dictionary
+            if "value" not in cloud_event.data:
+                print(f"Missing 'value' in event data")
+                return
+            event_data = cloud_event.data["value"]
+            resource_name = event_data.get("name", "")
         else:
-            print(f"Unexpected data type: {type(cloud_event.data)}")
+            print(f"Unsupported data type: {type(cloud_event.data)}")
             return
     except Exception as e:
-        print(f"Error processing event data: {str(e)}")
+        print(f"Error extracting data from cloud event: {str(e)}")
         return
-        
-    # Now get the value field 
-    if "value" not in event_json:
-        print(f"Missing 'value' in event data: {event_json}")
-        return
-    
-    event_data = event_json["value"]
-    resource_name = event_data.get("name", "")
     
     # Extract the user ID from the resource name
     # Format: projects/{project_id}/databases/{database}/documents/users/{user_id}
-    parts = resource_name.split('/')
-    if len(parts) < 6 or parts[-2] != 'users':
-        print(f"Invalid resource name: {resource_name}")
+    try:
+        parts = resource_name.split('/')
+        if len(parts) < 6 or parts[-2] != 'users':
+            print(f"Invalid resource name: {resource_name}")
+            return
+        
+        user_id = parts[-1]
+        print(f"Processing change for user: {user_id}")
+    except Exception as path_error:
+        print(f"Error extracting user ID from path: {path_error}")
         return
-    
-    user_id = parts[-1]
-    print(f"Processing change for user: {user_id}")
     
     # Check if this is an update event and notification_preferences field was updated
-    if not event_data.get("updateMask") or "notification_preferences" not in event_data.get("updateMask", {}).get("fieldPaths", []):
-        print(f"Not a notification preference update for user {user_id}")
-        return
+    try:
+        # Handle different event structures
+        if hasattr(event_data, 'update_mask') and hasattr(event_data.update_mask, 'field_paths'):
+            # Protobuf format
+            update_paths = event_data.update_mask.field_paths
+            if 'notification_preferences' not in update_paths:
+                print(f"Not a notification preference update for user {user_id}")
+                return
+        elif isinstance(event_data, dict) and 'updateMask' in event_data:
+            # JSON format
+            if 'fieldPaths' not in event_data['updateMask'] or 'notification_preferences' not in event_data['updateMask']['fieldPaths']:
+                print(f"Not a notification preference update for user {user_id}")
+                return
+        else:
+            # No update mask found, might be a create event
+            print(f"No update mask found, might be a create event for user {user_id}")
+    except Exception as mask_error:
+        print(f"Error checking update mask: {mask_error}")
+        # Continue processing since we have a valid user ID
     
     # Get the updated user document
-    user_ref = db.collection('users').document(user_id)
-    user_doc = user_ref.get()
-    
-    if not user_doc.exists:
-        print(f"User document {user_id} no longer exists")
+    try:
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        
+        if not user_doc.exists:
+            print(f"User document {user_id} no longer exists")
+            return
+        
+        user_data = user_doc.to_dict()
+    except Exception as db_error:
+        print(f"Error reading user document: {db_error}")
         return
-    
-    user_data = user_doc.to_dict()
     
     # Check if notifications are enabled
     notification_prefs = user_data.get('notification_preferences', {})
@@ -106,7 +124,10 @@ def monitor_notification_changes(cloud_event):
     if not is_enabled:
         print(f"Notifications are disabled for user {user_id}")
         # Cancel any scheduled notifications
-        cancel_user_notifications(user_id)
+        try:
+            cancel_user_notifications(user_id)
+        except Exception as cancel_error:
+            print(f"Error cancelling notifications: {cancel_error}")
         return
     
     # Get notification time
@@ -126,7 +147,10 @@ def monitor_notification_changes(cloud_event):
         next_time = next_time + timedelta(days=1)
     
     # Cancel any existing scheduled notifications
-    cancel_user_notifications(user_id)
+    try:
+        cancel_user_notifications(user_id)
+    except Exception as cancel_error:
+        print(f"Error cancelling notifications: {cancel_error}")
     
     # Schedule the next notification
     try:
