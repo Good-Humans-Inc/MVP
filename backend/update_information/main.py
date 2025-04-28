@@ -1,21 +1,19 @@
+# update_information/main.py
 import functions_framework
 import firebase_admin
 from firebase_admin import credentials, firestore
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import uuid
-from google.cloud import secretmanager
+import requests
 
-# Initialize Firebase Admin with default credentials
-firebase_admin.initialize_app()
+# Initialize Firebase Admin if not already initialized
+try:
+    app = firebase_admin.get_app()
+except ValueError:
+    firebase_admin.initialize_app()
+
 db = firestore.Client(project='pepmvp', database='pep-mvp')
-
-def get_secret(secret_id):
-    """Get secret from Google Cloud Secret Manager."""
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/pepmvp/secrets/{secret_id}/versions/latest"
-    response = client.access_secret_version(request={"name": name})
-    return response.payload.data.decode("UTF-8")
 
 @functions_framework.http
 def update_information(request):
@@ -52,6 +50,7 @@ def update_information(request):
         
         # Prepare update data
         update_data = {}
+        notification_updated = False
         
         # Update notification preferences if provided
         if notification_time:
@@ -67,6 +66,7 @@ def update_information(request):
                         'updated_at': firestore.SERVER_TIMESTAMP,
                         'updated_by': 'elevenlabs_agent'
                     }
+                    notification_updated = True
                 else:
                     return (json.dumps({'error': 'Invalid notification time format'}), 400, headers)
             except (ValueError, AttributeError):
@@ -110,132 +110,123 @@ def update_information(request):
         db.collection('activities').document(activity_id).set(activity_data)
         
         # If notification time was updated, schedule a notification
-        if 'notification_preferences' in update_data:
-            success, error = schedule_next_notification(
-                user_id,
-                update_data['notification_preferences']['hour'],
-                update_data['notification_preferences']['minute']
-            )
-            if not success:
-                print(f"Error scheduling notification: {error}")
+        scheduled_task_id = None
         
-        return (json.dumps({
+        if notification_updated:
+            # Calculate the next notification time
+            now = datetime.now(timezone.utc)
+            next_time = now.replace(
+                hour=update_data['notification_preferences']['hour'], 
+                minute=update_data['notification_preferences']['minute'],
+                second=0,
+                microsecond=0
+            )
+            
+            # If the time has already passed today, schedule for tomorrow
+            if next_time <= now:
+                next_time = next_time + timedelta(days=1)
+            
+            # Update the user's next_notification_time
+            user_ref.update({
+                'next_notification_time': next_time
+            })
+            
+            # Cancel any existing scheduled notifications
+            try:
+                cancel_existing_scheduled_notifications(user_id)
+            except Exception as e:
+                print(f"Error cancelling existing notifications: {str(e)}")
+            
+            # Schedule the next notification
+            try:
+                task_response = schedule_notification_task(
+                    user_id,
+                    next_time.isoformat(),
+                    is_one_time=False
+                )
+                if task_response and 'notification_id' in task_response:
+                    scheduled_task_id = task_response['notification_id']
+            except Exception as e:
+                print(f"Error scheduling new notification: {str(e)}")
+        
+        response_data = {
             'status': 'success',
             'message': 'User information updated successfully',
             'updated_fields': list(update_data.keys())
-        }), 200, headers)
-            
-    except Exception as e:
-        print(f"Error updating user information: {str(e)}")
-        return (json.dumps({'error': str(e)}), 500, headers)
-
-@functions_framework.http
-def check_notifications(request):
-    """Check scheduled notifications for a user."""
-    # Enable CORS
-    if request.method == 'OPTIONS':
-        headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST',
-            'Access-Control-Allow-Headers': 'Content-Type'
         }
-        return ('', 204, headers)
-    
-    headers = {'Access-Control-Allow-Origin': '*'}
-    
-    try:
-        request_json = request.get_json()
-        user_id = request_json.get('user_id')
         
-        if not user_id:
-            return (json.dumps({'error': 'Missing user_id'}), 400, headers)
-        
-        # Get user data
-        user_ref = db.collection('users').document(user_id)
-        user_doc = user_ref.get()
-        
-        if not user_doc.exists:
-            return (json.dumps({'error': 'User not found'}), 404, headers)
-        
-        user_data = user_doc.to_dict()
-        
-        # Get notification preferences
-        notification_prefs = user_data.get('notification_preferences', {})
-        next_notification_time = user_data.get('next_notification_time')
-        
-        # Get recent and upcoming notifications
-        now = datetime.now()
-        yesterday = now - timedelta(days=1)
-        
-        notifications = db.collection('notifications') \
-            .where('user_id', '==', user_id) \
-            .where('scheduled_for', '>', yesterday) \
-            .order_by('scheduled_for', direction=firestore.Query.DESCENDING) \
-            .limit(10) \
-            .stream()
-        
-        notifications_list = []
-        for notif in notifications:
-            notif_data = notif.to_dict()
-            notifications_list.append(serialize_firestore_data(notif_data))
-        
-        return (json.dumps({
-            'status': 'success',
-            'notification_preferences': notification_prefs,
-            'next_notification_time': serialize_firestore_data(next_notification_time),
-            'recent_notifications': notifications_list
-        }), 200, headers)
+        if scheduled_task_id:
+            response_data['scheduled_notification_id'] = scheduled_task_id
+            
+        return (json.dumps(response_data), 200, headers)
             
     except Exception as e:
-        print(f"Error checking notifications: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error updating user information: {str(e)}\n{error_details}")
         return (json.dumps({'error': str(e)}), 500, headers)
 
-# Update the notification scheduling part in update_information
-def schedule_next_notification(user_id, hour, minute):
-    """Helper function to schedule the next notification."""
-    try:
-        # Calculate next notification time
-        now = datetime.now()
-        next_time = now.replace(
-            hour=hour,
-            minute=minute,
-            second=0,
-            microsecond=0
-        )
+def cancel_existing_scheduled_notifications(user_id):
+    """Cancel any existing scheduled notifications for the user."""
+    # Get notifications with status 'scheduled'
+    notifications = db.collection('notifications') \
+        .where('user_id', '==', user_id) \
+        .where('status', '==', 'scheduled') \
+        .stream()
+    
+    for notif in notifications:
+        notif_data = notif.to_dict()
+        task_name = notif_data.get('task_name')
         
-        # If the time has already passed today, schedule for tomorrow
-        if next_time <= now:
-            next_time = next_time + timedelta(days=1)
-        
-        # Update user's next notification time
-        user_ref = db.collection('users').document(user_id)
-        user_ref.update({
-            'next_notification_time': next_time
+        # Update notification status
+        db.collection('notifications').document(notif.id).update({
+            'status': 'cancelled',
+            'updated_at': firestore.SERVER_TIMESTAMP,
+            'cancelled_reason': 'User updated notification preferences'
         })
         
-        # Schedule the notification
-        from schedule_notification.main import schedule_notification
-        
-        # Create a mock request object
-        class MockRequest:
-            def __init__(self, json_data):
-                self.json_data = json_data
-            
-            def get_json(self):
-                return self.json_data
-        
-        # Schedule the notification
-        notification_request = MockRequest({
-            'user_id': user_id,
-            'scheduled_time': next_time.isoformat() + 'Z',
-            'is_one_time': False  # This is a regular scheduled notification
-        })
-        
-        schedule_notification(notification_request)
-        return True, None
-        
-    except Exception as e:
-        return False, str(e)
+        # If we have task_name, try to delete the Cloud Task
+        if task_name:
+            try:
+                # We could use the Cloud Tasks client here to delete the task
+                from google.cloud import tasks_v2
+                client = tasks_v2.CloudTasksClient()
+                client.delete_task(name=task_name)
+                print(f"Deleted Cloud Task: {task_name}")
+            except Exception as e:
+                print(f"Error deleting Cloud Task {task_name}: {str(e)}")
+
+def schedule_notification_task(user_id, scheduled_time, is_one_time=False, custom_title=None, custom_body=None):
+    """Call the schedule_notification Cloud Function."""
+    # Get the GCP project ID
+    project_id = 'pepmvp'  # Your GCP project ID
+    
+    # Prepare the request payload
+    payload = {
+        'user_id': user_id,
+        'scheduled_time': scheduled_time,
+        'is_one_time': is_one_time
+    }
+    
+    if custom_title:
+        payload['custom_title'] = custom_title
+    
+    if custom_body:
+        payload['custom_body'] = custom_body
+    
+    # URL of the schedule_notification Cloud Function
+    url = f"https://us-central1-{project_id}.cloudfunctions.net/schedule_notification"
+    
+    # Make the HTTP request
+    response = requests.post(url, json=payload)
+    
+    # Process the response
+    if response.status_code == 200:
+        return response.json()
+    else:
+        error_message = f"Failed to schedule notification: {response.text}"
+        print(error_message)
+        raise Exception(error_message)
 
 # Helper function to serialize Firestore data for JSON
 def serialize_firestore_data(data):
@@ -247,4 +238,4 @@ def serialize_firestore_data(data):
     elif hasattr(data, 'datetime'):  # Handle Firestore Timestamp
         return data.datetime.isoformat()
     else:
-        return data 
+        return data
