@@ -69,19 +69,31 @@ def monitor_notification_changes(cloud_event):
             event_type = getattr(cloud_event, 'type', '')
             print(f"🔄 Processing event type: {event_type}", file=sys.stderr)
             
-            # Create appropriate event object
-            if event_type == "google.cloud.firestore.document.v1.created":
-                event_data = events_firestore.DocumentCreatedEvent()
-            elif event_type == "google.cloud.firestore.document.v1.updated":
-                event_data = events_firestore.DocumentUpdatedEvent()
-            elif event_type == "google.cloud.firestore.document.v1.deleted":
-                event_data = events_firestore.DocumentDeletedEvent()
-            elif event_type == "google.cloud.firestore.document.v1.written":
-                event_data = events_firestore.DocumentWrittenEvent()
-            else:
-                # Default to written event if type not specified
-                print(f"⚠️ Using default DocumentWrittenEvent for type: {event_type}", file=sys.stderr)
-                event_data = events_firestore.DocumentWrittenEvent()
+            # Create appropriate event object based on available classes
+            # Check the available event types in the module
+            available_event_types = [attr for attr in dir(events_firestore) 
+                                   if attr.startswith('Document') and attr.endswith('Event')]
+            print(f"📋 Available event types: {available_event_types}", file=sys.stderr)
+            
+            # Map event types to available classes
+            event_map = {
+                "google.cloud.firestore.document.v1.created": "DocumentCreatedEvent",
+                "google.cloud.firestore.document.v1.updated": "DocumentUpdatedEvent",
+                "google.cloud.firestore.document.v1.deleted": "DocumentDeletedEvent",
+                "google.cloud.firestore.document.v1.written": "DocumentUpdatedEvent"  # Fallback to UpdatedEvent
+            }
+            
+            # Get the class name to use
+            event_class_name = event_map.get(event_type)
+            if not event_class_name or not hasattr(events_firestore, event_class_name):
+                # Default to DocumentUpdatedEvent if class not found
+                print(f"⚠️ Event type {event_type} not directly supported, using DocumentUpdatedEvent", file=sys.stderr)
+                event_class_name = "DocumentUpdatedEvent"
+            
+            # Create the event object using the appropriate class
+            event_class = getattr(events_firestore, event_class_name)
+            event_data = event_class()
+            print(f"✅ Using event class: {event_class_name}", file=sys.stderr)
             
             # Parse the binary data into the event object
             event_data.ParseFromString(binary_data)
