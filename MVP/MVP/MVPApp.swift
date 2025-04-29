@@ -258,16 +258,68 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable : Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
         print("📱 Received remote notification: \(userInfo)")
         
-//        // Process the notification data
-//        if let exerciseId = userInfo["exerciseId"] as? String {
-//            // Handle exercise notification
-//            print("📱 Remote notification for exercise: \(exerciseId)")
-//            // You can post a notification to handle this in your app
-//            NotificationCenter.default.post(name: NSNotification.Name("OpenExerciseFromNotification"), object: nil, userInfo: ["exerciseId": exerciseId])
-//            completionHandler(.newDataFetched)
-//        } else {
-//            completionHandler(.noData)
-//        }
+        // Process the notification data
+        if let exerciseId = userInfo["exerciseId"] as? String {
+            // Handle exercise notification
+            print("📱 Remote notification for exercise: \(exerciseId)")
+            // Post notification to handle this in your app
+            NotificationCenter.default.post(
+                name: NSNotification.Name("OpenExerciseFromNotification"),
+                object: nil,
+                userInfo: ["exerciseId": exerciseId]
+            )
+            completionHandler(.newData)
+        } else {
+            // Handle other types of notifications
+            if let notificationType = userInfo["type"] as? String {
+                switch notificationType {
+                case "exercise_reminder":
+                    // Process exercise reminder
+                    handleExerciseReminder(userInfo)
+                    completionHandler(.newData)
+                default:
+                    completionHandler(.noData)
+                }
+            } else {
+                completionHandler(.noData)
+            }
+        }
+    }
+    
+    // Handle exercise reminders
+    private func handleExerciseReminder(_ userInfo: [AnyHashable: Any]) {
+        // Update app badge
+        if let badge = userInfo["badge"] as? Int {
+            DispatchQueue.main.async {
+                UIApplication.shared.applicationIconBadgeNumber = badge
+            }
+        }
+        
+        // Schedule local notification if needed
+        if let title = userInfo["title"] as? String,
+           let body = userInfo["body"] as? String {
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            
+            // Create trigger for immediate display
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+            
+            // Create request
+            let request = UNNotificationRequest(
+                identifier: UUID().uuidString,
+                content: content,
+                trigger: trigger
+            )
+            
+            // Add request to notification center
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    print("❌ Error scheduling local notification: \(error)")
+                }
+            }
+        }
     }
 }
 
