@@ -8,6 +8,8 @@ from firebase_admin import messaging
 # Import core protobuf library
 import google.protobuf.json_format as json_format
 from google.protobuf.struct_pb2 import Struct
+from google.protobuf import descriptor_pb2
+from google.protobuf.descriptor_pool import DescriptorPool
 
 import json
 import requests
@@ -15,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 import sys
 import base64
+import binascii
 
 # Initialize Firebase Admin
 try:
@@ -25,12 +28,31 @@ except ValueError:
 # Create Firestore client - using the admin_firestore module
 db = admin_firestore.Client(project='pepmvp', database='pep-mvp')
 
+def hex_dump(data, length=100):
+    """Create a hexdump of binary data for debugging."""
+    hex_str = binascii.hexlify(data[:length]).decode('ascii')
+    chunks = [hex_str[i:i+2] for i in range(0, len(hex_str), 2)]
+    formatted = ' '.join(chunks)
+    return formatted
+
 @functions_framework.cloud_event
 def monitor_notification_changes(cloud_event):
     """Triggered by a change to a Firestore document."""
     print("🔔 FUNCTION TRIGGERED - STARTING EXECUTION", file=sys.stderr)
+    
+    # Print detailed cloud_event information
     print(f"📝 Event ID: {getattr(cloud_event, 'id', 'unknown')}", file=sys.stderr)
     print(f"📝 Event Type: {getattr(cloud_event, 'type', 'unknown')}", file=sys.stderr)
+    print(f"📝 Source: {getattr(cloud_event, 'source', 'unknown')}", file=sys.stderr)
+    print(f"📝 Subject: {getattr(cloud_event, 'subject', 'unknown')}", file=sys.stderr)
+    print(f"📝 Time: {getattr(cloud_event, 'time', 'unknown')}", file=sys.stderr)
+    print(f"📝 Content Type: {getattr(cloud_event, 'data_content_type', 'unknown')}", file=sys.stderr)
+    
+    # Print all attributes
+    print("📝 All attributes:", file=sys.stderr)
+    for attr in dir(cloud_event):
+        if not attr.startswith('_') and attr != 'data':
+            print(f"   {attr}: {getattr(cloud_event, attr, 'N/A')}", file=sys.stderr)
     
     try:
         # Process event data
@@ -38,11 +60,17 @@ def monitor_notification_changes(cloud_event):
         if isinstance(cloud_event.data, bytes):
             # Handle binary protobuf data
             print(f"📦 Received binary data of length: {len(cloud_event.data)} bytes", file=sys.stderr)
+            print(f"📦 Hex dump of first 100 bytes: {hex_dump(cloud_event.data)}", file=sys.stderr)
+            
+            # Base64 encode for easier debugging
+            encoded_data = base64.b64encode(cloud_event.data).decode('utf-8')
+            print(f"📦 Full Base64 encoded data: {encoded_data}", file=sys.stderr)
+            
             try:
-                # First try to extract as base64
+                # Try to decode the protobuf data directly to string first
                 try:
-                    # Try to decode the protobuf data directly to string first
                     decoded_data = cloud_event.data.decode('utf-8')
+                    print(f"📦 Decoded as UTF-8 (first 200 chars): {decoded_data[:200]}", file=sys.stderr)
                     if decoded_data.startswith('{'):
                         # This is actually JSON, not binary
                         event_data = json.loads(decoded_data)
@@ -51,37 +79,124 @@ def monitor_notification_changes(cloud_event):
                         # It's not JSON, treat as binary
                         raise ValueError("Not JSON data")
                 except (UnicodeDecodeError, ValueError):
-                    # Direct binary protobuf - parse using protobuf library
-                    struct = Struct()
-                    struct.ParseFromString(cloud_event.data)
-                    event_data = json_format.MessageToDict(struct)
-                    print("✅ Parsed binary data using protobuf Struct", file=sys.stderr)
-            except Exception as parse_error:
-                # If that fails, try base64 encoding the binary data and print it
-                encoded_data = base64.b64encode(cloud_event.data).decode('utf-8')
-                print(f"⚠️ Could not parse binary data: {str(parse_error)}", file=sys.stderr)
-                print(f"📦 Base64 encoded data: {encoded_data[:200]}...", file=sys.stderr)
-                
-                # Try a different approach - the Firestore document details
-                # should be available in the cloud_event attributes
-                event_subject = getattr(cloud_event, 'subject', '')
-                print(f"📝 Event subject: {event_subject}", file=sys.stderr)
-                
-                # Extract collection and document ID from subject
-                # Format is typically projects/_/databases/(default)/documents/{collection}/{doc_id}
-                if '/documents/' in event_subject:
-                    path_parts = event_subject.split('/documents/')[1].split('/')
-                    if len(path_parts) >= 2:
-                        collection_path = path_parts[0]
-                        document_id = path_parts[1]
-                        print(f"📄 Extracted from subject: {collection_path}/{document_id}", file=sys.stderr)
+                    print("⚠️ Not UTF-8 encoded text, trying protobuf parsing", file=sys.stderr)
+                    
+                    # Try different protobuf message types
+                    try:
+                        # Generic Struct
+                        struct = Struct()
+                        struct.ParseFromString(cloud_event.data)
+                        event_data = json_format.MessageToDict(struct)
+                        print("✅ Parsed binary data using protobuf Struct", file=sys.stderr)
+                    except Exception as e1:
+                        print(f"⚠️ Failed to parse as Struct: {str(e1)}", file=sys.stderr)
                         
-                        # Continue processing with this information
-                        if collection_path == 'users':
-                            user_id = document_id
-                            # Skip to processing the user document directly
-                            process_user_notification_update(user_id)
-                            return
+                        # Try as FileDescriptorSet (for schema info)
+                        try:
+                            fd_set = descriptor_pb2.FileDescriptorSet()
+                            fd_set.ParseFromString(cloud_event.data)
+                            print(f"✅ Parsed as FileDescriptorSet with {len(fd_set.file)} files", file=sys.stderr)
+                            
+                            # Create a descriptor pool from the descriptors
+                            pool = DescriptorPool()
+                            for fd in fd_set.file:
+                                pool.Add(fd)
+                            
+                            # Print the message types
+                            for fd in fd_set.file:
+                                for msg_type in fd.message_type:
+                                    print(f"📝 Found message type: {fd.package}.{msg_type.name}", file=sys.stderr)
+                        except Exception as e2:
+                            print(f"⚠️ Failed to parse as FileDescriptorSet: {str(e2)}", file=sys.stderr)
+                            
+                            # Look for common patterns in the binary data
+                            try:
+                                # Convert to hex for searching
+                                hex_data = binascii.hexlify(cloud_event.data).decode('ascii')
+                                
+                                # Look for document path patterns - convert common strings to hex and search
+                                doc_pattern = binascii.hexlify(b"documents").decode('ascii')
+                                users_pattern = binascii.hexlify(b"users").decode('ascii')
+                                
+                                if doc_pattern in hex_data:
+                                    print(f"📦 Found 'documents' pattern in binary data", file=sys.stderr)
+                                if users_pattern in hex_data:
+                                    print(f"📦 Found 'users' pattern in binary data", file=sys.stderr)
+                                    
+                                # Try to extract strings from the binary data
+                                def extract_strings(data, min_length=4):
+                                    result = []
+                                    current = ""
+                                    for byte in data:
+                                        if 32 <= byte <= 126:  # printable ASCII
+                                            current += chr(byte)
+                                        else:
+                                            if len(current) >= min_length:
+                                                result.append(current)
+                                            current = ""
+                                    if len(current) >= min_length:
+                                        result.append(current)
+                                    return result
+                                
+                                strings = extract_strings(cloud_event.data)
+                                print(f"📦 Extracted strings from binary: {strings[:20]}", file=sys.stderr)
+                                
+                                # Try to find document paths in extracted strings
+                                for s in strings:
+                                    if 'documents' in s and 'users' in s:
+                                        print(f"📦 Potential document path: {s}", file=sys.stderr)
+                                        parts = s.split('users/')
+                                        if len(parts) > 1 and len(parts[1]) > 0:
+                                            user_id = parts[1].split('/')[0]
+                                            print(f"📄 Extracted user ID: {user_id}", file=sys.stderr)
+                                            process_user_notification_update(user_id)
+                                            return
+                            except Exception as e3:
+                                print(f"⚠️ Failed pattern analysis: {str(e3)}", file=sys.stderr)
+                            
+            except Exception as parse_error:
+                print(f"⚠️ Could not parse binary data: {str(parse_error)}", file=sys.stderr)
+                  
+            # Extract from subject as last resort
+            event_subject = getattr(cloud_event, 'subject', '')
+            print(f"📝 Event subject: {event_subject}", file=sys.stderr)
+            
+            # Try to extract from source
+            event_source = getattr(cloud_event, 'source', '')
+            print(f"📝 Event source: {event_source}", file=sys.stderr)
+            
+            # Check various fields in attributes
+            try:
+                # Check if any attributes might contain document path
+                if hasattr(cloud_event, 'attributes'):
+                    print("📝 Checking cloud_event attributes:", file=sys.stderr)
+                    attrs = getattr(cloud_event, 'attributes', {})
+                    for key, value in attrs.items():
+                        print(f"   {key}: {value}", file=sys.stderr)
+                        if 'document' in str(value) or 'users' in str(value):
+                            print(f"📄 Potential document info in attribute {key}: {value}", file=sys.stderr)
+            except Exception as attr_error:
+                print(f"⚠️ Error checking attributes: {str(attr_error)}", file=sys.stderr)
+            
+            # Try to parse the event type for clues
+            event_type = getattr(cloud_event, 'type', '')
+            if event_type and 'firestore' in event_type:
+                print(f"📝 Analyzing Firestore event type: {event_type}", file=sys.stderr)
+                
+                # Many Firestore events include IDs in the subject or directly in the type
+                parts = event_type.split('.')
+                if len(parts) > 1:
+                    last_part = parts[-1]
+                    print(f"📝 Event type last part: {last_part}", file=sys.stderr)
+                    
+            if not event_subject and not event_source:
+                # Last attempt - check the hex data for known patterns
+                for known_id in db.collection('users').stream():
+                    user_id = known_id.id
+                    if user_id.encode('utf-8') in cloud_event.data:
+                        print(f"📄 Found user ID in binary data: {user_id}", file=sys.stderr)
+                        process_user_notification_update(user_id)
+                        return
                 
                 # If we got this far, we couldn't get the data we need
                 print("❌ Could not extract necessary document information", file=sys.stderr)
@@ -89,6 +204,7 @@ def monitor_notification_changes(cloud_event):
         else:
             # It's already a dictionary or string
             if isinstance(cloud_event.data, str):
+                print(f"📄 Received string data (first 200 chars): {cloud_event.data[:200]}", file=sys.stderr)
                 try:
                     event_data = json.loads(cloud_event.data)
                     print("✅ Parsed string data as JSON", file=sys.stderr)
@@ -98,6 +214,13 @@ def monitor_notification_changes(cloud_event):
             else:
                 event_data = cloud_event.data
                 print("✅ Using dictionary data directly", file=sys.stderr)
+        
+        # Dump event data for debugging
+        if event_data:
+            try:
+                print(f"📦 Event data sample: {json.dumps(event_data)[:500]}...", file=sys.stderr)
+            except:
+                print("⚠️ Could not JSON dump event_data", file=sys.stderr)
         
         # Check for value field containing document info
         if not event_data or 'value' not in event_data:
