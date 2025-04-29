@@ -9,6 +9,7 @@ import sys
 import traceback
 import base64
 import binascii
+import re
 
 # For parsing protobuf messages
 import google.protobuf.json_format as json_format
@@ -25,7 +26,7 @@ except ValueError:
 # Create Firestore client
 db = admin_firestore.Client(project='pepmvp', database='pep-mvp')
 
-def hex_dump(data, length=250):
+def hex_dump(data, length=500):
     """Create a hexdump of binary data for debugging."""
     if not isinstance(data, bytes):
         return f"Not bytes: {data}"
@@ -33,6 +34,23 @@ def hex_dump(data, length=250):
     chunks = [hex_str[i:i+2] for i in range(0, len(hex_str), 2)]
     formatted = ' '.join(chunks)
     return formatted
+
+def extract_document_path_from_binary(data):
+    """Extract the document path from binary data."""
+    # Look for the document path format in the binary data
+    if not isinstance(data, bytes):
+        return None
+    
+    # Convert to text to search for the path
+    try:
+        text = data.decode('utf-8', errors='ignore')
+        # Look for path pattern
+        match = re.search(r'(projects/[^/]+/databases/[^/]+/documents/users/[a-zA-Z0-9-]+)', text)
+        if match:
+            return match.group(1)
+    except:
+        pass
+    return None
 
 @functions_framework.cloud_event
 def monitor_user_preferences(cloud_event):
@@ -57,7 +75,44 @@ def monitor_user_preferences(cloud_event):
         print(f"🔍 Cloud Event ID: {cloud_event.id if hasattr(cloud_event, 'id') else 'unknown'}", file=sys.stderr)
         print(f"🔍 Cloud Event Data Type: {type(cloud_event.data)}", file=sys.stderr)
         
-        # Handle binary data - try different approaches
+        # Direct approach with binary data
+        if isinstance(cloud_event.data, bytes):
+            print(f"🔍 Binary data length: {len(cloud_event.data)} bytes", file=sys.stderr)
+            print(f"🔍 Binary data hex dump: {hex_dump(cloud_event.data)}", file=sys.stderr)
+            
+            # Extract document path directly from binary data
+            doc_path = extract_document_path_from_binary(cloud_event.data)
+            if doc_path:
+                print(f"✅ Extracted document path from binary: {doc_path}", file=sys.stderr)
+                
+                # Extract user_id from the path
+                if '/users/' in doc_path:
+                    user_id = doc_path.split('/users/')[1]
+                    print(f"✅ Extracted user_id: {user_id}", file=sys.stderr)
+                    
+                    # Process user notification update
+                    process_user_notification_update(user_id)
+                    return
+                else:
+                    print(f"❌ Not a user document path: {doc_path}", file=sys.stderr)
+                    return
+            
+            # Try to look for user ID directly in binary data
+            try:
+                text = cloud_event.data.decode('utf-8', errors='ignore')
+                # Look for common UUID format often used for user IDs
+                user_id_match = re.search(r'users/([a-zA-Z0-9-]{36})', text)
+                if user_id_match:
+                    user_id = user_id_match.group(1)
+                    print(f"✅ Extracted user_id from binary text: {user_id}", file=sys.stderr)
+                    
+                    # Process user notification update
+                    process_user_notification_update(user_id)
+                    return
+            except Exception as text_error:
+                print(f"❌ Error extracting user_id from binary text: {str(text_error)}", file=sys.stderr)
+        
+        # Try various approaches to parse the data
         event_data = None
         
         if isinstance(cloud_event.data, dict):
@@ -73,15 +128,13 @@ def monitor_user_preferences(cloud_event):
                 print(f"❌ Failed to parse as JSON string: {str(e)}", file=sys.stderr)
         elif isinstance(cloud_event.data, bytes):
             # Try different approaches for binary data
-            print(f"🔍 Binary data length: {len(cloud_event.data)} bytes", file=sys.stderr)
-            print(f"🔍 Binary data hex dump: {hex_dump(cloud_event.data)}", file=sys.stderr)
             
             # Try to decode as UTF-8 JSON
             try:
                 json_str = cloud_event.data.decode('utf-8')
                 event_data = json.loads(json_str)
                 print("✅ Successfully decoded as UTF-8 JSON", file=sys.stderr)
-            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            except Exception as e:
                 print(f"❌ Not UTF-8 JSON: {str(e)}", file=sys.stderr)
                 
                 # Try to parse as protocol buffer
@@ -90,21 +143,42 @@ def monitor_user_preferences(cloud_event):
                     struct = Struct()
                     struct.ParseFromString(cloud_event.data)
                     event_data = json_format.MessageToDict(struct)
-                    print("✅ Successfully parsed as protobuf Struct", file=sys.stderr)
-                except Exception as pb_error:
-                    print(f"❌ Not a protobuf Struct: {str(pb_error)}", file=sys.stderr)
+                    print(f"✅ Successfully parsed as protobuf Struct: {list(event_data.keys() if isinstance(event_data, dict) else [])}", file=sys.stderr)
                     
-                    # Try base64 decoding
+                    # Look for document path in the Struct
+                    if isinstance(event_data, dict):
+                        # Try to find the document path in the parsed struct
+                        doc_path = None
+                        # Look for keys that might contain the document path
+                        for key in event_data.keys():
+                            value = event_data[key]
+                            if isinstance(value, str) and 'projects/' in value and '/users/' in value:
+                                doc_path = value
+                                break
+                        
+                        if doc_path:
+                            print(f"✅ Found document path in parsed struct: {doc_path}", file=sys.stderr)
+                            # Extract user_id from the path
+                            user_id = doc_path.split('/users/')[1]
+                            print(f"✅ Extracted user_id from struct: {user_id}", file=sys.stderr)
+                            
+                            # Process user notification update
+                            process_user_notification_update(user_id)
+                            return
+                except Exception as pb_error:
+                    print(f"❌ Error with protobuf Struct: {str(pb_error)}", file=sys.stderr)
+                    
+                # Try base64 decoding
+                try:
+                    decoded = base64.b64decode(cloud_event.data)
                     try:
-                        decoded = base64.b64decode(cloud_event.data)
-                        try:
-                            json_str = decoded.decode('utf-8')
-                            event_data = json.loads(json_str)
-                            print("✅ Successfully decoded as base64 UTF-8 JSON", file=sys.stderr)
-                        except (UnicodeDecodeError, json.JSONDecodeError):
-                            print("❌ Base64 decoded data is not UTF-8 JSON", file=sys.stderr)
-                    except Exception as b64_error:
-                        print(f"❌ Not base64 encoded: {str(b64_error)}", file=sys.stderr)
+                        json_str = decoded.decode('utf-8')
+                        event_data = json.loads(json_str)
+                        print("✅ Successfully decoded as base64 UTF-8 JSON", file=sys.stderr)
+                    except Exception:
+                        print("❌ Base64 decoded data is not UTF-8 JSON", file=sys.stderr)
+                except Exception as b64_error:
+                    print(f"❌ Not base64 encoded: {str(b64_error)}", file=sys.stderr)
         
         # If all parsing attempts failed, try the raw event
         if event_data is None:
@@ -125,13 +199,13 @@ def monitor_user_preferences(cloud_event):
                     user_id = resource_name.split('/users/')[1]
                     print(f"✅ Extracted user_id from attributes: {user_id}", file=sys.stderr)
                     
-                    # Process the user notification update
+                    # Process user notification update
                     process_user_notification_update(user_id)
                     return
         
         # If we have event data now, try to process it
         if event_data:
-            print(f"✅ Successfully parsed event data, keys: {list(event_data.keys())}", file=sys.stderr)
+            print(f"✅ Successfully parsed event data, keys: {list(event_data.keys()) if isinstance(event_data, dict) else []}", file=sys.stderr)
             
             # Additional debugging
             if isinstance(event_data, dict):
@@ -141,73 +215,43 @@ def monitor_user_preferences(cloud_event):
                         value_str = value_str[:100] + "..."
                     print(f"🔍 Event data[{key}] = {value_str}", file=sys.stderr)
             
-            # Check for "value" field in parsed data
-            if "value" not in event_data:
-                print("❌ No 'value' field in parsed event data", file=sys.stderr)
-                return
+            # Check for value field or look for document path
+            if isinstance(event_data, dict):
+                # Look for document path in the data
+                doc_path = None
                 
-            event_value = event_data.get("value", {})
-            if not isinstance(event_value, dict):
-                print(f"❌ 'value' is not a dictionary, got {type(event_value)}", file=sys.stderr)
-                return
-                
-            # Check if we have update mask to determine if relevant fields were changed
-            update_mask = event_data.get("updateMask", {})
-            field_paths = update_mask.get("fieldPaths", []) if isinstance(update_mask, dict) else []
-            
-            print(f"🔍 Update Mask Field Paths: {field_paths}", file=sys.stderr)
-            
-            # Check if relevant fields were updated
-            relevant_fields = ["notification_preferences", "next_notification_time"]
-            field_updated = False
-            
-            # If no specific fields are listed, assume all fields were updated
-            if not field_paths:
-                field_updated = True
-                print("✅ No specific fields listed in update mask, processing update", file=sys.stderr)
-            else:
-                for field in relevant_fields:
-                    for updated_path in field_paths:
-                        # Check for exact match or path that starts with the field
-                        if updated_path == field or updated_path.startswith(f"{field}."):
-                            field_updated = True
-                            print(f"✅ Relevant field updated: {updated_path}", file=sys.stderr)
+                # Check for common fields that might contain the document path
+                if "value" in event_data and isinstance(event_data["value"], dict) and "name" in event_data["value"]:
+                    doc_path = event_data["value"]["name"]
+                elif "name" in event_data:
+                    doc_path = event_data["name"]
+                else:
+                    # Look for any field containing the string '/users/'
+                    for key, value in event_data.items():
+                        if isinstance(value, str) and '/users/' in value:
+                            doc_path = value
                             break
+                
+                if doc_path:
+                    print(f"📄 Found document path: {doc_path}", file=sys.stderr)
+                    
+                    # Extract user_id from the path
+                    if '/users/' in doc_path:
+                        user_id = doc_path.split('/users/')[1]
+                        print(f"✅ Extracted user_id from path: {user_id}", file=sys.stderr)
                         
-                    if field_updated:
-                        break
-            
-            # Skip processing if no relevant fields were updated
-            if field_paths and not field_updated:
-                print(f"⏭️ No relevant fields updated, fields updated: {field_paths}", file=sys.stderr)
-                return
-                
-            # Extract document info
-            resource_path = event_value.get("name")
-            if not resource_path:
-                print("❌ No 'name' field in event data value", file=sys.stderr)
-                return
-            
-            print(f"📄 Resource path: {resource_path}", file=sys.stderr)
-            
-            # Extract user_id from path
-            # Path format: projects/{project_id}/databases/{database}/documents/users/{user_id}
-            if '/users/' not in resource_path:
-                print(f"❌ Not a user document path: {resource_path}", file=sys.stderr)
-                return
-                
-            # Extract user_id from the path
-            user_id = resource_path.split('/users/')[1]
-            if not user_id:
-                print(f"❌ Could not extract user_id from path: {resource_path}", file=sys.stderr)
-                return
-            
-            print(f"📄 Extracted User ID: {user_id}", file=sys.stderr)
-            
-            # Process user notification update
-            process_user_notification_update(user_id)
-        else:
-            print("❌ Failed to parse event data using all available methods", file=sys.stderr)
+                        # Process user notification update
+                        process_user_notification_update(user_id)
+                        return
+                    else:
+                        print(f"❌ Not a user document path: {doc_path}", file=sys.stderr)
+                else:
+                    print("❌ No document path found in parsed data", file=sys.stderr)
+            else:
+                print(f"❌ Parsed data is not a dictionary: {type(event_data)}", file=sys.stderr)
+        
+        # If we got here, we couldn't find or process the data
+        print("❌ Failed to extract user ID from event data", file=sys.stderr)
             
     except Exception as e:
         print(f"❌ Error processing user preference change: {str(e)}", file=sys.stderr)
