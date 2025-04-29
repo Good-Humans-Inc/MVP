@@ -33,6 +33,9 @@ enum AgentType {
 }
 
 class VoiceManager: NSObject, ObservableObject {
+    // Add reference to AppState
+    private weak var appState: AppState?
+
     // Published properties for UI updates
     @Published var isSpeaking = false
     @Published var lastSpokenText: String = ""
@@ -96,10 +99,13 @@ class VoiceManager: NSObject, ObservableObject {
     static let exercisesGeneratedNotification = Notification.Name("ExercisesGenerated")
     static let exerciseCoachReadyNotification = Notification.Name("ExerciseCoachReady")
     static let reportGeneratedNotification = Notification.Name("ReportGenerated")
+    static let startPoseAnalysisNotification = Notification.Name("StartPoseAnalysisNotification")
     
-    override init() {
+    // Modify init to accept AppState
+    init(appState: AppState) {
+        self.appState = appState
         super.init()
-        print("VoiceManager initialized with ElevenLabsSDK \(ElevenLabsSDK.version)")
+        print("VoiceManager initialized with ElevenLabsSDK \(ElevenLabsSDK.version) and AppState")
         startNetworkMonitoring()
         
         // Add observer for audio route changes (Bluetooth detection)
@@ -578,32 +584,37 @@ class VoiceManager: NSObject, ObservableObject {
         print("⭐️ Registered exercise client tools: logExerciseProgress")
         
         // Tool to start pose analysis
-        // clientTools.register("startPoseAnalysis") { [weak self] parameters in
-        //     guard let self = self else {
-        //         print("❌ startPoseAnalysis: VoiceManager instance is nil")
-        //     }
-            
-        //     UserManager.shared.loadUserData()
-        //     guard let userId = UserManager.shared.userId else {
-        //         print("❌ startPoseAnalysis: User ID is missing")
-        //         // Maybe inform the agent or just log? Let's inform.
-        //         return "Can't start pose analysis because userId is missing."
-        //     }
-            
-        //     guard let exerciseId = self.currentExerciseId else {
-        //         print("❌ startPoseAnalysis: Current exercise ID is missing")
-        //         return "Can't start pose analysis because the current exerciseId is missing."
-        //     }
-            
-        //     print("🔵 Starting pose analysis for user: \(userId), exercise: \(exerciseId)")
-            
-        //     // Assuming startAnalysis takes exerciseId and userId.
-        //     // Adjust if the actual method signature is different.
-        //     // You might need to fetch the full Exercise object if required.
-        //     // self.poseAnalysisManager.startAnalysis(exerciseId: exerciseId, userId: userId)
-            
-        //     return "Taking a look at the user's pose and movement now."
-        // }
+        clientTools.register("startPoseAnalysis") { [weak self, weak appState] parameters in // Capture appState
+            guard let self = self, let appState = appState else {
+                print("❌ startPoseAnalysis: VoiceManager or AppState instance is nil")
+                return "Unable to start pose analysis due to internal error."
+            }
+
+            // Ensure UserManager is loaded (might be redundant if already loaded elsewhere)
+            UserManager.shared.loadUserData()
+            guard let userId = UserManager.shared.userId else {
+                print("❌ startPoseAnalysis: User ID is missing")
+                return "Can't start pose analysis because userId is missing."
+            }
+
+            // Get the current exercise directly from AppState
+            guard let exercise = appState.currentExercise else {
+                print("❌ startPoseAnalysis: AppState.currentExercise is nil")
+                return "Cannot determine the current exercise."
+            }
+
+            print("🔵 Starting pose analysis for user: \(userId), exercise: \(exercise.name) (ID: \(exercise.id))")
+
+            // Post notification to trigger pose analysis in the active view
+            NotificationCenter.default.post(
+                name: VoiceManager.startPoseAnalysisNotification,
+                object: nil,
+                userInfo: ["exercise": exercise] // Pass the exercise object
+            )
+            print("🔔 Posted StartPoseAnalysisNotification")
+
+            return "Okay, I'll start analyzing your form now."
+        }
     }
     
     // Generate exercises for the user

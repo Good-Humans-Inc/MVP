@@ -292,7 +292,6 @@ struct OnboardingView: View {
         print("📊 DEBUG: OnboardingView - Pre-reset state:")
         print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
         print("- appState.hasUserId: \(appState.hasUserId)")
-        print("- appState.isFirstExercise: \(appState.isFirstExercise)")
         
         // End current session first
         voiceManager.endElevenLabsSession()
@@ -306,7 +305,7 @@ struct OnboardingView: View {
             appState.userId = nil
             appState.isOnboardingComplete = false
             appState.currentExercise = nil
-            appState.isFirstExercise = true  // Reset first exercise flag
+            appState.currentAgentType = nil
         }
         
         // Reset local view state
@@ -316,9 +315,8 @@ struct OnboardingView: View {
         animationState = .idle
         
         print("📊 DEBUG: OnboardingView - Post-reset state:")
-        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
         print("- appState.hasUserId: \(appState.hasUserId)")
-        print("- appState.isFirstExercise: \(appState.isFirstExercise)")
+        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
         
         // Clear UserDefaults
         UserDefaults.standard.removeObject(forKey: "UserId")

@@ -294,7 +294,7 @@ struct MVPApp: App {
         let camera = CameraManager(appState: appState, visionManager: vision)
         _cameraManager = StateObject(wrappedValue: camera)
         
-        let voice = VoiceManager()
+        let voice = VoiceManager(appState: appState)
         _voiceManager = StateObject(wrappedValue: voice)
         
         let resources = ResourceCoordinator(appState: appState)

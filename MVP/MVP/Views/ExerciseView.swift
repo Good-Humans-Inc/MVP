@@ -58,14 +58,11 @@ struct ExerciseView: View {
             
             // Setup coach feedback notification observer
             setupExerciseCoachObserver()
-            
-            // Start pose analysis after a brief delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                poseAnalysisManager.startAnalysis(for: exercise)
-            }
         }
         .onDisappear {
             cleanupResources()
+            // Remove notification observer
+            NotificationCenter.default.removeObserver(self, name: VoiceManager.startPoseAnalysisNotification, object: nil)
         }
         .fullScreenCover(isPresented: $showingExerciseReport) {
             ReportView(
@@ -236,6 +233,17 @@ struct ExerciseView: View {
                     self.showCoachFeedback = false
                 }
             }
+        }
+
+        // --> Add Observer for StartPoseAnalysisNotification <--
+        NotificationCenter.default.addObserver(
+            forName: VoiceManager.startPoseAnalysisNotification,
+            object: nil,
+            queue: .main
+        ) { [self] notification in
+            print("✅ ExerciseView received StartPoseAnalysisNotification")
+            // We already have the correct exercise object as a property of this view
+            poseAnalysisManager.startAnalysis(for: self.exercise)
         }
     }
     
