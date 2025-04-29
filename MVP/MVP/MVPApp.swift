@@ -15,6 +15,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         print("📱 Application launching (first launch: \(isFirstAppLaunch))")
         
+        // Initialize UserManager early
+        _ = UserManager.shared
+        print("✅ MVPApp: UserManager initialized during app launch")
+        
         // Special setup for first launch
         if isFirstAppLaunch {
             setupForFirstLaunch()
@@ -205,7 +209,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
         }
         
         // Get user ID from UserDefaults
-        guard let userId = UserDefaults.standard.string(forKey: "UserID") else {
+        guard let userId = UserDefaults.standard.string(forKey: "UserId") else {
             print("❌ No user ID available for device registration")
             return
         }

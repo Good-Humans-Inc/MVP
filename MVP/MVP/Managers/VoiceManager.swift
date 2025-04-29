@@ -3,21 +3,22 @@ import AVFoundation
 import Combine
 import ElevenLabsSDK
 import Network
+import SwiftUI
+
+// Import UserManager
+import MVP
 
 // Define agent types
 enum AgentType {
     case onboarding
-    case firstExercise
-    case exercise
+    case exerciseCoach
     
     var agentId: String {
         switch self {
         case .onboarding:
-            return "DQssioRzqPSZMvBH9ZCG"   // Onboarding agent ID cUwyvIu9K7oeWMOljW4r
-        case .firstExercise:
-            return "8WGzzz6kwGvd2UfHZmhV"   // First exercise agent ID naMobWlIcnYO3az032lj
-        case .exercise:
-            return "8WGzzz6kwGvd2UfHZmhV"   // Exercise coach agent ID
+            return "bQqjExJbbxuxqjC7WgFe"   // LX: Onboarding
+        case .exerciseCoach:
+            return "1VM89FzmrkLS4QUkx2gM"   // LX
         }
     }
     
@@ -25,9 +26,7 @@ enum AgentType {
         switch self {
         case .onboarding:
             return "Onboarding Assistant"
-        case .firstExercise:
-            return "First Exercise Coach"
-        case .exercise:
+        case .exerciseCoach:
             return "Exercise Coach"
         }
     }
@@ -53,8 +52,7 @@ class VoiceManager: NSObject, ObservableObject {
     // Track session request flags separately for each agent type
     private var sessionRequestFlags: [AgentType: Bool] = [
         .onboarding: false,
-        .firstExercise: false,
-        .exercise: false
+        .exerciseCoach: false
     ]
     
     // Network monitoring
@@ -87,6 +85,9 @@ class VoiceManager: NSObject, ObservableObject {
     
     // Add property to track current exercise
     private var currentExerciseId: String?
+    
+    // Add PoseAnalysisManager dependency (Ensure this is initialized!)
+    var poseAnalysisManager: PoseAnalysisManager!
     
     var isBluetoothConnected: Bool = false
     
@@ -233,21 +234,39 @@ class VoiceManager: NSObject, ObservableObject {
                 print("userId: \(UserDefaults.standard.string(forKey: "userId") ?? "nil")")
                 
                 // Add dynamic variables for exercise agents
-                if agentType == .firstExercise || agentType == .exercise {
+                if agentType == .exerciseCoach {
                     if let exercisesData = UserDefaults.standard.data(forKey: "UserExercises"),
                        let exercises = try? JSONSerialization.jsonObject(with: exercisesData) as? [[String: Any]],
-                       let exercise = exercises.first {
-                        
-                        print("🔍 Debug - Adding exercise information to dynamic variables")
-                        
-                        // Add basic exercise info
+                       let exercise = exercises.first { exerciseDict in
+                           // Add logic here to select the correct exercise if needed
+                           // For now, just taking the first one found in UserDefaults
+                           true // Placeholder condition
+                       } { // Closing brace for the closure
+
+                        print("🔍 Debug - Adding exercise and user information to dynamic variables for Exercise Coach")
+
+                        // Add user info to dynamic variables
+                        let userManager = UserManager.shared
+                        print("🔍 Debug - user_name: \(userManager.userName)")
+                        print("🔍 Debug - user_id: \(userManager.userId ?? "nil")")
+                        dynamicVars["user_name"] = .string(userManager.userName)
+                        // Add user ID safely
+                        if let userId = userManager.userId {
+                             dynamicVars["user_id"] = .string(userId)
+                        }
+                        dynamicVars["user_age"] = .int(userManager.userAge)
+                        dynamicVars["exercise_routine"] = .string(userManager.exerciseRoutine) // Assuming UserManager has this
+                        dynamicVars["user_goals"] = .string(userManager.userGoals) // Assuming UserManager has this
+                        dynamicVars["pain_description"] = .string(userManager.painDescription)
+
+                        // Add basic exercise info (example, adjust keys as needed)
                         if let name = exercise["name"] as? String {
                             dynamicVars["exercise_name"] = .string(name)
                         }
                         if let description = exercise["description"] as? String {
                             dynamicVars["exercise_description"] = .string(description)
                         }
-                        
+
                         // Add instructions as a formatted string
                         if let instructions = exercise["instructions"] as? [String] {
                             let numberedInstructions = instructions.enumerated()
@@ -255,7 +274,7 @@ class VoiceManager: NSObject, ObservableObject {
                                 .joined(separator: "\n")
                             dynamicVars["exercise_instructions"] = .string(numberedInstructions)
                         }
-                        
+
                         // Add variations as a formatted string
                         if let variations = exercise["variations"] as? [String] {
                             let formattedVariations = variations
@@ -263,30 +282,27 @@ class VoiceManager: NSObject, ObservableObject {
                                 .joined(separator: "\n")
                             dynamicVars["exercise_variations"] = .string(formattedVariations)
                         }
-                        
+
                         // Add target joints
                         if let targetJoints = exercise["target_joints"] as? [String] {
                             dynamicVars["target_joints"] = .string(targetJoints.joined(separator: ", "))
                         }
-                        
-                        // Add user ID if available
-                        if let userId = exercise["user_id"] as? String {
-                            dynamicVars["user_id"] = .string(userId)
-                        }
-                        
+
                         // Add exercise ID
                         if let firestoreId = exercise["firestoreId"] as? String {
                             dynamicVars["exercise_id"] = .string(firestoreId)
+                            self.currentExerciseId = firestoreId // Store the current exercise ID
                         } else if let id = exercise["id"] as? String {
                             dynamicVars["exercise_id"] = .string(id.lowercased())
+                            self.currentExerciseId = id.lowercased() // Store the current exercise ID
                         }
-                        
+
                         print("✅ Added exercise dynamic variables:")
                         dynamicVars.forEach { key, value in
                             print("- \(key): \(value)")
                         }
                     } else {
-                        print("⚠️ Warning: Could not load exercise information from UserDefaults")
+                        print("⚠️ Warning: Could not load exercise information from UserDefaults for Exercise Coach")
                     }
                 }
                 
@@ -306,9 +322,7 @@ class VoiceManager: NSObject, ObservableObject {
                 switch agentType {
                 case .onboarding:
                     registerOnboardingTools(clientTools: &clientTools)
-                case .firstExercise:
-                    registerFirstExerciseTools(clientTools: &clientTools)
-                case .exercise:
+                case .exerciseCoach:
                     registerExerciseTools(clientTools: &clientTools)
                 }
                 
@@ -503,20 +517,21 @@ class VoiceManager: NSObject, ObservableObject {
     // Register tools specific to the onboarding agent
     private func registerOnboardingTools(clientTools: inout ElevenLabsSDK.ClientTools) {
         // Tool to capture user ID
-        clientTools.register("saveUserData") { [weak self] parameters in
+        clientTools.register("saveUserId") { [weak self] parameters in
             guard let self = self else { return "Manager not available" }
             
-            print("🔵 saveUserData tool called with parameters: \(parameters)")
-            
+            print("🔵 saveUserId tool called with parameters: \(parameters)")
             // Extract user ID from parameters
             guard let userId = parameters["user_id"] as? String else {
-                print("❌ No user_id parameter found")
+                print("❌ clientTools - saveUserId: No user_id parameter found")
                 throw ElevenLabsSDK.ClientToolError.invalidParameters
             }
             
-            // Save user ID to UserDefaults
-            UserDefaults.standard.set(userId, forKey: "userId")
-            
+            // save user info to UserManager. UserManager already has a didSet observer on the userId property that handles saving to UserDefaults
+            let userManager = UserManager.shared
+            print("🔍 Debug - saveUserId: before userManager.userId: \(userManager.userId)")
+            userManager.userId = userId
+            print("🔍 Debug - saveUserId: after userManager.userId: \(userManager.userId)")
             // Update published property on main thread
             DispatchQueue.main.async {
                 // Post notification for other parts of the app
@@ -528,91 +543,15 @@ class VoiceManager: NSObject, ObservableObject {
             }
             
             print("✅ Saved user ID: \(userId)")
+
+            // Set onboarding as completed
+            self.hasCompletedOnboarding = true
+            // Generate exercises with the user ID
+            self.generateExercises(userId: userId)
+
             return "User data saved successfully with ID: \(userId)"
         }
-        
-        // Debug tool to log any message
-        clientTools.register("logMessage") { parameters in
-            guard let message = parameters["message"] as? String else {
-                throw ElevenLabsSDK.ClientToolError.invalidParameters
-            }
-            
-            print("🔵 ElevenLabs onboarding logMessage: \(message)")
-            return "Logged: \(message)"
-        }
-        
-        // Tool to extract and save JSON data
-        clientTools.register("saveJsonData") { [weak self] parameters in
-            guard let self = self else { return "Manager not available" }
-            
-            print("🔵 saveJsonData tool called with parameters: \(parameters)")
-            
-            // Process each key-value pair and save to UserDefaults if needed
-            for (key, value) in parameters {
-                print("📝 Key: \(key), Value: \(value)")
-                
-                // Special handling for user_id
-                if key == "user_id", let userId = value as? String {
-                    UserDefaults.standard.set(userId, forKey: "userId")
-                    
-                    DispatchQueue.main.async {
-                        // Post notification
-                        NotificationCenter.default.post(
-                            name: VoiceManager.userIdReceivedNotification,
-                            object: nil,
-                            userInfo: ["user_id": userId]
-                        )
-                        
-                        // Generate exercises with the user ID
-                        self.generateExercises(userId: userId)
-                    }
-                    
-                    print("✅ Saved user ID: \(userId)")
-                }
-                
-                // Save other data to UserDefaults
-                if let stringValue = value as? String {
-                    UserDefaults.standard.set(stringValue, forKey: key)
-                }
-            }
-            
-            return "JSON data processed successfully"
-        }
-        
-        print("⭐️ Registered onboarding client tools: saveUserData, logMessage, saveJsonData")
-    }
-    
-    // Register tools specific to the first exercise agent
-    private func registerFirstExerciseTools(clientTools: inout ElevenLabsSDK.ClientTools) {
-        // Tool to save user demographic info
-        clientTools.register("saveUserDemographics") { parameters in
-            guard let age = parameters["age"] as? Int,
-                  let exerciseHabits = parameters["exercise_habits"] as? String,
-                  let goals = parameters["goals"] as? String else {
-                throw ElevenLabsSDK.ClientToolError.invalidParameters
-            }
-            
-            print("🔵 saveUserDemographics called with age: \(age), exercise habits: \(exerciseHabits), goals: \(goals)")
-            
-            // Save to UserDefaults
-            UserDefaults.standard.set(age, forKey: "UserAge")
-            UserDefaults.standard.set(exerciseHabits, forKey: "UserExerciseHabits")
-            UserDefaults.standard.set(goals, forKey: "UserGoals")
-            
-            return "User demographics saved successfully"
-        }
-        
-        // Debug tool to log any message
-        clientTools.register("logMessage") { parameters in
-            guard let message = parameters["message"] as? String else {
-                throw ElevenLabsSDK.ClientToolError.invalidParameters
-            }
-            
-            print("🔵 ElevenLabs first exercise logMessage: \(message)")
-            return "Logged: \(message)"
-        }
-        
-        print("⭐️ Registered first exercise client tools: saveUserDemographics, logMessage")
+        print("⭐️ Registered onboarding client tools: saveUserId")
     }
     
     // Register tools specific to the regular exercise agent
@@ -636,18 +575,35 @@ class VoiceManager: NSObject, ObservableObject {
             
             return "Progress logged successfully"
         }
+        print("⭐️ Registered exercise client tools: logExerciseProgress")
         
-        // Debug tool to log any message
-        clientTools.register("logMessage") { parameters in
-            guard let message = parameters["message"] as? String else {
-                throw ElevenLabsSDK.ClientToolError.invalidParameters
-            }
+        // Tool to start pose analysis
+        // clientTools.register("startPoseAnalysis") { [weak self] parameters in
+        //     guard let self = self else {
+        //         print("❌ startPoseAnalysis: VoiceManager instance is nil")
+        //     }
             
-            print("🔵 ElevenLabs exercise coach logMessage: \(message)")
-            return "Logged: \(message)"
-        }
-        
-        print("⭐️ Registered exercise client tools: logExerciseProgress, logMessage")
+        //     UserManager.shared.loadUserData()
+        //     guard let userId = UserManager.shared.userId else {
+        //         print("❌ startPoseAnalysis: User ID is missing")
+        //         // Maybe inform the agent or just log? Let's inform.
+        //         return "Can't start pose analysis because userId is missing."
+        //     }
+            
+        //     guard let exerciseId = self.currentExerciseId else {
+        //         print("❌ startPoseAnalysis: Current exercise ID is missing")
+        //         return "Can't start pose analysis because the current exerciseId is missing."
+        //     }
+            
+        //     print("🔵 Starting pose analysis for user: \(userId), exercise: \(exerciseId)")
+            
+        //     // Assuming startAnalysis takes exerciseId and userId.
+        //     // Adjust if the actual method signature is different.
+        //     // You might need to fetch the full Exercise object if required.
+        //     // self.poseAnalysisManager.startAnalysis(exerciseId: exerciseId, userId: userId)
+            
+        //     return "Taking a look at the user's pose and movement now."
+        // }
     }
     
     // Generate exercises for the user
@@ -927,7 +883,7 @@ class VoiceManager: NSObject, ObservableObject {
                     self.isSessionActive = false
                     
                     // Reset all session flags to ensure clean state
-                    for agentType in [AgentType.onboarding, AgentType.firstExercise, AgentType.exercise] {
+                    for agentType in [AgentType.onboarding, AgentType.exerciseCoach] {
                         self.sessionRequestFlags[agentType] = false
                     }
                     
@@ -958,7 +914,7 @@ class VoiceManager: NSObject, ObservableObject {
                     self.isSessionActive = false
                     
                     // Reset all flags
-                    for agentType in [AgentType.onboarding, AgentType.firstExercise, AgentType.exercise] {
+                    for agentType in [AgentType.onboarding, AgentType.exerciseCoach] {
                         self.sessionRequestFlags[agentType] = false
                     }
                     
@@ -996,7 +952,7 @@ class VoiceManager: NSObject, ObservableObject {
         print("Cleaning up VoiceManager resources")
         
         // End exercise session if active
-        if currentAgentType == .exercise || currentAgentType == .firstExercise {
+        if currentAgentType == .exerciseCoach {
             endExerciseSession()
         }
         
@@ -1010,7 +966,7 @@ class VoiceManager: NSObject, ObservableObject {
             self.clearConversationHistory()
             
             // Reset all session request flags
-            for agentType in [AgentType.onboarding, AgentType.firstExercise, AgentType.exercise] {
+            for agentType in [AgentType.onboarding, AgentType.exerciseCoach] {
                 self.sessionRequestFlags[agentType] = false
             }
         }
@@ -1054,16 +1010,11 @@ class VoiceManager: NSObject, ObservableObject {
         }
     }
     
-    // Start the first exercise agent
-    func startFirstExerciseAgent(completion: (() -> Void)? = nil) {
-        print("🔍 startFirstExerciseAgent called")
-        startElevenLabsSession(agentType: .firstExercise, completion: completion)
-    }
-    
     // Start the exercise coach agent
     func startExerciseAgent(completion: (() -> Void)? = nil) {
-        print("🔍 startExerciseAgent called")
-        startElevenLabsSession(agentType: .exercise, completion: completion)
+        print("🔍 startExerciseAgent called (Unified Exercise Coach)")
+        // Start session with the unified .exerciseCoach type
+        startElevenLabsSession(agentType: .exerciseCoach, completion: completion)
     }
     
     // MARK: -BLE

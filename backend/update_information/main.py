@@ -48,7 +48,7 @@ def update_information(request):
         
         # Get update data
         notification_time = request_json.get('notification_time')
-        ultimate_goal = request_json.get('ultimate_goal')
+        user_goals = request_json.get('user_goals')
         exercise_routine = request_json.get('exercise_routine')
         user_timezone = request_json.get('timezone')  # Allow client to specify timezone
         
@@ -103,9 +103,9 @@ def update_information(request):
             except (ValueError, AttributeError):
                 return (json.dumps({'error': 'Invalid notification time format'}), 400, headers)
         
-        # Update ultimate goal if provided
-        if ultimate_goal:
-            update_data['ultimate_goal'] = ultimate_goal
+        # Update user goals if provided
+        if user_goals:
+            update_data['user_goals'] = user_goals
             update_data['goal_updated_at'] = firestore.SERVER_TIMESTAMP
             update_data['goal_updated_by'] = 'elevenlabs_agent'
         

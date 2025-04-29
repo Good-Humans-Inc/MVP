@@ -263,7 +263,6 @@ struct OnboardingView: View {
                     print("📊 DEBUG: OnboardingView - Post-completion state:")
                     print("- appState.isOnboardingComplete: \(self.appState.isOnboardingComplete)")
                     print("- appState.hasUserId: \(self.appState.hasUserId)")
-                    print("- appState.isFirstExercise: \(self.appState.isFirstExercise)")
                     
                     // Ensure we have an exercise before transitioning
                     if let exercise = self.appState.currentExercise {
@@ -322,7 +321,7 @@ struct OnboardingView: View {
         print("- appState.isFirstExercise: \(appState.isFirstExercise)")
         
         // Clear UserDefaults
-        UserDefaults.standard.removeObject(forKey: "UserID")
+        UserDefaults.standard.removeObject(forKey: "UserId")
         UserDefaults.standard.removeObject(forKey: "UserExercises")
         
         // Restart onboarding agent after a short delay

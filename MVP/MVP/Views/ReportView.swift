@@ -387,7 +387,7 @@ struct MotivationalMessageSection: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Today's Motivation")
+            Text("Message from Pep")
                 .font(.headline)
             Text(message)
                 .foregroundColor(.secondary)

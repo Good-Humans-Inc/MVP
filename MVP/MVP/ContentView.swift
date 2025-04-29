@@ -75,7 +75,7 @@ struct ContentView: View {
         }
         .onAppear {
             // Check for existing user on appear
-            if let userId = UserDefaults.standard.string(forKey: "UserID") {
+            if let userId = UserDefaults.standard.string(forKey: "UserId") {
                 appState.userId = userId
                 appState.hasUserId = true
                 

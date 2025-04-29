@@ -127,6 +127,7 @@ The JSON must have these exact keys and value types:
 
 Guidelines for each field:
 - Use direct "you/your" language
+- Be very concise. Only use 1-2 sentences for each field.
 - Focus on specific observations and achievements
 - Provide actionable guidance
 - Be encouraging and supportive

@@ -364,7 +364,10 @@ def get_user_data(user_id):
     user_doc = db.collection('users').document(user_id).get()
     
     if not user_doc.exists:
+        print("❌ get_user_data: User not found in Firestore")
         return None
+
+    print(user_doc.to_dict())
     
     return user_doc.to_dict()
 

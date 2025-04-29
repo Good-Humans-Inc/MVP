@@ -7,6 +7,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>We need to send you notifications to remind you about your physical therapy exercises.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
@@ -15,7 +17,5 @@
 	<array>
 		<string>com.pepmvp.app.notification-refresh</string>
 	</array>
-	<key>NSUserNotificationUsageDescription</key>
-	<string>We need to send you notifications to remind you about your physical therapy exercises.</string>
 </dict>
 </plist>
