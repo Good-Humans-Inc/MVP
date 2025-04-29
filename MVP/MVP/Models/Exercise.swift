@@ -8,6 +8,7 @@ struct Exercise: Identifiable, Equatable {
     let imageURL1: URL?
     let duration: TimeInterval
     let targetJoints: [BodyJointType]
+    let handJointTargets: [HandJointType]
     let instructions: [String]
     let firestoreId: String?
     let videoURL: URL?
@@ -21,7 +22,8 @@ struct Exercise: Identifiable, Equatable {
          targetJoints: [BodyJointType] = [], 
          instructions: [String] = [],
          firestoreId: String? = nil,
-         videoURL: URL? = nil) {
+         videoURL: URL? = nil,
+         handJointTargets: [HandJointType] = []) {
         
         // Validate required fields
         guard !name.isEmpty else {
@@ -38,6 +40,7 @@ struct Exercise: Identifiable, Equatable {
         self.imageURL1 = imageURLString1.flatMap { URL(string: $0) }
         self.duration = max(duration, 30) // Ensure minimum duration of 30 seconds
         self.targetJoints = targetJoints
+        self.handJointTargets = handJointTargets
         self.instructions = instructions
         self.firestoreId = firestoreId
         self.videoURL = videoURL
@@ -51,6 +54,11 @@ struct Exercise: Identifiable, Equatable {
     // Computed property to get primary media URL
     var primaryMediaURL: URL? {
         return videoURL ?? imageURL ?? imageURL1
+    }
+    
+    // Computed property to check if this is a hand exercise (RSI)
+    var isHandExercise: Bool {
+        return !handJointTargets.isEmpty
     }
     
     // Validation method

@@ -403,6 +403,61 @@ class ResourceCoordinator: NSObject, ObservableObject {
             print("  • \(output.portName) (Type: \(output.portType.rawValue))")
         }
     }
+    
+    // New method to analyze exercises based on type
+    func analyzePoseForExercise(exercise: Exercise) -> ExerciseQuality {
+        // Determine which type of pose to analyze based on exercise type
+        if exercise.isHandExercise {
+            // This is an RSI exercise - analyze hand pose
+            if let handPose = appState.visionState.currentHandPose {
+                // Find the matching RSI exercise type
+                if let rsiExerciseType = mapExerciseToRSIType(exercise: exercise) {
+                    let feedback = analyzeHandPose(handPose, for: rsiExerciseType)
+                    return feedback.quality
+                }
+            }
+        } else {
+            // This is a body exercise - analyze body pose
+            if let bodyPose = appState.visionState.currentBodyPose {
+                // Add body pose analysis logic here
+                if !exercise.targetJoints.isEmpty {
+                    // Check if all required joints are detected
+                    let detectedJoints = appState.visionState.detectedJoints
+                    let requiredJoints = Set(exercise.targetJoints)
+                    
+                    // If more than 70% of required joints are detected, consider it good
+                    let detectedCount = requiredJoints.intersection(detectedJoints).count
+                    let detectionRatio = Float(detectedCount) / Float(requiredJoints.count)
+                    
+                    if detectionRatio > 0.7 {
+                        return .good
+                    } else if detectionRatio > 0.4 {
+                        return .needsImprovement
+                    } else {
+                        return .cannotDetermine
+                    }
+                }
+            }
+        }
+        
+        return .cannotDetermine
+    }
+    
+    // Helper to map Exercise to RSIExerciseType
+    private func mapExerciseToRSIType(exercise: Exercise) -> RSIExerciseType? {
+        switch exercise.name {
+        case "Wrist Extension":
+            return .wristExtension
+        case "Finger Stretch":
+            return .fingerStretch
+        case "Thumb Opposition":
+            return .thumbOpposition
+        case "Wrist Rotation":
+            return .wristRotation
+        default:
+            return nil
+        }
+    }
 }
 
 // MARK: - RSI Exercise Types and Feedback

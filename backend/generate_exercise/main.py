@@ -288,7 +288,7 @@ def generate_exercise(request):
     {
         "user_id": "uuid-of-user",
         "llm_provider": "claude" or "openai"  (optional, defaults to openai)
-        "target_joint": "wrist", "shoulder", "knee", etc. (optional)
+        "target_joint": "wrist", "shoulder", "knee", etc. (optional, will let LLM decide if not specified)
     }
     """
     # Enable CORS
@@ -327,13 +327,19 @@ def generate_exercise(request):
             logger.warning(f"User not found: {user_id}")
             return (json.dumps({'error': 'User not found'}, cls=DateTimeEncoder), 404, headers)
         
-        # Filter exercises by target joint if specified
+        # If target_joint is specified, filter exercises
         exercises_to_consider = ALL_EXERCISES
         if target_joint:
-            exercises_to_consider = [ex for ex in ALL_EXERCISES if target_joint in ex.get('target_joints', [])]
-            if not exercises_to_consider:
-                logger.warning(f"No exercises found for target joint: {target_joint}")
-                return (json.dumps({'error': f'No exercises found for target joint: {target_joint}'}, cls=DateTimeEncoder), 404, headers)
+            filtered_exercises = [ex for ex in ALL_EXERCISES if target_joint in ex.get('target_joints', [])]
+            if filtered_exercises:
+                exercises_to_consider = filtered_exercises
+                logger.info(f"Filtered to {len(filtered_exercises)} exercises for target joint: {target_joint}")
+            else:
+                logger.warning(f"No exercises found for target joint: {target_joint}, using all exercises instead")
+        
+        # Add target joint to user data if specified
+        if target_joint:
+            user_data['target_joint'] = target_joint
         
         # Use LLM to select the most appropriate exercise and generate detailed instructions
         if llm_provider == 'claude':
@@ -341,7 +347,7 @@ def generate_exercise(request):
         else:
             exercise = select_exercise_with_openai(user_data, api_key, exercises_to_consider)
         
-        logger.info(f"Selected exercise: {exercise['name']}")
+        logger.info(f"Selected exercise: {exercise['name']} for joints: {exercise.get('target_joints', [])}")
         
         # Save the exercise to Firestore
         saved_exercise = save_exercise(exercise, user_id)
@@ -377,9 +383,10 @@ def select_exercise_with_claude(user_data, api_key, exercises=None):
         # Extract user info
         name = user_data.get('name', 'the user')
         pain_description = user_data.get('pain_description', '')
+        target_joint = user_data.get('target_joint')
         
-        # Use specified exercises or default to all RSI exercises
-        exercises_to_use = exercises if exercises is not None else RSI_EXERCISES
+        # Use specified exercises or default to all exercises
+        exercises_to_use = exercises if exercises is not None else ALL_EXERCISES
         
         # Create a JSON string of all available exercises
         exercises_json = json.dumps(exercises_to_use)
@@ -390,10 +397,13 @@ def select_exercise_with_claude(user_data, api_key, exercises=None):
         
         Name: {name}
         Pain description: {pain_description}
+        {"Target joint area: " + target_joint if target_joint else ""}
         
-        Below is a list of predefined exercises. Please select the ONE most appropriate exercise based on the user's pain description:
+        Below is a list of predefined exercises for various joint areas. Please select the ONE most appropriate exercise based on the user's pain description{" and target joint area" if target_joint else ""}:
         
         {exercises_json}
+        
+        {"If possible, prioritize exercises for the " + target_joint + " area, but only if appropriate for the user's condition." if target_joint else "Based on the pain description, determine which joint area would benefit most from exercise therapy."}
         
         After selecting the most appropriate exercise, please provide detailed instructions for that specific exercise. The instructions should be clear, step-by-step, and tailored to the user's condition.
         
@@ -433,7 +443,7 @@ def select_exercise_with_claude(user_data, api_key, exercises=None):
                 "model": "claude-3-opus-20240229",
                 "max_tokens": 800,
                 "temperature": 0.2,
-                "system": "You are a senior physical therapist specializing in rehabilitation.",
+                "system": "You are a senior physical therapist specializing in rehabilitation. Your task is to select the most appropriate exercise for the user based on their pain description and condition.",
                 "messages": [
                     {"role": "user", "content": prompt}
                 ]
@@ -485,9 +495,10 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
         # Extract user info
         name = user_data.get('name', 'the user')
         pain_description = user_data.get('pain_description', '')
+        target_joint = user_data.get('target_joint')
         
-        # Use specified exercises or default to all RSI exercises
-        exercises_to_use = exercises if exercises is not None else RSI_EXERCISES
+        # Use specified exercises or default to all exercises
+        exercises_to_use = exercises if exercises is not None else ALL_EXERCISES
         
         # Create a JSON string of all available exercises
         exercises_json = json.dumps(exercises_to_use)
@@ -498,10 +509,13 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
         
         Name: {name}
         Pain description: {pain_description}
+        {"Target joint area: " + target_joint if target_joint else ""}
         
-        Below is a list of predefined exercises. Please select the ONE most appropriate exercise based on the user's pain description:
+        Below is a list of predefined exercises for various joint areas. Please select the ONE most appropriate exercise based on the user's pain description{" and target joint area" if target_joint else ""}:
         
         {exercises_json}
+        
+        {"If possible, prioritize exercises for the " + target_joint + " area, but only if appropriate for the user's condition." if target_joint else "Based on the pain description, determine which joint area would benefit most from exercise therapy."}
         
         After selecting the most appropriate exercise, please provide detailed instructions for that specific exercise. The instructions should be clear, step-by-step, and tailored to the user's condition.
         
@@ -539,7 +553,7 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
             json={
                 "model": "gpt-4",
                 "messages": [
-                    {"role": "system", "content": "You are a senior physical therapist specializing in rehabilitation."},
+                    {"role": "system", "content": "You are a senior physical therapist specializing in rehabilitation. Your task is to select the most appropriate exercise for the user based on their pain description and condition."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.2,

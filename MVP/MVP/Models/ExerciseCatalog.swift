@@ -157,6 +157,66 @@ struct ExerciseCatalog {
         )
     ]
     
+    // RSI Exercises (using HandJointType)
+    static let rsiExercises: [Exercise] = [
+        Exercise(
+            name: "Wrist Extension",
+            description: "Gentle stretching of wrist tendons to reduce tension and increase mobility.",
+            imageURLString: "https://storage.googleapis.com/mvp-vids/wrist_extension.jpg",
+            targetJoints: [], // No BodyJointType, using hand joints instead
+            instructions: [
+                "Place your arm on a flat surface with palm down",
+                "Slowly extend your wrist upward",
+                "Hold for 15-20 seconds",
+                "Return to starting position",
+                "Repeat 5 times per wrist"
+            ],
+            handJointTargets: [.wrist, .middleMCP, .middlePIP, .middleDIP]
+        ),
+        Exercise(
+            name: "Finger Stretch",
+            description: "Spreading and stretching fingers to reduce tension and improve flexibility.",
+            imageURLString: "https://storage.googleapis.com/mvp-vids/finger_stretch.jpg",
+            targetJoints: [], // No BodyJointType, using hand joints instead
+            instructions: [
+                "Extend your hand with palm facing up",
+                "Spread your fingers as wide as possible",
+                "Hold for 10 seconds",
+                "Relax your hand",
+                "Repeat 10 times"
+            ],
+            handJointTargets: [.indexTip, .middleTip, .ringTip, .littleTip]
+        ),
+        Exercise(
+            name: "Thumb Opposition",
+            description: "Touching thumb to fingertips to improve dexterity and reduce stiffness.",
+            imageURLString: "https://storage.googleapis.com/mvp-vids/thumb_opposition.jpg",
+            targetJoints: [], // No BodyJointType, using hand joints instead
+            instructions: [
+                "Hold your hand in a relaxed position",
+                "Touch your thumb to each fingertip in sequence",
+                "Start with index finger and end with pinky",
+                "Repeat in reverse order",
+                "Complete 5 cycles"
+            ],
+            handJointTargets: [.thumbTip, .indexTip, .middleTip, .ringTip, .littleTip]
+        ),
+        Exercise(
+            name: "Wrist Rotation",
+            description: "Circular movements of the wrist to improve mobility and reduce stiffness.",
+            imageURLString: "https://storage.googleapis.com/mvp-vids/wrist_rotation.jpg",
+            targetJoints: [], // No BodyJointType, using hand joints instead
+            instructions: [
+                "Extend your arm with elbow slightly bent",
+                "Make a gentle fist with your hand",
+                "Rotate your wrist in a circular motion",
+                "Do 10 clockwise rotations",
+                "Do 10 counterclockwise rotations"
+            ],
+            handJointTargets: [.wrist, .indexMCP, .littleMCP]
+        )
+    ]
+    
     // MARK: - Helper Methods
     static func getExercisesForJoint(_ joint: BodyJointType) -> [Exercise] {
         if BodyJointType.shoulderGroup.contains(joint) {
@@ -172,6 +232,14 @@ struct ExerciseCatalog {
     }
     
     static func getAllExercises() -> [Exercise] {
+        return shoulderExercises + kneeExercises + lowerBackExercises + ankleExercises + rsiExercises
+    }
+    
+    static func getBodyJointExercises() -> [Exercise] {
         return shoulderExercises + kneeExercises + lowerBackExercises + ankleExercises
+    }
+    
+    static func getHandExercises() -> [Exercise] {
+        return rsiExercises
     }
 } 

@@ -66,9 +66,10 @@ class VisionManager: NSObject, ObservableObject {
         // Configure to track all hand landmark points for RSI exercise tracking
         handPoseRequest?.revision = VNDetectHumanHandPoseRequestRevision1
         
-        requests = [handPoseRequest!] // Add to requests array
+        // Initialize with both requests for flexibility
+        requests = [bodyPoseRequest!, handPoseRequest!]
         
-        print("👁 Vision requests configured for hand tracking")
+        print("👁 Vision requests configured for pose tracking")
     }
     
     func startProcessing(_ videoOutput: AVCaptureVideoDataOutput) {
@@ -83,7 +84,7 @@ class VisionManager: NSObject, ObservableObject {
             self.transformMatrix = CGAffineTransform(scaleX: self.previewLayer.width, y: self.previewLayer.height)
         }
         
-        print("👁 Started hand pose processing")
+        print("👁 Started pose processing")
     }
     
     func stopProcessing() {
@@ -118,22 +119,33 @@ class VisionManager: NSObject, ObservableObject {
         }
         lastProcessedTime = now
         
-        // Process hand pose detection
+        // Process vision detection based on configured requests
         let handler = VNImageRequestHandler(cvPixelBuffer: imageBuffer, orientation: .up, options: [:])
         
         do {
-            // Process body pose
-            if let bodyPoseRequest = bodyPoseRequest {
-                try handler.perform([bodyPoseRequest])
-                if let observation = bodyPoseRequest.results?.first {
+            // Process configured requests
+            try handler.perform(requests)
+            
+            // Process results based on the current exercise type
+            if let exercise = currentExercise {
+                if exercise.isHandExercise {
+                    // For RSI exercises, check hand pose results
+                    if let handPoseRequest = handPoseRequest, let observation = handPoseRequest.results?.first {
+                        processHandPoseObservation(observation)
+                    }
+                } else {
+                    // For body exercises, check body pose results
+                    if let bodyPoseRequest = bodyPoseRequest, let observation = bodyPoseRequest.results?.first {
+                        processBodyPoseObservation(observation)
+                    }
+                }
+            } else {
+                // If no specific exercise is set, process both types
+                if let bodyPoseRequest = bodyPoseRequest, let observation = bodyPoseRequest.results?.first {
                     processBodyPoseObservation(observation)
                 }
-            }
-            
-            // Process hand pose
-            if let handPoseRequest = handPoseRequest {
-                try handler.perform([handPoseRequest])
-                if let observation = handPoseRequest.results?.first {
+                
+                if let handPoseRequest = handPoseRequest, let observation = handPoseRequest.results?.first {
                     processHandPoseObservation(observation)
                 }
             }
@@ -168,15 +180,38 @@ class VisionManager: NSObject, ObservableObject {
             }
         }
         
+        // Check exercise quality if we have a current exercise
+        var quality: ExerciseQuality = .cannotDetermine
+        if let exercise = currentExercise, !exercise.isHandExercise {
+            // Check if the required joints for this exercise are detected
+            let requiredJoints = Set(exercise.targetJoints)
+            let detectedCount = requiredJoints.intersection(detectedJoints).count
+            let detectionRatio = Float(detectedCount) / Float(requiredJoints.count)
+            
+            if detectionRatio > 0.7 {
+                quality = .good
+            } else if detectionRatio > 0.4 {
+                quality = .needsImprovement
+            }
+        }
+        
         DispatchQueue.main.async {
             self.currentBodyPose = bodyPose
             self.detectedJoints = detectedJoints
-            self.detectPainPoints(from: bodyPose)
+            if !bodyPose.joints.isEmpty {
+                self.detectPainPoints(from: bodyPose)
+            }
+            
+            // Update exercise quality
+            if let exercise = self.currentExercise, !exercise.isHandExercise {
+                self.exerciseQuality = quality
+            }
             
             // Update AppState
             self.appState.visionState.currentBodyPose = bodyPose
             self.appState.visionState.isProcessing = true
             self.appState.visionState.error = nil
+            self.appState.visionState.exerciseQuality = quality
             
             // Log joint stats every 30 frames (about 1 second at 30fps)
             if self.frameCount % 30 == 0 {
@@ -203,13 +238,41 @@ class VisionManager: NSObject, ObservableObject {
             }
         }
         
+        // Check hand pose quality for RSI exercises
+        var quality: ExerciseQuality = .cannotDetermine
+        if let exercise = currentExercise, exercise.isHandExercise {
+            // Check if the required hand joints for this exercise are detected
+            let requiredJoints = exercise.handJointTargets
+            var detectedCount = 0
+            
+            for joint in requiredJoints {
+                if let handJoint = handPose.joints[joint], handJoint.isValid {
+                    detectedCount += 1
+                }
+            }
+            
+            let detectionRatio = Float(detectedCount) / Float(requiredJoints.count)
+            
+            if detectionRatio > 0.7 {
+                quality = .good
+            } else if detectionRatio > 0.4 {
+                quality = .needsImprovement
+            }
+        }
+        
         DispatchQueue.main.async {
             self.currentHandPose = handPose
+            
+            // Update exercise quality for hand exercises
+            if let exercise = self.currentExercise, exercise.isHandExercise {
+                self.exerciseQuality = quality
+            }
             
             // Update AppState
             self.appState.visionState.currentHandPose = handPose
             self.appState.visionState.isProcessing = true
             self.appState.visionState.error = nil
+            self.appState.visionState.exerciseQuality = quality
             
             // Log joint stats every 30 frames (about 1 second at 30fps)
             if self.frameCount % 30 == 0 {
@@ -281,11 +344,43 @@ class VisionManager: NSObject, ObservableObject {
     
     // MARK: - Exercise Tracking
     func startTrackingExercise(_ exercise: Exercise) {
+        // Configure appropriate tracking for this exercise
+        configureForExercise(exercise)
         currentExercise = exercise
     }
     
     func stopTrackingExercise() {
         currentExercise = nil
+        exerciseQuality = .cannotDetermine
+    }
+    
+    // New method to configure tracking for specific exercise
+    func configureForExercise(_ exercise: Exercise) {
+        // Reset requests
+        requests.removeAll()
+        
+        if exercise.isHandExercise {
+            // This is an RSI exercise - use hand pose detection
+            print("👁 Configuring for RSI exercise with hand tracking")
+            if let handPoseRequest = handPoseRequest {
+                requests.append(handPoseRequest)
+            }
+        } else {
+            // This is a body exercise - use body pose detection
+            print("👁 Configuring for body exercise with full-body tracking")
+            if let bodyPoseRequest = bodyPoseRequest {
+                requests.append(bodyPoseRequest)
+            }
+        }
+        
+        // Store current exercise for reference
+        currentExercise = exercise
+        
+        // Reset detection state
+        currentBodyPose = nil
+        currentHandPose = nil
+        detectedJoints.removeAll()
+        painPoints.removeAll()
         exerciseQuality = .cannotDetermine
     }
     

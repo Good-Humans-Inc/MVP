@@ -38,16 +38,22 @@ struct ExerciseView: View {
             CameraPreview(session: cameraManager.session)
                 .edgesIgnoringSafeArea(.all)
             
-            // Hand pose overlay
-            if let handPose = visionManager.currentHandPose {
-                HandPoseView(handPose: handPose)
-                    .edgesIgnoringSafeArea(.all)
+            // Conditional pose visualization based on exercise type
+            Group {
+                if exercise.isHandExercise {
+                    // Hand pose overlay for RSI exercises
+                    if let handPose = visionManager.currentHandPose {
+                        HandPoseView(handPose: handPose)
+                            .edgesIgnoringSafeArea(.all)
+                    }
+                } else {
+                    // Body pose overlay for regular exercises
+                    if let bodyPose = visionManager.currentBodyPose {
+                        BodyPoseView(bodyPose: bodyPose)
+                            .edgesIgnoringSafeArea(.all)
+                    }
+                }
             }
-            
-            // Coach message bubble if there are messages
-            // if !coachMessages.isEmpty, showCoachFeedback {
-            //     coachMessageView
-            // }
             
             // Timer and controls overlay
             exerciseControlsView
@@ -176,39 +182,37 @@ struct ExerciseView: View {
     // MARK: - Setup Methods
     
     private func setupExerciseSession() {
-        // Initialize timer
+        // Set initial time
         remainingTime = exercise.duration
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            if remainingTime > 0 {
-                remainingTime -= 1
-            } else {
-                stopExercise()
-            }
-        }
+        exerciseDuration = 0
         
-        // Set initial coach message
-        coachMessages = ["I'll help guide you through this exercise. Let me see your form..."]
-        showCoachFeedback = true
-        
-        // Auto-hide initial message after a few seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            if isExerciseActive {
-                showCoachFeedback = false
+        // Start camera
+        cameraManager.requestCameraAuthorizationIfNeeded { [weak self] authorized in
+            guard let self = self, authorized else {
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Camera access is required for exercise tracking"
+                    self?.showErrorAlert = true
+                }
+                return
             }
-        }
-        
-        // Configure audio session for speaker output
-        do {
-            if voiceManager.isBluetoothConnected == false {
-                try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
-            } else {
-                try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
-                try AVAudioSession.sharedInstance().setCategory(.playAndRecord,
-                                          mode: .spokenAudio,
-                                          options: [.allowBluetooth])
-            }
-        } catch {
-            handleError("Failed to configure audio: \(error.localizedDescription)")
+            
+            // Start camera with appropriate configuration
+            self.cameraManager.setupSession()
+            
+            // Configure vision tracking based on exercise type
+            self.visionManager.configureForExercise(self.exercise)
+            
+            // Start vision processing
+            self.visionManager.startProcessing(self.cameraManager.videoDataOutput)
+            
+            // Start tracking this exercise
+            self.visionManager.startTrackingExercise(self.exercise)
+            
+            // Announce start of exercise
+            self.voiceManager.speak("Starting \(self.exercise.name) exercise. Get ready.")
+            
+            // Set up timer
+            self.startTimer()
         }
     }
     
@@ -304,6 +308,41 @@ struct ExerciseView: View {
         let minutes = Int(timeInterval) / 60
         let seconds = Int(timeInterval) % 60
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+    
+    private func startTimer() {
+        // Initialize the timer
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            // Update remaining time
+            if self.remainingTime > 0 {
+                self.remainingTime -= 1
+                self.exerciseDuration += 1
+            } else {
+                self.stopExercise()
+            }
+        }
+        
+        // Set initial coach message if needed
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.coachMessages = ["Get ready for \(self.exercise.name)"]
+            
+            // Configure audio session for speaker output
+            do {
+                if self.voiceManager.isBluetoothConnected == false {
+                    try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
+                } else {
+                    try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
+                    try AVAudioSession.sharedInstance().setCategory(.playAndRecord,
+                                                                 mode: .spokenAudio,
+                                                                 options: [.allowBluetooth])
+                }
+            } catch {
+                self.handleError("Failed to configure audio: \(error.localizedDescription)")
+            }
+        }
     }
 }
 
