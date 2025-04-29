@@ -287,39 +287,27 @@ def calculate_next_notification_time(hour, minute, user_timezone_offset, current
     now = current_time or datetime.now(timezone.utc)
     print(f"Current time (UTC): {now.isoformat()}")
     
-    # Convert user's preferred hour to UTC
-    user_hour_in_utc = hour - user_timezone_offset
-    print(f"User's {hour}:{minute} in their timezone is {user_hour_in_utc}:{minute} in UTC")
+    # First, convert the current UTC time to the user's local time
+    user_local_time = now.astimezone(timezone(timedelta(hours=user_timezone_offset)))
+    print(f"Current time in user's timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}): {user_local_time.isoformat()}")
     
-    # Handle hour wrapping around 24-hour cycle
-    hour_in_utc = int(user_hour_in_utc) % 24
+    # Create a base date in the user's timezone (today at midnight)
+    user_base_date = user_local_time.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    # Start with today as the base date
-    base_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Create the target time in user's local timezone
+    user_target_time = user_base_date.replace(hour=hour, minute=minute)
+    print(f"Target time in user's timezone: {user_target_time.isoformat()}")
     
-    # Determine if we need to adjust the day
-    day_offset = 0
-    
-    # If the hour conversion puts us in the previous day
-    if user_hour_in_utc < 0:
-        day_offset = 1
-    
-    # Create the target notification time
-    target_time = base_date + timedelta(days=day_offset, hours=hour_in_utc, minutes=minute)
-    print(f"Initial target time (UTC): {target_time.isoformat()}")
-    
-    # If the target time has already passed today, schedule for tomorrow
-    if target_time <= now:
-        target_time += timedelta(days=1)
-        print(f"Time today has passed, scheduling for tomorrow: {target_time.isoformat()}")
+    # If target time has passed in user's timezone, add a day
+    if user_target_time <= user_local_time:
+        user_target_time += timedelta(days=1)
+        print(f"Target time already passed in user's timezone, scheduling for tomorrow: {user_target_time.isoformat()}")
         
-    print(f"Final notification time (UTC): {target_time.isoformat()}")
+    # Convert the final time back to UTC for storage and scheduling
+    target_time_utc = user_target_time.astimezone(timezone.utc)
+    print(f"Final notification time (UTC): {target_time_utc.isoformat()}")
     
-    # Calculate what this time would be in the user's timezone (for logging only)
-    user_local_time = target_time.astimezone(timezone(timedelta(hours=user_timezone_offset)))
-    print(f"This equals {user_local_time.strftime('%Y-%m-%d %H:%M:%S')} in user's local timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset})")
-    
-    return target_time
+    return target_time_utc
 
 # Helper function to serialize Firestore data for JSON
 def serialize_firestore_data(data):

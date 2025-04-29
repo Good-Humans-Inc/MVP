@@ -6,6 +6,7 @@ import json
 import uuid
 import os
 from google.cloud import firestore
+import requests
 
 try:
     # Initialize Firebase Admin with default credentials
@@ -24,6 +25,103 @@ headers = {
     'Access-Control-Allow-Methods': 'GET, POST',
     'Access-Control-Allow-Headers': 'Content-Type',
 }
+
+def calculate_next_notification_time(hour, minute, user_timezone_offset, current_time=None):
+    """
+    Calculate the next notification time in UTC based on user's preferred local time.
+    
+    Args:
+        hour: User's preferred hour (in their local timezone)
+        minute: User's preferred minute
+        user_timezone_offset: User's timezone offset from UTC (in hours)
+        current_time: Current time (defaults to now if not provided)
+    
+    Returns:
+        next_time: The next notification time as a datetime object in UTC
+    """
+    # Use provided time or current UTC time
+    now = current_time or datetime.now(timezone.utc)
+    print(f"⏰ Current time (UTC): {now.isoformat()}")
+    
+    # First, convert the current UTC time to the user's local time
+    user_local_time = now.astimezone(timezone(timedelta(hours=user_timezone_offset)))
+    print(f"🌐 Current time in user's timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}): {user_local_time.isoformat()}")
+    
+    # Create a base date in the user's timezone (today at midnight)
+    user_base_date = user_local_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Create the target time in user's local timezone
+    user_target_time = user_base_date.replace(hour=hour, minute=minute)
+    print(f"🎯 Target time in user's timezone: {user_target_time.isoformat()}")
+    
+    # If target time has passed in user's timezone, add a day
+    if user_target_time <= user_local_time:
+        user_target_time += timedelta(days=1)
+        print(f"⏭️ Target time already passed in user's timezone, scheduling for tomorrow: {user_target_time.isoformat()}")
+        
+    # Convert the final time back to UTC for storage and scheduling
+    target_time_utc = user_target_time.astimezone(timezone.utc)
+    print(f"⏰ Final notification time (UTC): {target_time_utc.isoformat()}")
+    
+    return target_time_utc
+
+def schedule_next_notification(user_id, user_data):
+    """Schedule the next notification for the user."""
+    try:
+        # Get notification preferences
+        notification_prefs = user_data.get('notification_preferences', {})
+        hour = notification_prefs.get('hour')
+        minute = notification_prefs.get('minute')
+        
+        if hour is None or minute is None:
+            print(f"⚠️ Invalid notification time for user {user_id}: hour={hour}, minute={minute}")
+            return False
+        
+        # Get user's timezone offset
+        user_timezone_offset = get_user_timezone_offset(user_data)
+        print(f"🌐 User timezone offset: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}")
+        
+        # Calculate next notification time using the standardized function
+        next_time = calculate_next_notification_time(
+            hour=hour,
+            minute=minute,
+            user_timezone_offset=user_timezone_offset
+        )
+        
+        # Update the user's next notification time in Firestore
+        user_ref = db.collection('users').document(user_id)
+        user_ref.update({
+            'next_notification_time': next_time
+        })
+        
+        # Call the schedule_notification API
+        try:
+            notification_data = {
+                'user_id': user_id,
+                'scheduled_time': next_time.isoformat(),
+                'is_one_time': False
+            }
+            
+            response = requests.post(
+                'https://us-central1-pepmvp.cloudfunctions.net/schedule_notification',
+                json=notification_data,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                print(f"✅ Successfully scheduled next notification for user {user_id}")
+                return True
+            else:
+                print(f"❌ Failed to schedule notification: {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error calling schedule_notification API: {str(e)}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error scheduling next notification: {str(e)}")
+        return False
 
 @functions_framework.http
 def check_due_notifications(request):
