@@ -13,5 +13,9 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.pepmvp.app.notification-refresh</string>
+	</array>
 </dict>
 </plist>

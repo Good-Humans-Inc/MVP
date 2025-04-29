@@ -1,79 +1,35 @@
+# schedule_notification/main.py
 import functions_framework
 import firebase_admin
-from firebase_admin import credentials, firestore, messaging
-from datetime import datetime, timedelta
+from firebase_admin import credentials, firestore
+from datetime import datetime, timezone
 import json
 import uuid
-from google.cloud import secretmanager
-from google.cloud.firestore_v1._helpers import DatetimeWithNanoseconds
-from openai import OpenAI
+from google.cloud import tasks_v2
+import google.auth
 
-# Initialize Firebase Admin with default credentials
-firebase_admin.initialize_app()
+# Initialize Firebase Admin if not already initialized
+try:
+    app = firebase_admin.get_app()
+except ValueError:
+    firebase_admin.initialize_app()
+
 db = firestore.Client(project='pepmvp', database='pep-mvp')
-
-def get_secret(secret_id):
-    """Get secret from Google Cloud Secret Manager."""
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/pepmvp/secrets/{secret_id}/versions/latest"
-    response = client.access_secret_version(request={"name": name})
-    return response.payload.data.decode("UTF-8")
-
-def generate_notification_content(user_name, exercise_names, user_data):
-    """Generate personalized notification content using OpenAI."""
-    try:
-        client = OpenAI(api_key=get_secret('openai-api-key'))
-        
-        # Get user's preferences and history
-        preferred_tone = user_data.get('notification_preferences', {}).get('tone', 'friendly')
-        exercise_history = user_data.get('exercise_history', [])
-        streak = len(exercise_history)
-        
-        # Create prompt for OpenAI
-        prompt = f"""Generate a motivational exercise reminder notification for a physical therapy user with the following details:
-
-User Name: {user_name}
-Exercises: {', '.join(exercise_names)}
-Current Streak: {streak} days
-Preferred Tone: {preferred_tone}
-
-The notification should have:
-1. A catchy title (max 44 characters)
-2. A motivational message (max 150 characters)
-3. Be {preferred_tone} in tone
-4. Mention specific exercises if provided
-5. Include streak information if significant (>3 days)
-
-Format the response as JSON:
-{{
-    "title": "string",
-    "body": "string"
-}}"""
-
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a motivational physical therapy assistant crafting engaging notifications."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=200
-        )
-        
-        # Parse the response
-        content = json.loads(response.choices[0].message.content)
-        return content
-        
-    except Exception as e:
-        print(f"Error generating notification content: {str(e)}")
-        # Return default content if OpenAI generation fails
-        return {
-            "title": "Time for your PT exercises!",
-            "body": f"Hi {user_name}! Ready to continue your progress? Let's work on your exercises today!"
-        }
 
 @functions_framework.http
 def schedule_notification(request):
+    """
+    Schedule a notification using Google Cloud Tasks.
+    
+    Expected request format:
+    {
+        "user_id": "string",
+        "scheduled_time": "ISO datetime string",
+        "is_one_time": boolean,
+        "custom_title": "string", (optional)
+        "custom_body": "string" (optional)
+    }
+    """
     # Enable CORS
     if request.method == 'OPTIONS':
         headers = {
@@ -89,13 +45,16 @@ def schedule_notification(request):
         # Get request data
         request_json = request.get_json()
         user_id = request_json.get('user_id')
-        scheduled_time = request_json.get('scheduled_time')
+        scheduled_time_str = request_json.get('scheduled_time')
         is_one_time = request_json.get('is_one_time', False)
+        custom_title = request_json.get('custom_title', None)
+        custom_body = request_json.get('custom_body', None)
         
-        if not user_id:
-            return (json.dumps({'error': 'Missing user_id'}), 400, headers)
+        # Validate required parameters
+        if not user_id or not scheduled_time_str:
+            return (json.dumps({'error': 'Missing required parameters'}), 400, headers)
         
-        # Get user's data
+        # Get user data to verify existence and get FCM token
         user_ref = db.collection('users').document(user_id)
         user_doc = user_ref.get()
         
@@ -103,273 +62,118 @@ def schedule_notification(request):
             return (json.dumps({'error': 'User not found'}), 404, headers)
         
         user_data = user_doc.to_dict()
-        fcm_token = user_data.get('fcm_token')
         
+        # Check for FCM token
+        fcm_token = user_data.get('fcm_token')
         if not fcm_token:
-            return (json.dumps({'error': 'User has no FCM token'}), 400, headers)
+            return (json.dumps({'error': 'No FCM token found for user'}), 400, headers)
+        
+        # Create notification ID for tracking
+        notification_id = str(uuid.uuid4())
         
         # Parse scheduled time
         try:
-            scheduled_datetime = datetime.fromisoformat(scheduled_time.replace('Z', '+00:00'))
-        except (ValueError, AttributeError):
-            return (json.dumps({'error': 'Invalid scheduled_time format'}), 400, headers)
+            scheduled_time = datetime.fromisoformat(scheduled_time_str.replace('Z', '+00:00'))
+            if scheduled_time.tzinfo is None:
+                scheduled_time = scheduled_time.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            return (json.dumps({'error': 'Invalid scheduled_time format. Use ISO 8601 format.'}), 400, headers)
         
-        # Create notification ID
-        notification_id = str(uuid.uuid4())
+        # Determine notification content (prioritize custom, then next_day_notification, then default)
+        username = user_data.get('name', 'User')
         
-        # Get user's exercises
-        exercises_ref = db.collection('user_exercises').where('user_id', '==', user_id).limit(1).get()
-        exercise_names = []
-        for exercise_doc in exercises_ref:
-            exercise_data = exercise_doc.to_dict()
-            exercise_names.append(exercise_data.get('name', 'your exercise'))
+        if custom_title and custom_body:
+            notification_title = custom_title
+            notification_body = custom_body
+        else:
+            # We'll use next_day_notification if available, but this will be checked again
+            # at send time to get the most up-to-date personalized content
+            notification_title = f"Time for Exercise, {username}!"
+            notification_body = "It's time for your daily exercise routine. Let's keep that streak going!"
         
-        # Generate personalized notification content
-        notification_content = generate_notification_content(
-            user_name=user_data.get('name', 'there'),
-            exercise_names=exercise_names,
-            user_data=user_data
-        )
-        
-        # Create notification document
+        # Store notification in Firestore
         notification_data = {
             'id': notification_id,
             'user_id': user_id,
             'type': 'exercise_reminder',
-            'scheduled_for': scheduled_datetime,
+            'scheduled_for': scheduled_time,
             'status': 'scheduled',
             'created_at': firestore.SERVER_TIMESTAMP,
             'is_one_time': is_one_time,
-            'content': notification_content
+            'content': {
+                'title': notification_title,
+                'body': notification_body
+            }
         }
         
-        # Add to Firestore
         db.collection('notifications').document(notification_id).set(notification_data)
         
-        # Create message
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=notification_content['title'],
-                body=notification_content['body']
-            ),
-            data={
-                'notification_id': notification_id,
-                'user_id': user_id,
-                'type': 'exercise_reminder',
-                'is_one_time': str(is_one_time).lower()
-            },
-            token=fcm_token,
-            android=messaging.AndroidConfig(
-                priority='high',
-                notification=messaging.AndroidNotification(
-                    priority='high',
-                    channel_id='exercise_reminders'
-                )
-            ),
-            apns=messaging.APNSConfig(
-                payload=messaging.APNSPayload(
-                    aps=messaging.Aps(
-                        sound='default',
-                        badge=1
-                    )
-                )
-            )
+        # Create Cloud Task to send the notification at the scheduled time
+        credentials, project_id = google.auth.default()
+        task_client = tasks_v2.CloudTasksClient()
+        
+        # Set up Cloud Tasks location and queue
+        parent = task_client.queue_path(
+            'pepmvp',  # Your project ID
+            'us-central1',  # Choose your region
+            'notification-queue'  # Your queue name - create this in GCP Console
         )
         
-        # Send the message
-        response = messaging.send(message)
+        # Calculate seconds from epoch for the scheduled time
+        scheduled_seconds = int(scheduled_time.timestamp())
         
-        # Update notification status
+        # Create payload for the Cloud Task
+        payload = {
+            'notification_id': notification_id,
+            'user_id': user_id
+        }
+        
+        # URL of the Cloud Function that will send the notification
+        url = f"https://us-central1-pepmvp.cloudfunctions.net/send_notification"
+        
+        # Create the task
+        task = {
+            'http_request': {
+                'http_method': tasks_v2.HttpMethod.POST,
+                'url': url,
+                'headers': {
+                    'Content-Type': 'application/json'
+                },
+                'body': json.dumps(payload).encode()
+            },
+            'schedule_time': {
+                'seconds': scheduled_seconds
+            },
+            'name': f"projects/pepmvp/locations/us-central1/queues/notification-queue/tasks/{notification_id}"
+        }
+        
+        # Create the Cloud Task
+        response = task_client.create_task(request={'parent': parent, 'task': task})
+        
+        # Update notification with task information
         db.collection('notifications').document(notification_id).update({
-            'status': 'sent',
-            'sent_at': firestore.SERVER_TIMESTAMP,
-            'message_id': response
+            'task_name': response.name,
+            'updated_at': firestore.SERVER_TIMESTAMP
         })
         
-        # If this is a one-time notification, update the next regular notification time
-        if is_one_time:
-            # Get the regular notification schedule
-            notification_prefs = user_data.get('notification_preferences', {})
-            regular_hour = notification_prefs.get('hour', 9)  # Default to 9 AM
-            regular_minute = notification_prefs.get('minute', 0)
-            
-            # Calculate next regular notification time (next day)
-            next_notification = scheduled_datetime + timedelta(days=1)
-            next_notification = next_notification.replace(
-                hour=regular_hour,
-                minute=regular_minute,
-                second=0,
-                microsecond=0
-            )
-            
-            # Update the user's next notification time
+        # If this is a recurring notification, update the user's next_notification_time
+        if not is_one_time:
             user_ref.update({
-                'next_notification_time': next_notification
+                'next_notification_time': scheduled_time
             })
         
         return (json.dumps({
             'status': 'success',
+            'message': 'Notification scheduled successfully',
             'notification_id': notification_id,
-            'message_id': response,
-            'scheduled_for': scheduled_datetime.isoformat(),
-            'content': notification_content
+            'scheduled_for': serialize_firestore_data(scheduled_time),
+            'task_name': response.name
         }), 200, headers)
             
     except Exception as e:
-        print(f"Error scheduling notification: {str(e)}")
-        return (json.dumps({'error': str(e)}), 500, headers)
-
-# Helper class for creating mock requests
-class MockRequest:
-    def __init__(self, json_data):
-        self.json_data = json_data
-    
-    def get_json(self):
-        return self.json_data
-
-@functions_framework.http
-def update_fcm_token(request):
-    # Enable CORS
-    if request.method == 'OPTIONS':
-        headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST',
-            'Access-Control-Allow-Headers': 'Content-Type'
-        }
-        return ('', 204, headers)
-    
-    headers = {'Access-Control-Allow-Origin': '*'}
-    
-    try:
-        # Get request data
-        request_json = request.get_json()
-        user_id = request_json.get('user_id')
-        fcm_token = request_json.get('fcm_token')
-        
-        if not user_id or not fcm_token:
-            return (json.dumps({'error': 'Missing required parameters'}), 400, headers)
-        
-        # Update user's FCM token
-        user_ref = db.collection('users').document(user_id)
-        user_ref.update({
-            'fcm_token': fcm_token,
-            'last_token_update': firestore.SERVER_TIMESTAMP
-        })
-        
-        return (json.dumps({'status': 'success'}), 200, headers)
-            
-    except Exception as e:
-        print(f"Error updating FCM token: {str(e)}")
-        return (json.dumps({'error': str(e)}), 500, headers)
-
-@functions_framework.http
-def send_exercise_notification(request):
-    # Enable CORS
-    if request.method == 'OPTIONS':
-        headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST',
-            'Access-Control-Allow-Headers': 'Content-Type'
-        }
-        return ('', 204, headers)
-    
-    headers = {'Access-Control-Allow-Origin': '*'}
-    
-    try:
-        # Get request data
-        request_json = request.get_json()
-        user_id = request_json.get('user_id')
-        exercise_id = request_json.get('exercise_id')
-        
-        if not user_id or not exercise_id:
-            return (json.dumps({'error': 'Missing required parameters'}), 400, headers)
-        
-        # Get user's FCM token
-        user_ref = db.collection('users').document(user_id)
-        user_doc = user_ref.get()
-        
-        if not user_doc.exists:
-            return (json.dumps({'error': 'User not found'}), 404, headers)
-        
-        user_data = user_doc.to_dict()
-        fcm_token = user_data.get('fcm_token')
-        
-        if not fcm_token:
-            return (json.dumps({'error': 'User has no FCM token'}), 400, headers)
-        
-        # Get exercise details
-        exercise_ref = db.collection('exercises').document(exercise_id)
-        exercise_doc = exercise_ref.get()
-        
-        if not exercise_doc.exists:
-            return (json.dumps({'error': 'Exercise not found'}), 404, headers)
-        
-        exercise_data = exercise_doc.to_dict()
-        
-        # Create notification ID
-        notification_id = str(uuid.uuid4())
-        
-        # Create notification content
-        title = f"Time for your {exercise_data.get('name', 'PT')} exercise!"
-        body = f"Don't forget to complete your {exercise_data.get('name', 'physical therapy')} exercise today."
-        
-        # Create message
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=title,
-                body=body
-            ),
-            data={
-                'notification_id': notification_id,
-                'user_id': user_id,
-                'type': 'exercise_reminder',
-                'exercise_id': exercise_id
-            },
-            token=fcm_token,
-            android=messaging.AndroidConfig(
-                priority='high',
-                notification=messaging.AndroidNotification(
-                    priority='high',
-                    channel_id='exercise_reminders'
-                )
-            ),
-            apns=messaging.APNSConfig(
-                payload=messaging.APNSPayload(
-                    aps=messaging.Aps(
-                        sound='default',
-                        badge=1
-                    )
-                )
-            )
-        )
-        
-        # Send the message
-        response = messaging.send(message)
-        
-        # Create notification document
-        notification_data = {
-            'id': notification_id,
-            'user_id': user_id,
-            'type': 'exercise_reminder',
-            'scheduled_for': firestore.SERVER_TIMESTAMP,
-            'sent_at': firestore.SERVER_TIMESTAMP,
-            'status': 'sent',
-            'created_at': firestore.SERVER_TIMESTAMP,
-            'exercise_id': exercise_id,
-            'message_id': response
-        }
-        
-        # Add to Firestore
-        db.collection('notifications').document(notification_id).set(notification_data)
-        
-        return (json.dumps({
-            'status': 'success',
-            'notification_id': notification_id,
-            'message_id': response
-        }), 200, headers)
-            
-    except Exception as e:
-        print(f"Error sending exercise notification: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error scheduling notification: {str(e)}\n{error_details}")
         return (json.dumps({'error': str(e)}), 500, headers)
 
 # Helper function to serialize Firestore data for JSON
@@ -379,63 +183,9 @@ def serialize_firestore_data(data):
         return {k: serialize_firestore_data(v) for k, v in data.items()}
     elif isinstance(data, list):
         return [serialize_firestore_data(item) for item in data]
-    elif isinstance(data, DatetimeWithNanoseconds):
-        return data.isoformat()
     elif hasattr(data, 'datetime'):  # Handle Firestore Timestamp
         return data.datetime.isoformat()
+    elif isinstance(data, datetime):  # Handle Python datetime objects
+        return data.isoformat()
     else:
-        return data 
-
-@functions_framework.http
-def check_notification_status(request):
-    # Enable CORS
-    if request.method == 'OPTIONS':
-        headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST',
-            'Access-Control-Allow-Headers': 'Content-Type'
-        }
-        return ('', 204, headers)
-    
-    headers = {'Access-Control-Allow-Origin': '*'}
-    
-    try:
-        # Get request data
-        request_json = request.get_json()
-        notification_id = request_json.get('notification_id')
-        
-        if not notification_id:
-            return (json.dumps({'error': 'Missing notification_id'}), 400, headers)
-        
-        # Get notification document
-        notification_ref = db.collection('notifications').document(notification_id)
-        notification_doc = notification_ref.get()
-        
-        if not notification_doc.exists:
-            return (json.dumps({'error': 'Notification not found'}), 404, headers)
-        
-        notification_data = notification_doc.to_dict()
-        user_id = notification_data.get('user_id')
-        
-        # Get user's FCM token for verification
-        user_ref = db.collection('users').document(user_id)
-        user_doc = user_ref.get()
-        user_data = user_doc.to_dict()
-        
-        # Prepare debug info
-        debug_info = {
-            'notification': serialize_firestore_data(notification_data),
-            'fcm_token_exists': bool(user_data.get('fcm_token')),
-            'fcm_token_last_update': serialize_firestore_data(user_data.get('last_token_update')),
-            'notification_preferences': user_data.get('notification_preferences', {}),
-            'app_notification_status': user_data.get('notification_status', 'unknown')
-        }
-        
-        return (json.dumps({
-            'status': 'success',
-            'debug_info': debug_info
-        }), 200, headers)
-            
-    except Exception as e:
-        print(f"Error checking notification status: {str(e)}")
-        return (json.dumps({'error': str(e)}), 500, headers) 
+        return data

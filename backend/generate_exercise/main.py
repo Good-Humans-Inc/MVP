@@ -104,6 +104,181 @@ RSI_EXERCISES = [
     }
 ]
 
+# Shoulder exercises
+SHOULDER_EXERCISES = [
+    {
+        "name": "Shoulder Rolls",
+        "description": "Gentle circular movements of the shoulders to improve mobility and reduce tension",
+        "target_joints": ["shoulder"],
+        "instructions": [
+            "Stand or sit with your back straight",
+            "Roll your shoulders forward in a circular motion",
+            "Repeat 5 times",
+            "Roll your shoulders backward in a circular motion",
+            "Repeat 5 times"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/shoulder_rolls.mp4"
+    },
+    {
+        "name": "Wall Slides",
+        "description": "Sliding arms up and down against a wall to improve shoulder mobility and posture",
+        "target_joints": ["shoulder"],
+        "instructions": [
+            "Stand with your back against a wall",
+            "Keep elbows bent at 90 degrees, touching the wall",
+            "Slide your arms up the wall while maintaining contact",
+            "Lower back down slowly",
+            "Repeat 10 times"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/wall_slides.mp4"
+    },
+    {
+        "name": "Cross-Body Shoulder Stretch",
+        "description": "Gentle stretch for the posterior shoulder",
+        "target_joints": ["shoulder"],
+        "instructions": [
+            "Bring one arm across your chest",
+            "Use other arm to apply gentle pressure above the elbow",
+            "Hold for 30 seconds",
+            "Release and repeat on other side",
+            "Do 3 sets per side"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/cross_body_shoulder_stretch.mp4"
+    }
+]
+
+# Knee exercises
+KNEE_EXERCISES = [
+    {
+        "name": "Straight Leg Raises",
+        "description": "Strengthening exercise for the quadriceps while keeping knee straight",
+        "target_joints": ["knee"],
+        "instructions": [
+            "Lie on your back with one leg straight and other bent",
+            "Tighten thigh muscles of straight leg",
+            "Lift straight leg about 6 inches off ground",
+            "Hold for 5 seconds",
+            "Lower slowly and repeat 10 times"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/straight_leg_raises.mp4"
+    },
+    {
+        "name": "Wall Squats",
+        "description": "Controlled squat exercise using wall support",
+        "target_joints": ["knee"],
+        "instructions": [
+            "Stand with back against wall",
+            "Slide down wall until thighs are parallel to ground",
+            "Hold position for 5-10 seconds",
+            "Slide back up",
+            "Repeat 10 times"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/wall_squats.mp4"
+    },
+    {
+        "name": "Knee Flexion and Extension",
+        "description": "Range of motion exercise for the knee joint",
+        "target_joints": ["knee"],
+        "instructions": [
+            "Sit in a chair with feet flat on ground",
+            "Slowly straighten one knee",
+            "Hold for 5 seconds",
+            "Slowly bend knee back to starting position",
+            "Repeat 10 times per leg"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/knee_flexion_extension.mp4"
+    }
+]
+
+# Lower back exercises
+LOWER_BACK_EXERCISES = [
+    {
+        "name": "Bridge Exercise",
+        "description": "Strengthening exercise for lower back and glutes",
+        "target_joints": ["lower_back"],
+        "instructions": [
+            "Lie on back with knees bent",
+            "Lift hips toward ceiling",
+            "Hold for 5 seconds",
+            "Lower slowly",
+            "Repeat 10 times"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/bridge_exercise.mp4"
+    },
+    {
+        "name": "Bird Dog",
+        "description": "Balance and stability exercise for core and back",
+        "target_joints": ["lower_back"],
+        "instructions": [
+            "Start on hands and knees",
+            "Extend right arm and left leg",
+            "Hold for 5 seconds",
+            "Return to start and switch sides",
+            "Repeat 10 times per side"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/bird_dog.mp4"
+    },
+    {
+        "name": "Knee to Chest Stretch",
+        "description": "Gentle stretch for lower back muscles",
+        "target_joints": ["lower_back"],
+        "instructions": [
+            "Lie on back with knees bent",
+            "Bring one knee toward chest",
+            "Hold for 30 seconds",
+            "Lower and switch legs",
+            "Repeat 3 times per leg"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/knee_to_chest_stretch.mp4"
+    }
+]
+
+# Ankle exercises
+ANKLE_EXERCISES = [
+    {
+        "name": "Ankle Circles",
+        "description": "Range of motion exercise for ankle mobility",
+        "target_joints": ["ankle"],
+        "instructions": [
+            "Sit with leg extended",
+            "Rotate ankle clockwise 10 times",
+            "Rotate ankle counterclockwise 10 times",
+            "Repeat with other ankle",
+            "Do 3 sets per ankle"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/ankle_circles.mp4"
+    },
+    {
+        "name": "Ankle Alphabet",
+        "description": "Mobility exercise writing alphabet with toes",
+        "target_joints": ["ankle"],
+        "instructions": [
+            "Sit with leg extended",
+            "Use your toes to write alphabet in air",
+            "Move only your ankle, not your leg",
+            "Go slowly and deliberately",
+            "Repeat with other ankle"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/ankle_alphabet.mp4"
+    },
+    {
+        "name": "Heel-Toe Raises",
+        "description": "Strengthening exercise for ankle stability",
+        "target_joints": ["ankle"],
+        "instructions": [
+            "Stand holding onto chair for balance",
+            "Rise onto toes, then onto heels",
+            "Alternate between positions",
+            "Move slowly and controlled",
+            "Repeat 15 times"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/heel_toe_raises.mp4"
+    }
+]
+
+# Combine all exercises
+ALL_EXERCISES = RSI_EXERCISES + SHOULDER_EXERCISES + KNEE_EXERCISES + LOWER_BACK_EXERCISES + ANKLE_EXERCISES
+
 @functions_framework.http
 def generate_exercise(request):
     """
@@ -113,6 +288,7 @@ def generate_exercise(request):
     {
         "user_id": "uuid-of-user",
         "llm_provider": "claude" or "openai"  (optional, defaults to openai)
+        "target_joint": "wrist", "shoulder", "knee", etc. (optional)
     }
     """
     # Enable CORS
@@ -135,8 +311,9 @@ def generate_exercise(request):
         
         user_id = request_json['user_id']
         llm_provider = request_json.get('llm_provider', 'openai')  # Default to OpenAI
+        target_joint = request_json.get('target_joint')  # Optional target joint
         
-        logger.info(f"Processing request for user_id: {user_id}, llm_provider: {llm_provider}")
+        logger.info(f"Processing request for user_id: {user_id}, llm_provider: {llm_provider}, target_joint: {target_joint}")
         
         # Get API keys
         if llm_provider == 'claude':
@@ -150,11 +327,19 @@ def generate_exercise(request):
             logger.warning(f"User not found: {user_id}")
             return (json.dumps({'error': 'User not found'}, cls=DateTimeEncoder), 404, headers)
         
+        # Filter exercises by target joint if specified
+        exercises_to_consider = ALL_EXERCISES
+        if target_joint:
+            exercises_to_consider = [ex for ex in ALL_EXERCISES if target_joint in ex.get('target_joints', [])]
+            if not exercises_to_consider:
+                logger.warning(f"No exercises found for target joint: {target_joint}")
+                return (json.dumps({'error': f'No exercises found for target joint: {target_joint}'}, cls=DateTimeEncoder), 404, headers)
+        
         # Use LLM to select the most appropriate exercise and generate detailed instructions
         if llm_provider == 'claude':
-            exercise = select_exercise_with_claude(user_data, api_key)
+            exercise = select_exercise_with_claude(user_data, api_key, exercises_to_consider)
         else:
-            exercise = select_exercise_with_openai(user_data, api_key)
+            exercise = select_exercise_with_openai(user_data, api_key, exercises_to_consider)
         
         logger.info(f"Selected exercise: {exercise['name']}")
         
@@ -186,7 +371,7 @@ def get_user_data(user_id):
     
     return user_doc.to_dict()
 
-def select_exercise_with_claude(user_data, api_key):
+def select_exercise_with_claude(user_data, api_key, exercises=None):
     """
     Use Claude to select the most appropriate exercise from the predefined list
     and generate detailed instructions based on the user's pain description
@@ -196,17 +381,20 @@ def select_exercise_with_claude(user_data, api_key):
         name = user_data.get('name', 'the user')
         pain_description = user_data.get('pain_description', '')
         
+        # Use specified exercises or default to all RSI exercises
+        exercises_to_use = exercises if exercises is not None else RSI_EXERCISES
+        
         # Create a JSON string of all available exercises
-        exercises_json = json.dumps(RSI_EXERCISES)
+        exercises_json = json.dumps(exercises_to_use)
         
         # Construct prompt for Claude
         prompt = f"""
-        I need you to select the most appropriate RSI (Repetitive Strain Injury) exercise for a user with the following profile:
+        I need you to select the most appropriate exercise for a user with the following profile:
         
         Name: {name}
         Pain description: {pain_description}
         
-        Below is a list of predefined exercises for finger and wrist RSI. Please select the ONE most appropriate exercise based on the user's pain description:
+        Below is a list of predefined exercises. Please select the ONE most appropriate exercise based on the user's pain description:
         
         {exercises_json}
         
@@ -217,7 +405,7 @@ def select_exercise_with_claude(user_data, api_key):
           "selected_exercise": {{
             "name": "Exercise Name",
             "description": "Detailed description of the exercise and its benefits for this specific user",
-            "target_joints": ["finger", "wrist"],
+            "target_joints": ["joint1", "joint2"],
             "instructions": [
               "Step 1: Detailed instruction",
               "Step 2: Detailed instruction",
@@ -248,7 +436,7 @@ def select_exercise_with_claude(user_data, api_key):
                 "model": "claude-3-opus-20240229",
                 "max_tokens": 800,
                 "temperature": 0.2,
-                "system": "You are a senior physical therapist specializing in RSI rehabilitation for fingers and wrists.",
+                "system": "You are a senior physical therapist specializing in rehabilitation.",
                 "messages": [
                     {"role": "user", "content": prompt}
                 ]
@@ -277,15 +465,21 @@ def select_exercise_with_claude(user_data, api_key):
         # Ensure all required fields are present
         if not all(key in selected_exercise for key in ['name', 'description', 'target_joints', 'instructions']):
             logger.warning("Missing required fields in LLM response, using fallback")
-            return get_fallback_exercise()
+            return get_fallback_exercise(exercises_to_use)
+        
+        # Preserve videoURL from original exercise if available
+        for exercise in exercises_to_use:
+            if exercise['name'] == selected_exercise['name'] and 'videoURL' in exercise:
+                selected_exercise['videoURL'] = exercise['videoURL']
+                break
         
         return selected_exercise
     except Exception as e:
         logger.error(f"Error in select_exercise_with_claude: {str(e)}", exc_info=True)
         # Provide a fallback exercise in case of failure
-        return get_fallback_exercise()
+        return get_fallback_exercise(exercises)
 
-def select_exercise_with_openai(user_data, api_key):
+def select_exercise_with_openai(user_data, api_key, exercises=None):
     """
     Use OpenAI to select the most appropriate exercise from the predefined list
     and generate detailed instructions based on the user's pain description
@@ -295,17 +489,20 @@ def select_exercise_with_openai(user_data, api_key):
         name = user_data.get('name', 'the user')
         pain_description = user_data.get('pain_description', '')
         
+        # Use specified exercises or default to all RSI exercises
+        exercises_to_use = exercises if exercises is not None else RSI_EXERCISES
+        
         # Create a JSON string of all available exercises
-        exercises_json = json.dumps(RSI_EXERCISES)
+        exercises_json = json.dumps(exercises_to_use)
         
         # Construct prompt for OpenAI
         prompt = f"""
-        I need you to select the most appropriate RSI (Repetitive Strain Injury) exercise for a user with the following profile:
+        I need you to select the most appropriate exercise for a user with the following profile:
         
         Name: {name}
         Pain description: {pain_description}
         
-        Below is a list of predefined exercises for finger and wrist RSI. Please select the ONE most appropriate exercise based on the user's pain description:
+        Below is a list of predefined exercises. Please select the ONE most appropriate exercise based on the user's pain description:
         
         {exercises_json}
         
@@ -316,7 +513,7 @@ def select_exercise_with_openai(user_data, api_key):
           "selected_exercise": {{
             "name": "Exercise Name",
             "description": "Detailed description of the exercise and its benefits for this specific user",
-            "target_joints": ["finger", "wrist"],
+            "target_joints": ["joint1", "joint2"],
             "instructions": [
               "Step 1: Detailed instruction",
               "Step 2: Detailed instruction",
@@ -345,7 +542,7 @@ def select_exercise_with_openai(user_data, api_key):
             json={
                 "model": "gpt-4",
                 "messages": [
-                    {"role": "system", "content": "You are a senior physical therapist specializing in RSI rehabilitation for fingers and wrists."},
+                    {"role": "system", "content": "You are a senior physical therapist specializing in rehabilitation."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.2,
@@ -359,21 +556,45 @@ def select_exercise_with_openai(user_data, api_key):
             raise Exception(f"OpenAI API error: {response.text}")
         
         result = response.json()
-        content = result.get('choices', [{}])[0].get('message', {}).get('content', '{}')
+        logger.info(f"OpenAI API response: {result}")  # Log the full response
         
-        response_data = json.loads(content)
+        content = result.get('choices', [{}])[0].get('message', {}).get('content', '{}')
+        logger.info(f"Extracted content: {content}")  # Log the extracted content
+        
+        # Try to clean the content if it contains markdown
+        if '```json' in content:
+            logger.info("Content contains markdown, cleaning...")
+            json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
+                logger.info(f"Cleaned content: {content}")
+        
+        try:
+            response_data = json.loads(content)
+            logger.info(f"Parsed JSON: {response_data}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error: {str(e)}")
+            logger.error(f"Failed content: {content}")
+            raise
+        
         selected_exercise = response_data.get('selected_exercise', {})
         
         # Ensure all required fields are present
         if not all(key in selected_exercise for key in ['name', 'description', 'target_joints', 'instructions']):
             logger.warning("Missing required fields in LLM response, using fallback")
-            return get_fallback_exercise()
+            return get_fallback_exercise(exercises_to_use)
+        
+        # Preserve videoURL from original exercise if available
+        for exercise in exercises_to_use:
+            if exercise['name'] == selected_exercise['name'] and 'videoURL' in exercise:
+                selected_exercise['videoURL'] = exercise['videoURL']
+                break
         
         return selected_exercise
     except Exception as e:
         logger.error(f"Error in select_exercise_with_openai: {str(e)}", exc_info=True)
         # Provide a fallback exercise in case of failure
-        return get_fallback_exercise()
+        return get_fallback_exercise(exercises)
 
 def save_exercise(exercise, user_id):
     """
@@ -401,24 +622,30 @@ def save_exercise(exercise, user_id):
     
     return exercise_doc
 
-def get_fallback_exercise():
+def get_fallback_exercise(exercises=None):
     """
     Return a fallback exercise when API calls fail
     """
-    return {
-        "name": "Wrist Rotations",
-        "description": "Circular wrist movements to improve mobility and reduce stiffness. This exercise helps to maintain range of motion in the wrist joint and can help alleviate symptoms of RSI.",
-        "target_joints": ["wrist"],
-        "instructions": [
-            "Make a gentle fist with your hand",
-            "Slowly rotate your wrist in full circles, 10 times clockwise",
-            "Then rotate 10 times counterclockwise",
-            "Keep your forearm stable and only move your wrist",
-            "Perform this exercise 2-3 times per day"
-        ],
-        "variations": [
-            "Hold light weights (1-2 lbs) for added resistance",
-            "Use resistance bands for a more challenging workout"
-        ],
-        "videoURL": "https://storage.googleapis.com/mvp-vids/wrist_rotation.mp4"
-    }
+    # Use the provided exercises list, or default to ALL_EXERCISES, or fall back to a hardcoded exercise
+    if exercises and len(exercises) > 0:
+        return exercises[0]
+    elif len(ALL_EXERCISES) > 0:
+        return ALL_EXERCISES[0]
+    else:
+        return {
+            "name": "Wrist Rotations",
+            "description": "Circular wrist movements to improve mobility and reduce stiffness. This exercise helps to maintain range of motion in the wrist joint and can help alleviate symptoms of RSI.",
+            "target_joints": ["wrist"],
+            "instructions": [
+                "Make a gentle fist with your hand",
+                "Slowly rotate your wrist in full circles, 10 times clockwise",
+                "Then rotate 10 times counterclockwise",
+                "Keep your forearm stable and only move your wrist",
+                "Perform this exercise 2-3 times per day"
+            ],
+            "variations": [
+                "Hold light weights (1-2 lbs) for added resistance",
+                "Use resistance bands for a more challenging workout"
+            ],
+            "videoURL": "https://storage.googleapis.com/mvp-vids/wrist_rotation.mp4"
+        }

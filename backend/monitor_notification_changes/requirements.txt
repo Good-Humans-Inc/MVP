@@ -3,4 +3,4 @@ functions-framework==3.4.0
 google-cloud-tasks==2.13.1
 google-cloud-firestore==2.11.1
 requests==2.31.0
-google-cloud-secret-manager==2.16.4
+protobuf==4.25.1
