@@ -185,5 +185,7 @@ def serialize_firestore_data(data):
         return [serialize_firestore_data(item) for item in data]
     elif hasattr(data, 'datetime'):  # Handle Firestore Timestamp
         return data.datetime.isoformat()
+    elif isinstance(data, datetime):  # Handle Python datetime objects
+        return data.isoformat()
     else:
         return data
