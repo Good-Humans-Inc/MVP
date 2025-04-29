@@ -1,8 +1,14 @@
 # monitor_notification_changes/main.py
 import functions_framework
+# Firebase Admin imports for database operations
 import firebase_admin
-from firebase_admin import initialize_app, firestore
+from firebase_admin import credentials, firestore as admin_firestore
 from firebase_admin import messaging
+
+# Protobuf event handling imports
+from google.events.cloud import firestore as events_firestore
+from google.protobuf.json_format import MessageToDict
+
 import json
 import requests
 from datetime import datetime, timedelta, timezone
@@ -10,17 +16,14 @@ import uuid
 import sys
 import base64
 
-# Import the correct modules for Firestore events
-from google.events.cloud import firestore
-from google.protobuf.json_format import MessageToDict
-
 # Initialize Firebase Admin
 try:
-    app = initialize_app()
+    app = firebase_admin.initialize_app()
 except ValueError:
-    app = initialize_app()
+    app = firebase_admin.get_app()
 
-db = firestore.Client(project='pepmvp', database='pep-mvp')
+# Create Firestore client - using the admin_firestore module
+db = admin_firestore.Client(project='pepmvp', database='pep-mvp')
 
 @functions_framework.cloud_event
 def monitor_notification_changes(cloud_event):
@@ -68,17 +71,17 @@ def monitor_notification_changes(cloud_event):
             
             # Create appropriate event object
             if event_type == "google.cloud.firestore.document.v1.created":
-                event_data = firestore.DocumentCreatedEvent()
+                event_data = events_firestore.DocumentCreatedEvent()
             elif event_type == "google.cloud.firestore.document.v1.updated":
-                event_data = firestore.DocumentUpdatedEvent()
+                event_data = events_firestore.DocumentUpdatedEvent()
             elif event_type == "google.cloud.firestore.document.v1.deleted":
-                event_data = firestore.DocumentDeletedEvent()
+                event_data = events_firestore.DocumentDeletedEvent()
             elif event_type == "google.cloud.firestore.document.v1.written":
-                event_data = firestore.DocumentWrittenEvent()
+                event_data = events_firestore.DocumentWrittenEvent()
             else:
                 # Default to written event if type not specified
                 print(f"⚠️ Using default DocumentWrittenEvent for type: {event_type}", file=sys.stderr)
-                event_data = firestore.DocumentWrittenEvent()
+                event_data = events_firestore.DocumentWrittenEvent()
             
             # Parse the binary data into the event object
             event_data.ParseFromString(binary_data)
@@ -201,7 +204,6 @@ def monitor_notification_changes(cloud_event):
                         
                     except Exception as schedule_error:
                         print(f"❌ Error scheduling notification: {str(schedule_error)}", file=sys.stderr)
-                        # If Cloud Tasks scheduling fails, we could add fallback here
                 else:
                     print(f"❌ Invalid document path format: {document_value.name}", file=sys.stderr)
             else:
@@ -230,7 +232,7 @@ def cancel_user_notifications(user_id):
         # Update notification status
         db.collection('notifications').document(notif.id).update({
             'status': 'cancelled',
-            'updated_at': firestore.SERVER_TIMESTAMP,
+            'updated_at': admin_firestore.SERVER_TIMESTAMP,
             'cancelled_reason': 'User updated notification preferences'
         })
         
