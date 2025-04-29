@@ -43,14 +43,45 @@ def update_information(request):
         if not user_doc.exists:
             return (json.dumps({'error': 'User not found'}), 404, headers)
         
+        # Get user data for timezone information
+        user_data = user_doc.to_dict()
+        
         # Get update data
         notification_time = request_json.get('notification_time')
         ultimate_goal = request_json.get('ultimate_goal')
         exercise_routine = request_json.get('exercise_routine')
+        user_timezone = request_json.get('timezone')  # Allow client to specify timezone
         
         # Prepare update data
         update_data = {}
         notification_updated = False
+        
+        # Determine user timezone from existing timestamps or from request
+        user_timezone_offset = None
+        if user_timezone:
+            try:
+                # Client provided timezone as hours offset (e.g., -7 for UTC-7)
+                user_timezone_offset = float(user_timezone)
+                print(f"Using client-provided timezone: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}")
+            except (ValueError, TypeError):
+                print(f"Invalid timezone format provided: {user_timezone}")
+        
+        # Try to get timezone from existing timestamps if not provided
+        if user_timezone_offset is None:
+            timezone_indicators = ['last_updated', 'last_token_update', 'updated_at', 'next_notification_time']
+            for field in timezone_indicators:
+                if field in user_data and user_data[field]:
+                    timestamp_value = user_data[field]
+                    # Check if the timestamp has timezone information
+                    if hasattr(timestamp_value, 'tzinfo') and timestamp_value.tzinfo:
+                        user_timezone_offset = timestamp_value.utcoffset().total_seconds() / 3600
+                        print(f"Found user timezone offset from {field}: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}")
+                        break
+        
+        # Default to UTC if we still couldn't determine timezone
+        if user_timezone_offset is None:
+            print("Could not determine user timezone, defaulting to UTC")
+            user_timezone_offset = 0
         
         # Update notification preferences if provided
         if notification_time:
@@ -113,18 +144,12 @@ def update_information(request):
         scheduled_task_id = None
         
         if notification_updated:
-            # Calculate the next notification time
-            now = datetime.now(timezone.utc)
-            next_time = now.replace(
-                hour=update_data['notification_preferences']['hour'], 
+            # Use the standardized function to calculate next notification time
+            next_time = calculate_next_notification_time(
+                hour=update_data['notification_preferences']['hour'],
                 minute=update_data['notification_preferences']['minute'],
-                second=0,
-                microsecond=0
+                user_timezone_offset=user_timezone_offset
             )
-            
-            # If the time has already passed today, schedule for tomorrow
-            if next_time <= now:
-                next_time = next_time + timedelta(days=1)
             
             # Update the user's next_notification_time
             user_ref.update({
@@ -217,16 +242,84 @@ def schedule_notification_task(user_id, scheduled_time, is_one_time=False, custo
     # URL of the schedule_notification Cloud Function
     url = f"https://us-central1-{project_id}.cloudfunctions.net/schedule_notification"
     
+    # Log the payload for debugging
+    print(f"Sending notification schedule request with payload: {json.dumps(payload)}")
+    
     # Make the HTTP request
     response = requests.post(url, json=payload)
     
     # Process the response
+    print(f"Schedule API response status: {response.status_code}")
+    
     if response.status_code == 200:
-        return response.json()
+        try:
+            response_data = response.json()
+            print(f"Schedule API success: {json.dumps(response_data)}")
+            return response_data
+        except json.JSONDecodeError:
+            error_message = f"Failed to parse API response as JSON: {response.text}"
+            print(error_message)
+            raise Exception(error_message)
     else:
-        error_message = f"Failed to schedule notification: {response.text}"
+        error_message = f"Failed to schedule notification: HTTP {response.status_code}: {response.text}"
         print(error_message)
+        try:
+            error_json = response.json()
+            print(f"Error details: {json.dumps(error_json)}")
+        except:
+            print(f"Could not parse error response as JSON")
         raise Exception(error_message)
+
+def calculate_next_notification_time(hour, minute, user_timezone_offset, current_time=None):
+    """
+    Calculate the next notification time in UTC based on user's preferred local time.
+    
+    Args:
+        hour: User's preferred hour (in their local timezone)
+        minute: User's preferred minute
+        user_timezone_offset: User's timezone offset from UTC (in hours)
+        current_time: Current time (defaults to now if not provided)
+    
+    Returns:
+        next_time: The next notification time as a datetime object in UTC
+    """
+    # Use provided time or current UTC time
+    now = current_time or datetime.now(timezone.utc)
+    print(f"Current time (UTC): {now.isoformat()}")
+    
+    # Convert user's preferred hour to UTC
+    user_hour_in_utc = hour - user_timezone_offset
+    print(f"User's {hour}:{minute} in their timezone is {user_hour_in_utc}:{minute} in UTC")
+    
+    # Handle hour wrapping around 24-hour cycle
+    hour_in_utc = int(user_hour_in_utc) % 24
+    
+    # Start with today as the base date
+    base_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Determine if we need to adjust the day
+    day_offset = 0
+    
+    # If the hour conversion puts us in the previous day
+    if user_hour_in_utc < 0:
+        day_offset = 1
+    
+    # Create the target notification time
+    target_time = base_date + timedelta(days=day_offset, hours=hour_in_utc, minutes=minute)
+    print(f"Initial target time (UTC): {target_time.isoformat()}")
+    
+    # If the target time has already passed today, schedule for tomorrow
+    if target_time <= now:
+        target_time += timedelta(days=1)
+        print(f"Time today has passed, scheduling for tomorrow: {target_time.isoformat()}")
+        
+    print(f"Final notification time (UTC): {target_time.isoformat()}")
+    
+    # Calculate what this time would be in the user's timezone (for logging only)
+    user_local_time = target_time.astimezone(timezone(timedelta(hours=user_timezone_offset)))
+    print(f"This equals {user_local_time.strftime('%Y-%m-%d %H:%M:%S')} in user's local timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset})")
+    
+    return target_time
 
 # Helper function to serialize Firestore data for JSON
 def serialize_firestore_data(data):

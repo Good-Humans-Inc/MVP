@@ -192,10 +192,16 @@ def send_notification(request):
                     minute = notification_prefs.get('minute')
                     
                     if hour is not None and minute is not None:
-                        # Calculate next day at the same hour/minute
-                        now = datetime.now(timezone.utc)
-                        tomorrow = now + timedelta(days=1)
-                        next_time = tomorrow.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                        # Get user's timezone offset
+                        user_timezone_offset = get_user_timezone_offset(user_data)
+                        print(f"User timezone offset: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}")
+                        
+                        # Calculate next notification time using the standardized function
+                        next_time = calculate_next_notification_time(
+                            hour=hour,
+                            minute=minute,
+                            user_timezone_offset=user_timezone_offset
+                        )
                         
                         # Update user's next notification time
                         user_ref.update({
@@ -214,11 +220,15 @@ def send_notification(request):
                             # URL of this Cloud Function
                             url = f"https://us-central1-pepmvp.cloudfunctions.net/schedule_notification"
                             
+                            # Log the payload
+                            print(f"Scheduling next notification with payload: {json.dumps(payload)}")
+                            
                             # Make the HTTP request
                             schedule_response = requests.post(url, json=payload)
                             
                             if schedule_response.status_code == 200:
-                                print(f"Successfully scheduled next notification for user {user_id}")
+                                response_data = schedule_response.json()
+                                print(f"Successfully scheduled next notification: {json.dumps(response_data)}")
                             else:
                                 print(f"Failed to schedule next notification: {schedule_response.text}")
                         except Exception as schedule_error:
@@ -269,3 +279,76 @@ def serialize_firestore_data(data):
         return data.datetime.isoformat()
     else:
         return data
+
+# Helper function to determine user timezone
+def get_user_timezone_offset(user_data):
+    """Extract timezone offset from user data timestamps."""
+    timezone_offset = None
+    timezone_indicators = ['last_updated', 'last_token_update', 'updated_at', 'next_notification_time']
+    
+    for field in timezone_indicators:
+        if field in user_data and user_data[field]:
+            timestamp_value = user_data[field]
+            # Check if the timestamp has timezone information
+            if hasattr(timestamp_value, 'tzinfo') and timestamp_value.tzinfo:
+                timezone_offset = timestamp_value.utcoffset().total_seconds() / 3600
+                print(f"Found user timezone offset from {field}: UTC{'+' if timezone_offset >= 0 else ''}{timezone_offset}")
+                break
+    
+    # Default to UTC if we couldn't determine timezone
+    if timezone_offset is None:
+        print("Could not determine user timezone, defaulting to UTC")
+        timezone_offset = 0
+        
+    return timezone_offset
+
+def calculate_next_notification_time(hour, minute, user_timezone_offset, current_time=None):
+    """
+    Calculate the next notification time in UTC based on user's preferred local time.
+    
+    Args:
+        hour: User's preferred hour (in their local timezone)
+        minute: User's preferred minute
+        user_timezone_offset: User's timezone offset from UTC (in hours)
+        current_time: Current time (defaults to now if not provided)
+    
+    Returns:
+        next_time: The next notification time as a datetime object in UTC
+    """
+    # Use provided time or current UTC time
+    now = current_time or datetime.now(timezone.utc)
+    print(f"Current time (UTC): {now.isoformat()}")
+    
+    # Convert user's preferred hour to UTC
+    user_hour_in_utc = hour - user_timezone_offset
+    print(f"User's {hour}:{minute} in their timezone is {user_hour_in_utc}:{minute} in UTC")
+    
+    # Handle hour wrapping around 24-hour cycle
+    hour_in_utc = int(user_hour_in_utc) % 24
+    
+    # Start with today as the base date
+    base_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Determine if we need to adjust the day
+    day_offset = 0
+    
+    # If the hour conversion puts us in the previous day
+    if user_hour_in_utc < 0:
+        day_offset = 1
+    
+    # Create the target notification time
+    target_time = base_date + timedelta(days=day_offset, hours=hour_in_utc, minutes=minute)
+    print(f"Initial target time (UTC): {target_time.isoformat()}")
+    
+    # If the target time has already passed today, schedule for tomorrow
+    if target_time <= now:
+        target_time += timedelta(days=1)
+        print(f"Time today has passed, scheduling for tomorrow: {target_time.isoformat()}")
+        
+    print(f"Final notification time (UTC): {target_time.isoformat()}")
+    
+    # Calculate what this time would be in the user's timezone (for logging only)
+    user_local_time = target_time.astimezone(timezone(timedelta(hours=user_timezone_offset)))
+    print(f"This equals {user_local_time.strftime('%Y-%m-%d %H:%M:%S')} in user's local timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset})")
+    
+    return target_time
