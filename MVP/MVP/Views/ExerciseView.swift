@@ -186,30 +186,27 @@ struct ExerciseView: View {
         remainingTime = exercise.duration
         exerciseDuration = 0
         
-        // Start camera
-        cameraManager.requestCameraAuthorizationIfNeeded { [weak self] authorized in
-            guard let self = self, authorized else {
-                DispatchQueue.main.async {
-                    self?.errorMessage = "Camera access is required for exercise tracking"
-                    self?.showErrorAlert = true
-                }
-                return
+        // Check camera authorization status
+        if !cameraManager.isCameraAuthorized {
+            // Camera not authorized, show error
+            DispatchQueue.main.async {
+                self.errorMessage = "Camera access is required for exercise tracking"
+                self.showErrorAlert = true
             }
-            
-            // Start camera with appropriate configuration
-            self.cameraManager.setupSession()
-            
+            return
+        }
+        
+        // Start camera with appropriate configuration
+        cameraManager.setupSession()
+        cameraManager.startSession(withNotification: true) {
             // Configure vision tracking based on exercise type
             self.visionManager.configureForExercise(self.exercise)
             
             // Start vision processing
-            self.visionManager.startProcessing(self.cameraManager.videoDataOutput)
+            self.visionManager.startProcessing(self.cameraManager.videoOutput)
             
             // Start tracking this exercise
             self.visionManager.startTrackingExercise(self.exercise)
-            
-            // Announce start of exercise
-            self.voiceManager.speak("Starting \(self.exercise.name) exercise. Get ready.")
             
             // Set up timer
             self.startTimer()

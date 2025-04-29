@@ -16,7 +16,6 @@ class VisionManager: NSObject, ObservableObject {
     @Published var currentHandPose: HandPose?
     @Published var detectedJoints: Set<BodyJointType> = []
     @Published var painPoints: Set<BodyJointType> = []
-    @Published var exerciseQuality: ExerciseQuality = .cannotDetermine
     @Published var isProcessing = false
     @Published var processingError: String?
     @Published var detectedHands: [VNHumanHandPoseObservation] = []
@@ -180,21 +179,6 @@ class VisionManager: NSObject, ObservableObject {
             }
         }
         
-        // Check exercise quality if we have a current exercise
-        var quality: ExerciseQuality = .cannotDetermine
-        if let exercise = currentExercise, !exercise.isHandExercise {
-            // Check if the required joints for this exercise are detected
-            let requiredJoints = Set(exercise.targetJoints)
-            let detectedCount = requiredJoints.intersection(detectedJoints).count
-            let detectionRatio = Float(detectedCount) / Float(requiredJoints.count)
-            
-            if detectionRatio > 0.7 {
-                quality = .good
-            } else if detectionRatio > 0.4 {
-                quality = .needsImprovement
-            }
-        }
-        
         DispatchQueue.main.async {
             self.currentBodyPose = bodyPose
             self.detectedJoints = detectedJoints
@@ -202,16 +186,10 @@ class VisionManager: NSObject, ObservableObject {
                 self.detectPainPoints(from: bodyPose)
             }
             
-            // Update exercise quality
-            if let exercise = self.currentExercise, !exercise.isHandExercise {
-                self.exerciseQuality = quality
-            }
-            
             // Update AppState
             self.appState.visionState.currentBodyPose = bodyPose
             self.appState.visionState.isProcessing = true
             self.appState.visionState.error = nil
-            self.appState.visionState.exerciseQuality = quality
             
             // Log joint stats every 30 frames (about 1 second at 30fps)
             if self.frameCount % 30 == 0 {
@@ -238,41 +216,13 @@ class VisionManager: NSObject, ObservableObject {
             }
         }
         
-        // Check hand pose quality for RSI exercises
-        var quality: ExerciseQuality = .cannotDetermine
-        if let exercise = currentExercise, exercise.isHandExercise {
-            // Check if the required hand joints for this exercise are detected
-            let requiredJoints = exercise.handJointTargets
-            var detectedCount = 0
-            
-            for joint in requiredJoints {
-                if let handJoint = handPose.joints[joint], handJoint.isValid {
-                    detectedCount += 1
-                }
-            }
-            
-            let detectionRatio = Float(detectedCount) / Float(requiredJoints.count)
-            
-            if detectionRatio > 0.7 {
-                quality = .good
-            } else if detectionRatio > 0.4 {
-                quality = .needsImprovement
-            }
-        }
-        
         DispatchQueue.main.async {
             self.currentHandPose = handPose
-            
-            // Update exercise quality for hand exercises
-            if let exercise = self.currentExercise, exercise.isHandExercise {
-                self.exerciseQuality = quality
-            }
             
             // Update AppState
             self.appState.visionState.currentHandPose = handPose
             self.appState.visionState.isProcessing = true
             self.appState.visionState.error = nil
-            self.appState.visionState.exerciseQuality = quality
             
             // Log joint stats every 30 frames (about 1 second at 30fps)
             if self.frameCount % 30 == 0 {
@@ -351,7 +301,6 @@ class VisionManager: NSObject, ObservableObject {
     
     func stopTrackingExercise() {
         currentExercise = nil
-        exerciseQuality = .cannotDetermine
     }
     
     // New method to configure tracking for specific exercise
@@ -381,7 +330,6 @@ class VisionManager: NSObject, ObservableObject {
         currentHandPose = nil
         detectedJoints.removeAll()
         painPoints.removeAll()
-        exerciseQuality = .cannotDetermine
     }
     
     // Log hand stats for debugging
@@ -430,7 +378,6 @@ extension AppState {
         @Published var currentHandPose: HandPose?
         @Published var detectedJoints: Set<BodyJointType> = []
         @Published var painPoints: Set<BodyJointType> = []
-        @Published var exerciseQuality: ExerciseQuality = .cannotDetermine
         @Published var isProcessing = false
         @Published var error: String?
         
@@ -439,7 +386,6 @@ extension AppState {
             currentHandPose = nil
             detectedJoints.removeAll()
             painPoints.removeAll()
-            exerciseQuality = .cannotDetermine
             isProcessing = false
             error = nil
         }

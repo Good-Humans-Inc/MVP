@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import UIKit  // Make sure this comes before our custom imports
 
 // MARK: - App State
 class AppState: ObservableObject {
@@ -238,12 +239,18 @@ class ResourceState: ObservableObject {
 }
 
 class VisionState: ObservableObject {
-    @Published var currentPose = BodyPose()
+    @Published var currentBodyPose: BodyPose?
+    @Published var currentHandPose: HandPose?
+    @Published var detectedJoints: Set<BodyJointType> = []
+    @Published var painPoints: Set<BodyJointType> = []
     @Published var isProcessing = false
     @Published var error: String?
     
     func cleanup() {
-        currentPose = BodyPose()
+        currentBodyPose = nil
+        currentHandPose = nil
+        detectedJoints.removeAll()
+        painPoints.removeAll()
         isProcessing = false
         error = nil
     }
