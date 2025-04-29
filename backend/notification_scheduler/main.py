@@ -4,10 +4,26 @@ from firebase_admin import credentials, firestore, messaging
 from datetime import datetime, timezone, timedelta
 import json
 import uuid
+import os
+from google.cloud import firestore
 
-# Initialize Firebase Admin with default credentials
-firebase_admin.initialize_app()
-db = firestore.Client(project='pepmvp', database='pep-mvp')
+try:
+    # Initialize Firebase Admin with default credentials
+    firebase_admin.initialize_app()
+    
+    # Initialize Firestore client properly
+    db = firestore.client()
+    print("✅ Firebase and Firestore initialized successfully")
+except Exception as e:
+    print(f"❌ Error initializing Firebase: {str(e)}")
+    # Continue execution - we'll handle errors in the endpoints
+
+# CORS headers
+headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST',
+    'Access-Control-Allow-Headers': 'Content-Type',
+}
 
 @functions_framework.http
 def check_due_notifications(request):
@@ -16,14 +32,7 @@ def check_due_notifications(request):
     """
     # Enable CORS
     if request.method == 'OPTIONS':
-        headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST',
-            'Access-Control-Allow-Headers': 'Content-Type'
-        }
         return ('', 204, headers)
-    
-    headers = {'Access-Control-Allow-Origin': '*'}
     
     try:
         print("🔍 Starting check for due notifications")
@@ -39,11 +48,18 @@ def check_due_notifications(request):
         print(f"⏰ Checking for notifications between {start_time.isoformat()} and {end_time.isoformat()}")
         
         # Query users with next_notification_time in our window
-        users_query = db.collection('users').where(
-            'next_notification_time', '>=', start_time
-        ).where(
-            'next_notification_time', '<=', end_time
-        ).stream()
+        try:
+            users_query = db.collection('users').where(
+                'next_notification_time', '>=', start_time
+            ).where(
+                'next_notification_time', '<=', end_time
+            ).stream()
+        except Exception as e:
+            print(f"❌ Error querying users collection: {str(e)}")
+            return (json.dumps({
+                'status': 'error',
+                'message': f"Database query error: {str(e)}"
+            }), 500, headers)
         
         processed_count = 0
         sent_count = 0
@@ -91,11 +107,15 @@ def check_due_notifications(request):
                 
                 # Check for recent notifications in the last 15 minutes
                 fifteen_mins_ago = now - timedelta(minutes=15)
-                recent_notifications = db.collection('notifications') \
-                    .where('user_id', '==', user_id) \
-                    .where('created_at', '>', fifteen_mins_ago) \
-                    .limit(1) \
-                    .get()
+                try:
+                    recent_notifications = db.collection('notifications') \
+                        .where('user_id', '==', user_id) \
+                        .where('created_at', '>', fifteen_mins_ago) \
+                        .limit(1) \
+                        .get()
+                except Exception as e:
+                    print(f"❌ Error checking recent notifications for user {user_id}: {str(e)}")
+                    continue
                 
                 if len(list(recent_notifications)) > 0:
                     print(f"⚠️ User {user_id} already received a notification recently, skipping")
@@ -124,17 +144,21 @@ def check_due_notifications(request):
                 device_type = user_data.get('device_type', 'unknown')
                 
                 # Save notification record
-                notification_data = {
-                    'id': notification_id,
-                    'user_id': user_id,
-                    'type': 'exercise_reminder',
-                    'scheduled_for': next_time_dt,
-                    'status': 'scheduled',
-                    'created_at': firestore.SERVER_TIMESTAMP,
-                    'content': notification_content,
-                    'is_one_time': False  # Regular scheduled notification
-                }
-                db.collection('notifications').document(notification_id).set(notification_data)
+                try:
+                    notification_data = {
+                        'id': notification_id,
+                        'user_id': user_id,
+                        'type': 'exercise_reminder',
+                        'scheduled_for': next_time_dt,
+                        'status': 'scheduled',
+                        'created_at': firestore.SERVER_TIMESTAMP,
+                        'content': notification_content,
+                        'is_one_time': False  # Regular scheduled notification
+                    }
+                    db.collection('notifications').document(notification_id).set(notification_data)
+                except Exception as e:
+                    print(f"❌ Error saving notification record for user {user_id}: {str(e)}")
+                    continue
                 
                 # APNS configuration based on device type
                 if device_type and device_type.lower() == 'ios':
@@ -209,11 +233,14 @@ def check_due_notifications(request):
                     print(f"✅ Notification sent to {username}: {response}")
                     
                     # Update notification status
-                    db.collection('notifications').document(notification_id).update({
-                        'status': 'sent',
-                        'sent_at': firestore.SERVER_TIMESTAMP,
-                        'message_id': response
-                    })
+                    try:
+                        db.collection('notifications').document(notification_id).update({
+                            'status': 'sent',
+                            'sent_at': firestore.SERVER_TIMESTAMP,
+                            'message_id': response
+                        })
+                    except Exception as e:
+                        print(f"❌ Error updating notification status for {notification_id}: {str(e)}")
                     
                     # Schedule next notification based on preferences
                     if notification_prefs.get('frequency') == 'daily':
@@ -229,11 +256,14 @@ def check_due_notifications(request):
                                 microsecond=0
                             )
                             
-                            user_ref = db.collection('users').document(user_id)
-                            user_ref.update({
-                                'next_notification_time': next_notification
-                            })
-                            print(f"⏰ Scheduled next notification for user {user_id}: {next_notification.isoformat()}")
+                            try:
+                                user_ref = db.collection('users').document(user_id)
+                                user_ref.update({
+                                    'next_notification_time': next_notification
+                                })
+                                print(f"⏰ Scheduled next notification for user {user_id}: {next_notification.isoformat()}")
+                            except Exception as e:
+                                print(f"❌ Error scheduling next notification for user {user_id}: {str(e)}")
                     
                 except messaging.ApiCallError as fcm_error:
                     error_count += 1
@@ -241,16 +271,22 @@ def check_due_notifications(request):
                     print(f"❌ FCM API Error for user {user_id}: {error_msg}")
                     
                     if 'registration-token-not-registered' in error_msg.lower():
-                        user_ref = db.collection('users').document(user_id)
-                        user_ref.update({
-                            'fcm_token': firestore.DELETE_FIELD,
-                            'notification_status': 'token_expired'
-                        })
+                        try:
+                            user_ref = db.collection('users').document(user_id)
+                            user_ref.update({
+                                'fcm_token': firestore.DELETE_FIELD,
+                                'notification_status': 'token_expired'
+                            })
+                        except Exception as e:
+                            print(f"❌ Error updating user token status for {user_id}: {str(e)}")
                     
-                    db.collection('notifications').document(notification_id).update({
-                        'status': 'failed',
-                        'error': error_msg
-                    })
+                    try:
+                        db.collection('notifications').document(notification_id).update({
+                            'status': 'failed',
+                            'error': error_msg
+                        })
+                    except Exception as e:
+                        print(f"❌ Error updating notification failure status for {notification_id}: {str(e)}")
             
             except Exception as user_error:
                 error_count += 1
