@@ -7,6 +7,7 @@ import requests
 from datetime import datetime, timedelta, timezone
 import sys
 import traceback
+import base64
 
 # Initialize Firebase Admin
 try:
@@ -29,23 +30,72 @@ def monitor_user_preferences(cloud_event):
     print("🔄 User notification preferences change detected", file=sys.stderr)
     
     try:
-        # Extract the resource path from the event data
+        # Check if we have data in the cloud_event
         if not hasattr(cloud_event, 'data') or not cloud_event.data:
             print("❌ No data in cloud_event", file=sys.stderr)
             return
-            
-        if "value" not in cloud_event.data:
-            print("❌ No 'value' field in cloud_event.data", file=sys.stderr)
+        
+        # Handle binary data - convert to JSON object
+        event_data = None
+        try:
+            # First, try parsing as JSON directly (might be a string)
+            if isinstance(cloud_event.data, str):
+                event_data = json.loads(cloud_event.data)
+            # Next, try parsing as binary data
+            elif isinstance(cloud_event.data, bytes):
+                event_data = json.loads(cloud_event.data.decode('utf-8'))
+            else:
+                # If already a dict, use as is
+                event_data = cloud_event.data
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            print(f"❌ Error decoding event data: {str(e)}", file=sys.stderr)
+            print(f"❌ Data type: {type(cloud_event.data)}", file=sys.stderr)
+            if isinstance(cloud_event.data, bytes):
+                print(f"❌ First 100 bytes: {cloud_event.data[:100]}", file=sys.stderr)
             return
             
-        event_value = cloud_event.data.get("value", {})
+        if not event_data or not isinstance(event_data, dict):
+            print(f"❌ Invalid event data format: {type(event_data)}", file=sys.stderr)
+            return
+            
+        # Now safely process the event data
+        if "value" not in event_data:
+            print("❌ No 'value' field in event data", file=sys.stderr)
+            return
+            
+        event_value = event_data.get("value", {})
         if not isinstance(event_value, dict):
             print(f"❌ 'value' is not a dictionary, got {type(event_value)}", file=sys.stderr)
             return
             
+        # Check if we have update mask to determine if relevant fields were changed
+        update_mask = event_data.get("updateMask", {})
+        field_paths = update_mask.get("fieldPaths", []) if isinstance(update_mask, dict) else []
+        
+        # Check if relevant fields were updated
+        relevant_fields = ["notification_preferences", "next_notification_time"]
+        field_updated = False
+        
+        for field in relevant_fields:
+            for updated_path in field_paths:
+                # Check for exact match or path that starts with the field
+                if updated_path == field or updated_path.startswith(f"{field}."):
+                    field_updated = True
+                    print(f"✅ Relevant field updated: {updated_path}", file=sys.stderr)
+                    break
+                    
+            if field_updated:
+                break
+        
+        # Skip processing if no relevant fields were updated
+        if field_paths and not field_updated:
+            print(f"⏭️ No relevant fields updated, fields updated: {field_paths}", file=sys.stderr)
+            return
+            
+        # Extract document info
         resource_path = event_value.get("name")
         if not resource_path:
-            print("❌ No 'name' field in cloud_event.data.value", file=sys.stderr)
+            print("❌ No 'name' field in event data value", file=sys.stderr)
             return
         
         print(f"📄 Resource path: {resource_path}", file=sys.stderr)
