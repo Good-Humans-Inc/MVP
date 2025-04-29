@@ -18,6 +18,7 @@ import uuid
 import sys
 import base64
 import binascii
+import time
 
 # Initialize Firebase Admin
 try:
@@ -28,12 +29,30 @@ except ValueError:
 # Create Firestore client - using the admin_firestore module
 db = admin_firestore.Client(project='pepmvp', database='pep-mvp')
 
+# Keep track of recently processed notifications to prevent duplicates
+# Format: {notification_id: timestamp}
+RECENTLY_PROCESSED = {}
+# How long to consider a notification "recently processed" in seconds
+RECENT_THRESHOLD = 60
+
 def hex_dump(data, length=100):
     """Create a hexdump of binary data for debugging."""
     hex_str = binascii.hexlify(data[:length]).decode('ascii')
     chunks = [hex_str[i:i+2] for i in range(0, len(hex_str), 2)]
     formatted = ' '.join(chunks)
     return formatted
+
+def clean_recently_processed():
+    """Remove old entries from the recently processed dictionary."""
+    current_time = time.time()
+    expired_keys = []
+    
+    for key, timestamp in RECENTLY_PROCESSED.items():
+        if current_time - timestamp > RECENT_THRESHOLD:
+            expired_keys.append(key)
+    
+    for key in expired_keys:
+        del RECENTLY_PROCESSED[key]
 
 @functions_framework.cloud_event
 def monitor_notification_changes(cloud_event):
@@ -44,14 +63,36 @@ def monitor_notification_changes(cloud_event):
     print("🔄 Notification change detected", file=sys.stderr)
     
     try:
-        # Extract the path from the event data
-        resource_path = cloud_event.data["value"]["name"]
+        # Clean old entries from recently processed
+        clean_recently_processed()
+        
+        # Safely extract data from cloud_event
+        if not hasattr(cloud_event, 'data') or not cloud_event.data:
+            print("❌ No data in cloud_event", file=sys.stderr)
+            return
+            
+        # Safely extract the path from the event data
+        if "value" not in cloud_event.data:
+            print("❌ No 'value' field in cloud_event.data", file=sys.stderr)
+            return
+            
+        event_value = cloud_event.data.get("value", {})
+        
+        if not isinstance(event_value, dict):
+            print(f"❌ 'value' is not a dictionary, got {type(event_value)}", file=sys.stderr)
+            return
+            
+        resource_path = event_value.get("name")
+        if not resource_path:
+            print("❌ No 'name' field in cloud_event.data.value", file=sys.stderr)
+            return
+        
         print(f"📄 Resource path: {resource_path}", file=sys.stderr)
         
-        # Extract document data
+        # Extract document data safely
         document_data = None
-        if "fields" in cloud_event.data["value"]:
-            document_data = cloud_event.data["value"]["fields"]
+        if "fields" in event_value:
+            document_data = event_value.get("fields", {})
         else:
             print("❌ No fields found in document data", file=sys.stderr)
             return
@@ -65,17 +106,28 @@ def monitor_notification_changes(cloud_event):
             
             print(f"📄 Collection: {collection_id}, Document: {document_id}", file=sys.stderr)
             
+            # Check if this notification was recently processed
+            if document_id in RECENTLY_PROCESSED:
+                print(f"⚠️ Notification {document_id} was recently processed. Skipping to avoid recursion.", file=sys.stderr)
+                return
+                
             # Only process notifications collection
             if collection_id != "notifications":
                 print(f"⚠️ Ignoring change from collection: {collection_id}", file=sys.stderr)
                 return
                 
-            # Check if notification is already being processed
-            db = admin_firestore.Client()
-            doc_ref = db.collection(collection_id).document(document_id)
-            doc = doc_ref.get()
+            # Mark as recently processed immediately to prevent race conditions
+            RECENTLY_PROCESSED[document_id] = time.time()
             
-            if doc.exists:
+            # Check if notification is already being processed
+            try:
+                doc_ref = db.collection(collection_id).document(document_id)
+                doc = doc_ref.get()
+                
+                if not doc.exists:
+                    print(f"⚠️ Document {document_id} no longer exists", file=sys.stderr)
+                    return
+                    
                 doc_data = doc.to_dict()
                 is_being_processed = doc_data.get("isBeingProcessed", False)
                 
@@ -83,8 +135,14 @@ def monitor_notification_changes(cloud_event):
                     print(f"⚠️ Notification {document_id} is already being processed. Skipping.", file=sys.stderr)
                     return
                     
-                # Mark notification as being processed
-                doc_ref.update({"isBeingProcessed": True})
+                # Add a timestamp to prevent race conditions
+                processing_timestamp = datetime.now(timezone.utc).isoformat()
+                
+                # Mark notification as being processed with a timestamp
+                doc_ref.update({
+                    "isBeingProcessed": True,
+                    "processingStartedAt": processing_timestamp
+                })
                 
                 try:
                     # Process the notification change
@@ -92,16 +150,22 @@ def monitor_notification_changes(cloud_event):
                 finally:
                     # Reset the processing flag
                     try:
-                        doc_ref.update({"isBeingProcessed": False})
+                        doc_ref.update({
+                            "isBeingProcessed": False,
+                            "processingFinishedAt": datetime.now(timezone.utc).isoformat(),
+                            "lastProcessedAt": processing_timestamp
+                        })
                     except Exception as update_error:
                         print(f"❌ Failed to reset processing flag: {str(update_error)}", file=sys.stderr)
-            else:
-                print(f"⚠️ Document {document_id} no longer exists", file=sys.stderr)
+            except Exception as db_error:
+                print(f"❌ Error accessing Firestore: {str(db_error)}", file=sys.stderr)
         else:
             print(f"❌ Invalid path format: {resource_path}", file=sys.stderr)
     
     except Exception as e:
+        import traceback
         print(f"❌ Error processing notification change: {str(e)}", file=sys.stderr)
+        print(f"❌ Traceback: {traceback.format_exc()}", file=sys.stderr)
 
 def process_notification_change(notification_id, document_data):
     """Process changes to a notification document."""
@@ -117,8 +181,23 @@ def process_notification_change(notification_id, document_data):
             print(f"❌ Missing status in notification {notification_id}", file=sys.stderr)
             return
             
-        user_id = document_data["user_id"]["stringValue"]
-        status = document_data["status"]["stringValue"]
+        # Safely extract values from Firestore data format
+        user_id_field = document_data.get("user_id", {})
+        if not isinstance(user_id_field, dict) or "stringValue" not in user_id_field:
+            print(f"❌ Invalid user_id format in notification {notification_id}", file=sys.stderr)
+            return
+            
+        status_field = document_data.get("status", {})
+        if not isinstance(status_field, dict) or "stringValue" not in status_field:
+            print(f"❌ Invalid status format in notification {notification_id}", file=sys.stderr)
+            return
+            
+        user_id = user_id_field.get("stringValue", "")
+        status = status_field.get("stringValue", "")
+        
+        if not user_id or not status:
+            print(f"❌ Empty user_id or status in notification {notification_id}", file=sys.stderr)
+            return
         
         print(f"📄 Processing notification for user: {user_id} with status: {status}", file=sys.stderr)
         
@@ -133,39 +212,54 @@ def process_notification_change(notification_id, document_data):
                 return
                 
             # Get the scheduled time
-            scheduled_time_value = document_data["scheduled_time"]
+            scheduled_time_value = document_data.get("scheduled_time", {})
             
             # Handle different Firestore value types
-            if "timestampValue" in scheduled_time_value:
+            if isinstance(scheduled_time_value, dict) and "timestampValue" in scheduled_time_value:
                 # Parse the timestamp value
-                timestamp_str = scheduled_time_value["timestampValue"]
-                scheduled_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                timestamp_str = scheduled_time_value.get("timestampValue", "")
+                try:
+                    scheduled_time = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                except ValueError as ve:
+                    print(f"❌ Invalid timestamp format: {timestamp_str} - {str(ve)}", file=sys.stderr)
+                    return
             else:
                 print(f"❌ Invalid scheduled_time format in notification {notification_id}", file=sys.stderr)
                 return
                 
-            # Get the notification data
-            title = document_data.get("title", {}).get("stringValue", "Reminder")
-            body = document_data.get("body", {}).get("stringValue", "")
+            # Get the notification data - safely extract optional fields
+            title_field = document_data.get("title", {})
+            title = title_field.get("stringValue", "Reminder") if isinstance(title_field, dict) else "Reminder"
+            
+            body_field = document_data.get("body", {})
+            body = body_field.get("stringValue", "") if isinstance(body_field, dict) else ""
+            
             data = {}
             
-            if "data" in document_data and "mapValue" in document_data["data"]:
-                data_fields = document_data["data"]["mapValue"].get("fields", {})
-                for key, value in data_fields.items():
-                    # Extract value based on type
-                    if "stringValue" in value:
-                        data[key] = value["stringValue"]
-                    elif "integerValue" in value:
-                        data[key] = value["integerValue"]
-                    elif "booleanValue" in value:
-                        data[key] = value["booleanValue"]
+            data_field = document_data.get("data", {})
+            if isinstance(data_field, dict) and "mapValue" in data_field:
+                data_map = data_field.get("mapValue", {})
+                if isinstance(data_map, dict):
+                    data_fields = data_map.get("fields", {})
+                    if isinstance(data_fields, dict):
+                        for key, value in data_fields.items():
+                            if isinstance(value, dict):
+                                # Extract value based on type
+                                if "stringValue" in value:
+                                    data[key] = value.get("stringValue", "")
+                                elif "integerValue" in value:
+                                    data[key] = value.get("integerValue", "0")
+                                elif "booleanValue" in value:
+                                    data[key] = value.get("booleanValue", False)
             
             # Schedule the notification
             try:
                 # Get any existing task name
                 task_name = None
-                if "task_name" in document_data and "stringValue" in document_data["task_name"]:
-                    task_name = document_data["task_name"]["stringValue"]
+                task_name_field = document_data.get("task_name", {})
+                
+                if isinstance(task_name_field, dict) and "stringValue" in task_name_field:
+                    task_name = task_name_field.get("stringValue", "")
                 
                 # If there's an existing task, cancel it first
                 if task_name:
@@ -202,9 +296,15 @@ def process_notification_change(notification_id, document_data):
         
         elif status == "cancelled":
             # Check if there's a task_name field
-            if "task_name" in document_data and "stringValue" in document_data["task_name"]:
-                task_name = document_data["task_name"]["stringValue"]
+            task_name_field = document_data.get("task_name", {})
+            
+            if isinstance(task_name_field, dict) and "stringValue" in task_name_field:
+                task_name = task_name_field.get("stringValue", "")
                 
+                if not task_name:
+                    print(f"⚠️ Empty task_name for cancelled notification {notification_id}", file=sys.stderr)
+                    return
+                    
                 try:
                     # Cancel the notification
                     cancel_notification(task_name)
@@ -227,7 +327,10 @@ def process_notification_change(notification_id, document_data):
         process_user_notification_update(user_id)
         
     except Exception as e:
+        import traceback
         print(f"❌ Error processing notification {notification_id}: {str(e)}", file=sys.stderr)
+        print(f"❌ Traceback: {traceback.format_exc()}", file=sys.stderr)
+        
         # Update notification status to error
         try:
             db = admin_firestore.Client()
@@ -237,6 +340,17 @@ def process_notification_change(notification_id, document_data):
             })
         except Exception as update_error:
             print(f"❌ Failed to update notification status: {str(update_error)}", file=sys.stderr)
+
+# Function to safely cancel a notification
+def cancel_notification(task_name):
+    """Cancel a notification task by its name."""
+    if not task_name:
+        raise ValueError("Task name cannot be empty")
+        
+    from google.cloud import tasks_v2
+    client = tasks_v2.CloudTasksClient()
+    client.delete_task(name=task_name)
+    return True
 
 def process_user_notification_update(user_id):
     """Process a user document update to schedule notifications."""
@@ -388,7 +502,7 @@ def cancel_user_notifications(user_id):
     
     print(f"📊 Cancelled {cancelled_count} notifications for user {user_id}", file=sys.stderr)
 
-def schedule_notification(user_id, scheduled_time, is_one_time=False, custom_title=None, custom_body=None):
+def schedule_notification(user_id, scheduled_time, is_one_time=False, custom_title=None, custom_body=None, notification_id=None, title=None, body=None, data=None):
     """Call the schedule_notification Cloud Function."""
     # Ensure scheduled_time is a string in ISO format
     if isinstance(scheduled_time, datetime):
@@ -400,6 +514,21 @@ def schedule_notification(user_id, scheduled_time, is_one_time=False, custom_tit
         'is_one_time': is_one_time
     }
     
+    # Add notification_id if provided
+    if notification_id:
+        payload['notification_id'] = notification_id
+        
+    # Add content if provided
+    if title:
+        payload['custom_title'] = title
+        
+    if body:
+        payload['custom_body'] = body
+        
+    if data:
+        payload['data'] = data
+    
+    # Add custom content if provided
     if custom_title:
         payload['custom_title'] = custom_title
     
@@ -409,7 +538,7 @@ def schedule_notification(user_id, scheduled_time, is_one_time=False, custom_tit
     # URL of the schedule_notification Cloud Function
     url = f"https://us-central1-pepmvp.cloudfunctions.net/schedule_notification"
     
-    print(f"🔄 Calling schedule_notification with payload: {payload}", file=sys.stderr)
+    print(f"🔄 Calling schedule_notification with payload: {json.dumps(payload)}", file=sys.stderr)
     
     try:
         # Make the HTTP request with a timeout
@@ -419,9 +548,13 @@ def schedule_notification(user_id, scheduled_time, is_one_time=False, custom_tit
         print(f"📡 Schedule API response status: {response.status_code}", file=sys.stderr)
         
         if response.status_code == 200:
-            response_data = response.json()
-            print(f"✅ Schedule API success: {json.dumps(response_data)}", file=sys.stderr)
-            return response_data
+            try:
+                response_data = response.json()
+                print(f"✅ Schedule API success: {json.dumps(response_data)}", file=sys.stderr)
+                return response_data.get('task_name') if isinstance(response_data, dict) else None
+            except json.JSONDecodeError:
+                print(f"⚠️ Could not parse response as JSON: {response.text}", file=sys.stderr)
+                return None
         else:
             error_message = f"Failed to schedule notification: HTTP {response.status_code}: {response.text}"
             print(f"❌ {error_message}", file=sys.stderr)
