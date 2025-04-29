@@ -295,33 +295,71 @@ def process_user_notification_update(user_id):
         hour = notification_prefs.get('hour')
         minute = notification_prefs.get('minute')
         
+        print(f"🕘 Notification preferences: hour={hour}, minute={minute}", file=sys.stderr)
+        
         if hour is None or minute is None:
             print(f"❌ Invalid notification time: hour={hour}, minute={minute}", file=sys.stderr)
             return
         
-        # Get the current notification time if already set
-        existing_next_time = user_data.get('next_notification_time')
-        if existing_next_time:
-            if hasattr(existing_next_time, 'isoformat'):
-                print(f"📅 Existing next notification time: {existing_next_time.isoformat()}", file=sys.stderr)
-            else:
-                print(f"📅 Existing next notification time: {existing_next_time}", file=sys.stderr)
-        else:
-            print("📅 No existing next notification time", file=sys.stderr)
+        # Determine user's timezone by inspecting existing timestamps
+        user_timezone_offset = None
+        timezone_indicators = ['last_updated', 'last_token_update', 'updated_at', 'next_notification_time']
         
-        # Calculate the next notification time
+        for field in timezone_indicators:
+            if field in user_data and user_data[field]:
+                timestamp_value = user_data[field]
+                # Check if the timestamp has timezone information
+                if hasattr(timestamp_value, 'tzinfo') and timestamp_value.tzinfo:
+                    user_timezone_offset = timestamp_value.utcoffset().total_seconds() / 3600
+                    print(f"✅ Found user timezone offset: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}", file=sys.stderr)
+                    break
+        
+        # Default to UTC if we couldn't determine timezone
+        if user_timezone_offset is None:
+            print(f"⚠️ Could not determine user timezone, defaulting to UTC", file=sys.stderr)
+            user_timezone_offset = 0
+        
+        # Convert hour to int to ensure proper handling
+        try:
+            hour = int(hour)
+            minute = int(minute)
+        except (ValueError, TypeError):
+            print(f"❌ Could not convert hour/minute to integers: hour={hour}, minute={minute}", file=sys.stderr)
+            return
+        
+        # Calculate the next notification time in UTC
         now = datetime.now(timezone.utc)
-        next_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        print(f"🕒 Current time (UTC): {now.isoformat()}", file=sys.stderr)
+        
+        # Create a time in the user's timezone first
+        user_hour_in_utc = hour - user_timezone_offset
+        print(f"🕒 User's {hour}:{minute} in their timezone is {user_hour_in_utc}:{minute} in UTC", file=sys.stderr)
+        
+        # Calculate next notification time in UTC based on user's preferred local time
+        next_time = now.replace(hour=int(user_hour_in_utc) % 24, minute=minute, second=0, microsecond=0)
+        if int(user_hour_in_utc) < 0:
+            # Handle case where user timezone pushes hour to previous day
+            next_time = next_time + timedelta(days=1)
+        elif int(user_hour_in_utc) >= 24:
+            # Handle case where user timezone pushes hour to next day
+            next_time = next_time - timedelta(days=1)
+            
+        print(f"🕒 Initial calculated time (UTC): {next_time.isoformat()}", file=sys.stderr)
         
         # If the time has already passed today, schedule for tomorrow
         if next_time <= now:
             next_time = next_time + timedelta(days=1)
             print(f"⏭️ Time today has passed, scheduling for tomorrow: {next_time.isoformat()}", file=sys.stderr)
         
-        print(f"⏰ Calculated next notification time: {next_time.isoformat()}", file=sys.stderr)
+        print(f"⏰ Calculated next notification time in UTC: {next_time.isoformat()}", file=sys.stderr)
+        
+        # Calculate what this time would be in the user's timezone (for logging only)
+        user_local_time = next_time.astimezone(timezone(timedelta(hours=user_timezone_offset)))
+        print(f"⏰ This equals {user_local_time.strftime('%Y-%m-%d %H:%M:%S')} in user's local timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset})", file=sys.stderr)
         
         # Check if this is just a preferences update without changing the time
         # If the existing time is still in the future, keep it
+        existing_next_time = user_data.get('next_notification_time')
         if existing_next_time:
             try:
                 # Handle different datetime types
@@ -341,7 +379,7 @@ def process_user_notification_update(user_id):
                 print(f"⚠️ Error parsing existing notification time: {str(e)}", file=sys.stderr)
                 print(f"⚠️ Using calculated time instead", file=sys.stderr)
         
-        print(f"⏰ Final next notification time: {next_time.isoformat()}", file=sys.stderr)
+        print(f"⏰ Final next notification time (UTC): {next_time.isoformat()}", file=sys.stderr)
         
         # Cancel any existing scheduled notifications
         cancel_user_notifications(user_id)
@@ -350,12 +388,31 @@ def process_user_notification_update(user_id):
         try:
             # Convert datetime to ISO string for the API call
             next_time_iso = next_time.isoformat()
+            print(f"📡 Sending scheduled_time to API: {next_time_iso}", file=sys.stderr)
+            
+            # Debug log the full payload
+            debug_payload = {
+                'user_id': user_id,
+                'scheduled_time': next_time_iso,
+                'is_one_time': False
+            }
+            print(f"📦 Full API payload: {json.dumps(debug_payload)}", file=sys.stderr)
             
             response_data = schedule_notification(
                 user_id=user_id,
                 scheduled_time=next_time_iso,
                 is_one_time=False
             )
+            
+            # Debug the API response
+            print(f"📡 Schedule API response details: {json.dumps(response_data) if response_data else 'None'}", file=sys.stderr)
+            
+            # Check if we got back a task_name and scheduled_for in the response
+            if isinstance(response_data, dict):
+                if 'scheduled_for' in response_data:
+                    print(f"📅 API scheduled time: {response_data['scheduled_for']}", file=sys.stderr)
+                if 'task_name' in response_data:
+                    print(f"🔑 Task name: {response_data['task_name']}", file=sys.stderr)
             
             # Update the user's next notification time
             try:
@@ -366,7 +423,8 @@ def process_user_notification_update(user_id):
             except Exception as update_error:
                 print(f"❌ Error updating user's next_notification_time: {str(update_error)}", file=sys.stderr)
             
-            print(f"✅ Successfully scheduled notification for {user_id} at {next_time.isoformat()}", file=sys.stderr)
+            print(f"✅ Successfully scheduled notification for {user_id} at {next_time.isoformat()} UTC", file=sys.stderr)
+            print(f"✅ This will be {hour}:{minute:02d} in the user's local timezone", file=sys.stderr)
             
         except Exception as schedule_error:
             print(f"❌ Error scheduling notification: {str(schedule_error)}", file=sys.stderr)
