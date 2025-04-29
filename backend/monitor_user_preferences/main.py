@@ -8,6 +8,13 @@ from datetime import datetime, timedelta, timezone
 import sys
 import traceback
 import base64
+import binascii
+
+# For parsing protobuf messages
+import google.protobuf.json_format as json_format
+from google.protobuf.struct_pb2 import Struct
+from google.protobuf import descriptor_pb2
+from google.protobuf.descriptor_pool import DescriptorPool
 
 # Initialize Firebase Admin
 try:
@@ -17,6 +24,15 @@ except ValueError:
 
 # Create Firestore client
 db = admin_firestore.Client(project='pepmvp', database='pep-mvp')
+
+def hex_dump(data, length=250):
+    """Create a hexdump of binary data for debugging."""
+    if not isinstance(data, bytes):
+        return f"Not bytes: {data}"
+    hex_str = binascii.hexlify(data[:length]).decode('ascii')
+    chunks = [hex_str[i:i+2] for i in range(0, len(hex_str), 2)]
+    formatted = ' '.join(chunks)
+    return formatted
 
 @functions_framework.cloud_event
 def monitor_user_preferences(cloud_event):
@@ -35,96 +51,164 @@ def monitor_user_preferences(cloud_event):
             print("❌ No data in cloud_event", file=sys.stderr)
             return
         
-        # Handle binary data - convert to JSON object
+        # Debug cloud event properties
+        print(f"🔍 Cloud Event Type: {cloud_event.type if hasattr(cloud_event, 'type') else 'unknown'}", file=sys.stderr)
+        print(f"🔍 Cloud Event Subject: {cloud_event.subject if hasattr(cloud_event, 'subject') else 'unknown'}", file=sys.stderr)
+        print(f"🔍 Cloud Event ID: {cloud_event.id if hasattr(cloud_event, 'id') else 'unknown'}", file=sys.stderr)
+        print(f"🔍 Cloud Event Data Type: {type(cloud_event.data)}", file=sys.stderr)
+        
+        # Handle binary data - try different approaches
         event_data = None
-        try:
-            # First, try parsing as JSON directly (might be a string)
-            if isinstance(cloud_event.data, str):
+        
+        if isinstance(cloud_event.data, dict):
+            # Already a dict
+            event_data = cloud_event.data
+            print("✅ Data is already a dictionary", file=sys.stderr)
+        elif isinstance(cloud_event.data, str):
+            # Try parsing as JSON string
+            try:
                 event_data = json.loads(cloud_event.data)
-            # Next, try parsing as binary data
-            elif isinstance(cloud_event.data, bytes):
-                event_data = json.loads(cloud_event.data.decode('utf-8'))
-            else:
-                # If already a dict, use as is
-                event_data = cloud_event.data
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            print(f"❌ Error decoding event data: {str(e)}", file=sys.stderr)
-            print(f"❌ Data type: {type(cloud_event.data)}", file=sys.stderr)
-            if isinstance(cloud_event.data, bytes):
-                print(f"❌ First 100 bytes: {cloud_event.data[:100]}", file=sys.stderr)
-            return
+                print("✅ Successfully parsed data as JSON string", file=sys.stderr)
+            except json.JSONDecodeError as e:
+                print(f"❌ Failed to parse as JSON string: {str(e)}", file=sys.stderr)
+        elif isinstance(cloud_event.data, bytes):
+            # Try different approaches for binary data
+            print(f"🔍 Binary data length: {len(cloud_event.data)} bytes", file=sys.stderr)
+            print(f"🔍 Binary data hex dump: {hex_dump(cloud_event.data)}", file=sys.stderr)
             
-        if not event_data or not isinstance(event_data, dict):
-            print(f"❌ Invalid event data format: {type(event_data)}", file=sys.stderr)
-            return
-            
-        # Now safely process the event data
-        if "value" not in event_data:
-            print("❌ No 'value' field in event data", file=sys.stderr)
-            return
-            
-        event_value = event_data.get("value", {})
-        if not isinstance(event_value, dict):
-            print(f"❌ 'value' is not a dictionary, got {type(event_value)}", file=sys.stderr)
-            return
-            
-        # Check if we have update mask to determine if relevant fields were changed
-        update_mask = event_data.get("updateMask", {})
-        field_paths = update_mask.get("fieldPaths", []) if isinstance(update_mask, dict) else []
-        
-        # Check if relevant fields were updated
-        relevant_fields = ["notification_preferences", "next_notification_time"]
-        field_updated = False
-        
-        for field in relevant_fields:
-            for updated_path in field_paths:
-                # Check for exact match or path that starts with the field
-                if updated_path == field or updated_path.startswith(f"{field}."):
-                    field_updated = True
-                    print(f"✅ Relevant field updated: {updated_path}", file=sys.stderr)
-                    break
+            # Try to decode as UTF-8 JSON
+            try:
+                json_str = cloud_event.data.decode('utf-8')
+                event_data = json.loads(json_str)
+                print("✅ Successfully decoded as UTF-8 JSON", file=sys.stderr)
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                print(f"❌ Not UTF-8 JSON: {str(e)}", file=sys.stderr)
+                
+                # Try to parse as protocol buffer
+                try:
+                    # Use the Struct message to parse arbitrary JSON-like data
+                    struct = Struct()
+                    struct.ParseFromString(cloud_event.data)
+                    event_data = json_format.MessageToDict(struct)
+                    print("✅ Successfully parsed as protobuf Struct", file=sys.stderr)
+                except Exception as pb_error:
+                    print(f"❌ Not a protobuf Struct: {str(pb_error)}", file=sys.stderr)
                     
-            if field_updated:
-                break
+                    # Try base64 decoding
+                    try:
+                        decoded = base64.b64decode(cloud_event.data)
+                        try:
+                            json_str = decoded.decode('utf-8')
+                            event_data = json.loads(json_str)
+                            print("✅ Successfully decoded as base64 UTF-8 JSON", file=sys.stderr)
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            print("❌ Base64 decoded data is not UTF-8 JSON", file=sys.stderr)
+                    except Exception as b64_error:
+                        print(f"❌ Not base64 encoded: {str(b64_error)}", file=sys.stderr)
         
-        # Skip processing if no relevant fields were updated
-        if field_paths and not field_updated:
-            print(f"⏭️ No relevant fields updated, fields updated: {field_paths}", file=sys.stderr)
-            return
+        # If all parsing attempts failed, try the raw event
+        if event_data is None:
+            print("⚠️ All parsing attempts failed, trying to extract fields directly from the event", file=sys.stderr)
+            # Get attributes from the cloud event
+            if hasattr(cloud_event, 'attributes') and cloud_event.attributes:
+                print(f"🔍 Event attributes: {cloud_event.attributes}", file=sys.stderr)
+                
+                # Extract resource name from attributes if possible
+                resource_name = None
+                if 'resource' in cloud_event.attributes:
+                    resource_name = cloud_event.attributes['resource']
+                    print(f"🔍 Resource name from attributes: {resource_name}", file=sys.stderr)
+                
+                # If we found a resource name, try to process it
+                if resource_name and '/users/' in resource_name:
+                    # Extract user_id from the resource name
+                    user_id = resource_name.split('/users/')[1]
+                    print(f"✅ Extracted user_id from attributes: {user_id}", file=sys.stderr)
+                    
+                    # Process the user notification update
+                    process_user_notification_update(user_id)
+                    return
+        
+        # If we have event data now, try to process it
+        if event_data:
+            print(f"✅ Successfully parsed event data, keys: {list(event_data.keys())}", file=sys.stderr)
             
-        # Extract document info
-        resource_path = event_value.get("name")
-        if not resource_path:
-            print("❌ No 'name' field in event data value", file=sys.stderr)
-            return
-        
-        print(f"📄 Resource path: {resource_path}", file=sys.stderr)
-        
-        # Extract document data
-        if "fields" not in event_value:
-            print("❌ No fields found in document data", file=sys.stderr)
-            return
+            # Additional debugging
+            if isinstance(event_data, dict):
+                for key, value in event_data.items():
+                    value_str = str(value)
+                    if len(value_str) > 100:
+                        value_str = value_str[:100] + "..."
+                    print(f"🔍 Event data[{key}] = {value_str}", file=sys.stderr)
             
-        # Extract user_id from path
-        # Path format: projects/{project_id}/databases/{database}/documents/users/{user_id}
-        path_parts = resource_path.split('/')
-        if len(path_parts) < 6:
-            print(f"❌ Invalid path format: {resource_path}", file=sys.stderr)
-            return
+            # Check for "value" field in parsed data
+            if "value" not in event_data:
+                print("❌ No 'value' field in parsed event data", file=sys.stderr)
+                return
+                
+            event_value = event_data.get("value", {})
+            if not isinstance(event_value, dict):
+                print(f"❌ 'value' is not a dictionary, got {type(event_value)}", file=sys.stderr)
+                return
+                
+            # Check if we have update mask to determine if relevant fields were changed
+            update_mask = event_data.get("updateMask", {})
+            field_paths = update_mask.get("fieldPaths", []) if isinstance(update_mask, dict) else []
             
-        collection_id = path_parts[-2]
-        user_id = path_parts[-1]
-        
-        print(f"📄 Collection: {collection_id}, User ID: {user_id}", file=sys.stderr)
-        
-        # Only process users collection
-        if collection_id != "users":
-            print(f"⚠️ Ignoring change from non-user collection: {collection_id}", file=sys.stderr)
-            return
+            print(f"🔍 Update Mask Field Paths: {field_paths}", file=sys.stderr)
             
-        # Process user notification update
-        process_user_notification_update(user_id)
-        
+            # Check if relevant fields were updated
+            relevant_fields = ["notification_preferences", "next_notification_time"]
+            field_updated = False
+            
+            # If no specific fields are listed, assume all fields were updated
+            if not field_paths:
+                field_updated = True
+                print("✅ No specific fields listed in update mask, processing update", file=sys.stderr)
+            else:
+                for field in relevant_fields:
+                    for updated_path in field_paths:
+                        # Check for exact match or path that starts with the field
+                        if updated_path == field or updated_path.startswith(f"{field}."):
+                            field_updated = True
+                            print(f"✅ Relevant field updated: {updated_path}", file=sys.stderr)
+                            break
+                        
+                    if field_updated:
+                        break
+            
+            # Skip processing if no relevant fields were updated
+            if field_paths and not field_updated:
+                print(f"⏭️ No relevant fields updated, fields updated: {field_paths}", file=sys.stderr)
+                return
+                
+            # Extract document info
+            resource_path = event_value.get("name")
+            if not resource_path:
+                print("❌ No 'name' field in event data value", file=sys.stderr)
+                return
+            
+            print(f"📄 Resource path: {resource_path}", file=sys.stderr)
+            
+            # Extract user_id from path
+            # Path format: projects/{project_id}/databases/{database}/documents/users/{user_id}
+            if '/users/' not in resource_path:
+                print(f"❌ Not a user document path: {resource_path}", file=sys.stderr)
+                return
+                
+            # Extract user_id from the path
+            user_id = resource_path.split('/users/')[1]
+            if not user_id:
+                print(f"❌ Could not extract user_id from path: {resource_path}", file=sys.stderr)
+                return
+            
+            print(f"📄 Extracted User ID: {user_id}", file=sys.stderr)
+            
+            # Process user notification update
+            process_user_notification_update(user_id)
+        else:
+            print("❌ Failed to parse event data using all available methods", file=sys.stderr)
+            
     except Exception as e:
         print(f"❌ Error processing user preference change: {str(e)}", file=sys.stderr)
         print(f"❌ Traceback: {traceback.format_exc()}", file=sys.stderr)
