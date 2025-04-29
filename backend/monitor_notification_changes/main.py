@@ -1,5 +1,6 @@
 # monitor_notification_changes/main.py
 import functions_framework
+import firebase_admin
 from firebase_admin import initialize_app, firestore
 from firebase_admin import messaging
 import json
@@ -7,6 +8,11 @@ import requests
 from datetime import datetime, timedelta, timezone
 import uuid
 import sys
+import base64
+
+# Import the correct modules for Firestore events
+from google.events.cloud import firestore
+from google.protobuf.json_format import MessageToDict
 
 # Initialize Firebase Admin
 try:
@@ -19,218 +25,190 @@ db = firestore.Client(project='pepmvp', database='pep-mvp')
 @functions_framework.cloud_event
 def monitor_notification_changes(cloud_event):
     """Triggered by a change to a Firestore document."""
-    import sys
     print("🔔 FUNCTION TRIGGERED - STARTING EXECUTION", file=sys.stderr)
     
-    try:
-        # Handle both binary and JSON formats
-        if isinstance(cloud_event.data, bytes):
-            print("📦 Received binary data", file=sys.stderr)
-            # For binary data, try various decoding approaches
-            try:
-                # First try decoding as UTF-8 JSON
-                decoded_data = json.loads(cloud_event.data.decode('utf-8'))
-                print("✅ Successfully decoded binary data as JSON", file=sys.stderr)
-                cloud_event.data = decoded_data
-            except:
-                # If that fails, try decoding as base64
-                try:
-                    import base64
-                    decoded_bytes = base64.b64decode(cloud_event.data)
-                    decoded_data = json.loads(decoded_bytes.decode('utf-8'))
-                    print("✅ Successfully decoded binary data as base64 JSON", file=sys.stderr)
-                    cloud_event.data = decoded_data
-                except:
-                    print(f"❌ Could not decode binary data", file=sys.stderr)
-                    print(f"📦 First few bytes: {cloud_event.data[:30].hex()}", file=sys.stderr)
-                    return
+    # Print full information about the event
+    print(f"📝 Event ID: {getattr(cloud_event, 'id', 'unknown')}", file=sys.stderr)
+    print(f"📝 Event Type: {getattr(cloud_event, 'type', 'unknown')}", file=sys.stderr)
+    print(f"📝 Content Type: {getattr(cloud_event, 'data_content_type', 'unknown')}", file=sys.stderr)
     
-        # Now we should have JSON data
-        print("📦 Event data:", json.dumps(cloud_event.data, indent=2), file=sys.stderr)
-        
-        # Extract document path information
-        path_parts = cloud_event.data["value"]["name"].split("/documents/")[1].split("/")
-        collection_path = path_parts[0]
-        document_path = "/".join(path_parts[1:])
-        
-        print(f"📄 Processing change for: {collection_path}/{document_path}", file=sys.stderr)
-        
-        if collection_path != "users":
-            print("⏭️ Skipping - not a user document change", file=sys.stderr)
-            return
-
-        user_id = path_parts[1]
-        print(f"👤 User ID: {user_id}", file=sys.stderr)
-        
-        # Extract changed document fields
-        if "fields" not in cloud_event.data["value"]:
-            print("❌ No fields found in document change", file=sys.stderr)
-            return
-
-        changed_data = cloud_event.data["value"]["fields"]
-        print("🔄 Document fields:", json.dumps(changed_data, indent=2), file=sys.stderr)
-        
-        # Check if notification preferences were updated
-        if "updateMask" in cloud_event.data and "fieldPaths" in cloud_event.data["updateMask"]:
-            field_paths = cloud_event.data["updateMask"]["fieldPaths"]
-            if "notification_preferences" not in field_paths:
-                print("⏭️ Notification preferences not updated", file=sys.stderr)
-                # Continue anyway to handle the notification time
-                
-        # Access top-level next_notification_time field
-        next_time = changed_data.get("next_notification_time", {}).get("timestampValue")
-        if not next_time:
-            print("⚠️ No next_notification_time found in top-level fields", file=sys.stderr)
-        
-        # Fetch user document from Firestore
-        user_ref = db.collection('users').document(user_id)
-        user_doc = user_ref.get()
-        if not user_doc.exists:
-            print(f"❌ User document {user_id} not found", file=sys.stderr)
-            return
-        
-        user_data = user_doc.to_dict()
-        print(f"📋 User data retrieved: {user_data.get('name', 'Unknown user')}", file=sys.stderr)
-        
-        fcm_token = user_data.get('fcm_token')
-        if not fcm_token:
-            print(f"❌ No FCM token found for user {user_id}", file=sys.stderr)
-            return
-        
-        print(f"📱 Found FCM token: {fcm_token[:10]}...", file=sys.stderr)
-        
-        # Check if notifications are enabled
-        notification_prefs = user_data.get('notification_preferences', {})
-        is_enabled = notification_prefs.get('is_enabled', False)
-        
-        if not is_enabled:
-            print(f"⏭️ Notifications are disabled for user {user_id}", file=sys.stderr)
-            # Cancel any scheduled notifications
-            cancel_user_notifications(user_id)
-            return
-        
-        # Get notification time parameters
-        hour = notification_prefs.get('hour')
-        minute = notification_prefs.get('minute')
-        
-        if hour is None or minute is None:
-            print(f"❌ Invalid notification time: hour={hour}, minute={minute}", file=sys.stderr)
-            return
-            
-        # Calculate the next notification time
-        now = datetime.now(timezone.utc)
-        next_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        
-        # If the time has already passed today, schedule for tomorrow
-        if next_time <= now:
-            next_time = next_time + timedelta(days=1)
-            
-        print(f"⏰ Next notification time: {next_time.isoformat()}", file=sys.stderr)
-        
-        # Cancel any existing scheduled notifications and schedule a new one
-        cancel_user_notifications(user_id)
-        
-        # Schedule the next notification using Cloud Tasks
+    # Print binary data for debugging
+    if isinstance(cloud_event.data, bytes):
+        print(f"📦 Raw binary length: {len(cloud_event.data)} bytes", file=sys.stderr)
+        # Only print the first 100 bytes to avoid overwhelming logs
+        print(f"📦 Binary sample (hex): {cloud_event.data[:100].hex()}", file=sys.stderr)
+    elif isinstance(cloud_event.data, str):
         try:
-            response_data = schedule_notification(
-                user_id=user_id,
-                scheduled_time=next_time.isoformat(),
-                is_one_time=False
-            )
+            # It might be base64 encoded
+            print(f"📦 Data appears to be string of length: {len(cloud_event.data)}", file=sys.stderr)
+            binary_data = base64.b64decode(cloud_event.data)
+            print(f"📦 Decoded base64 length: {len(binary_data)} bytes", file=sys.stderr)
+        except:
+            print(f"📦 Data is string but not base64: {cloud_event.data[:100]}", file=sys.stderr)
+    
+    try:
+        # Determine if we have binary protobuf data
+        binary_data = None
+        if getattr(cloud_event, 'data_content_type', '') == "application/protobuf":
+            # For explicit protobuf content type
+            if isinstance(cloud_event.data, bytes):
+                binary_data = cloud_event.data
+            elif isinstance(cloud_event.data, str):
+                # It might be base64 encoded
+                binary_data = base64.b64decode(cloud_event.data)
+        elif isinstance(cloud_event.data, bytes):
+            # When content type isn't specified but data is binary
+            binary_data = cloud_event.data
+        
+        # If we have binary data, parse it
+        if binary_data:
+            # Determine the event type based on cloud_event.type
+            event_type = getattr(cloud_event, 'type', '')
+            print(f"🔄 Processing event type: {event_type}", file=sys.stderr)
             
-            # Update the user's next notification time
-            user_ref.update({
-                'next_notification_time': next_time
-            })
+            # Create appropriate event object
+            if event_type == "google.cloud.firestore.document.v1.created":
+                event_data = firestore.DocumentCreatedEvent()
+            elif event_type == "google.cloud.firestore.document.v1.updated":
+                event_data = firestore.DocumentUpdatedEvent()
+            elif event_type == "google.cloud.firestore.document.v1.deleted":
+                event_data = firestore.DocumentDeletedEvent()
+            elif event_type == "google.cloud.firestore.document.v1.written":
+                event_data = firestore.DocumentWrittenEvent()
+            else:
+                # Default to written event if type not specified
+                print(f"⚠️ Using default DocumentWrittenEvent for type: {event_type}", file=sys.stderr)
+                event_data = firestore.DocumentWrittenEvent()
             
-            print(f"✅ Successfully scheduled next notification for {user_id} at {next_time.isoformat()}", file=sys.stderr)
+            # Parse the binary data into the event object
+            event_data.ParseFromString(binary_data)
+            print(f"✅ Successfully parsed protobuf data", file=sys.stderr)
             
-        except Exception as schedule_error:
-            print(f"❌ Error scheduling notification: {str(schedule_error)}", file=sys.stderr)
+            # Print the parsed data for debugging
+            event_dict = MessageToDict(event_data._pb)
+            print(f"📦 Event data preview: {str(event_dict)[:500]}...", file=sys.stderr)
             
-            # If Cloud Tasks scheduling fails, try direct FCM notification approach as backup
-            try:
-                # Prepare notification content
-                next_day_data = user_data.get('next_day_notification', {})
-                notification_content = {
-                    'title': next_day_data.get('title', 'Time for Exercise!'),
-                    'body': next_day_data.get('body', 'Time to work on your exercises!')
-                }
-                print(f"📬 Notification content: {notification_content}", file=sys.stderr)
+            # Extract document information
+            document_value = None
+            old_value = None
+            update_mask = None
+            
+            # Extract the appropriate fields based on event type
+            if hasattr(event_data, 'value') and event_data.value:
+                document_value = event_data.value
+                print(f"📄 Document: {document_value.name}", file=sys.stderr)
+            
+            if hasattr(event_data, 'old_value') and event_data.old_value:
+                old_value = event_data.old_value
+                print(f"📄 Old document: {old_value.name}", file=sys.stderr)
                 
-                notification_id = str(uuid.uuid4())
-
-                # Compose message
-                message = messaging.Message(
-                    notification=messaging.Notification(
-                        title=notification_content['title'],
-                        body=notification_content['body']
-                    ),
-                    data={
-                        'notification_id': notification_id,
-                        'user_id': user_id,
-                        'type': 'exercise_reminder'
-                    },
-                    token=fcm_token,
-                    android=messaging.AndroidConfig(
-                        priority='high',
-                        notification=messaging.AndroidNotification(
-                            priority='high',
-                            channel_id='exercise_reminders'
+            if hasattr(event_data, 'update_mask') and event_data.update_mask:
+                update_mask = event_data.update_mask
+                print(f"🔄 Updated fields: {update_mask.field_paths}", file=sys.stderr)
+            
+            # Process document change
+            if document_value and document_value.name:
+                # Extract collection and document from full path
+                path_parts = document_value.name.split("/documents/")[1].split("/") if "/documents/" in document_value.name else []
+                if len(path_parts) >= 2:
+                    collection_path = path_parts[0]
+                    document_id = path_parts[1]
+                    
+                    print(f"📄 Collection: {collection_path}, Document ID: {document_id}", file=sys.stderr)
+                    
+                    if collection_path != "users":
+                        print("⏭️ Skipping - not a user document change", file=sys.stderr)
+                        return
+                    
+                    user_id = document_id
+                    print(f"👤 User ID: {user_id}", file=sys.stderr)
+                    
+                    # Check if notification preferences were updated
+                    notification_prefs_updated = False
+                    if update_mask and update_mask.field_paths:
+                        print(f"🔄 Updated fields: {update_mask.field_paths}", file=sys.stderr)
+                        if 'notification_preferences' in update_mask.field_paths:
+                            notification_prefs_updated = True
+                            print("✅ Notification preferences were updated", file=sys.stderr)
+                        else:
+                            print("⏭️ Notification preferences not updated", file=sys.stderr)
+                    
+                    # Continue processing regardless, as long as we have the user ID
+                    # Fetch user document from Firestore to get current state
+                    user_ref = db.collection('users').document(user_id)
+                    user_doc = user_ref.get()
+                    
+                    if not user_doc.exists:
+                        print(f"❌ User document {user_id} not found", file=sys.stderr)
+                        return
+                    
+                    user_data = user_doc.to_dict()
+                    print(f"📋 User data retrieved: {user_data.get('name', 'Unknown user')}", file=sys.stderr)
+                    
+                    # Check FCM token
+                    fcm_token = user_data.get('fcm_token')
+                    if not fcm_token:
+                        print(f"❌ No FCM token found for user {user_id}", file=sys.stderr)
+                        return
+                    
+                    print(f"📱 Found FCM token: {fcm_token[:10]}...", file=sys.stderr)
+                    
+                    # Check if notifications are enabled
+                    notification_prefs = user_data.get('notification_preferences', {})
+                    is_enabled = notification_prefs.get('is_enabled', False)
+                    
+                    if not is_enabled:
+                        print(f"⏭️ Notifications are disabled for user {user_id}", file=sys.stderr)
+                        # Cancel any scheduled notifications
+                        cancel_user_notifications(user_id)
+                        return
+                    
+                    # Get notification time parameters
+                    hour = notification_prefs.get('hour')
+                    minute = notification_prefs.get('minute')
+                    
+                    if hour is None or minute is None:
+                        print(f"❌ Invalid notification time: hour={hour}, minute={minute}", file=sys.stderr)
+                        return
+                        
+                    # Calculate the next notification time
+                    now = datetime.now(timezone.utc)
+                    next_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                    
+                    # If the time has already passed today, schedule for tomorrow
+                    if next_time <= now:
+                        next_time = next_time + timedelta(days=1)
+                        
+                    print(f"⏰ Next notification time: {next_time.isoformat()}", file=sys.stderr)
+                    
+                    # Cancel any existing scheduled notifications
+                    cancel_user_notifications(user_id)
+                    
+                    # Schedule the next notification using Cloud Tasks
+                    try:
+                        response_data = schedule_notification(
+                            user_id=user_id,
+                            scheduled_time=next_time.isoformat(),
+                            is_one_time=False
                         )
-                    ),
-                    apns=messaging.APNSConfig(
-                        payload=messaging.APNSPayload(
-                            aps=messaging.Aps(
-                                sound='default',
-                                badge=1,
-                                content_available=True,
-                                mutable_content=True,
-                                priority=10,
-                                category='EXERCISE_REMINDER'
-                            )
-                        ),
-                        headers={
-                            'apns-push-type': 'background',
-                            'apns-priority': '5',
-                            'apns-topic': 'yanfryy.xyz.MVP'  # Your actual iOS bundle ID
-                        }
-                    )
-                )
-
-                # Save notification in Firestore
-                notification_data = {
-                    'id': notification_id,
-                    'user_id': user_id,
-                    'type': 'exercise_reminder',
-                    'scheduled_for': firestore.SERVER_TIMESTAMP,
-                    'status': 'scheduled',
-                    'created_at': firestore.SERVER_TIMESTAMP,
-                    'content': notification_content
-                }
-                db.collection('notifications').document(notification_id).set(notification_data)
-                print(f"✅ Notification document created: {notification_id}", file=sys.stderr)
-
-                try:
-                    response = messaging.send(message)
-                    print(f"✅ Notification sent: {response}", file=sys.stderr)
-
-                    db.collection('notifications').document(notification_id).update({
-                        'status': 'sent',
-                        'sent_at': firestore.SERVER_TIMESTAMP,
-                        'message_id': response
-                    })
-                    print("✅ Notification status updated to 'sent'", file=sys.stderr)
-
-                except Exception as send_error:
-                    print(f"❌ Error sending notification: {str(send_error)}", file=sys.stderr)
-                    db.collection('notifications').document(notification_id).update({
-                        'status': 'failed',
-                        'error': str(send_error)
-                    })
-            except Exception as direct_notify_error:
-                print(f"❌ Error with direct notification: {str(direct_notify_error)}", file=sys.stderr)
-
+                        
+                        # Update the user's next notification time
+                        user_ref.update({
+                            'next_notification_time': next_time
+                        })
+                        
+                        print(f"✅ Successfully scheduled notification for {user_id} at {next_time.isoformat()}", file=sys.stderr)
+                        
+                    except Exception as schedule_error:
+                        print(f"❌ Error scheduling notification: {str(schedule_error)}", file=sys.stderr)
+                        # If Cloud Tasks scheduling fails, we could add fallback here
+                else:
+                    print(f"❌ Invalid document path format: {document_value.name}", file=sys.stderr)
+            else:
+                print("❌ No document value in event data", file=sys.stderr)
+        else:
+            print("❌ Could not extract binary data from event", file=sys.stderr)
+            
     except Exception as e:
         print(f"❌ ERROR: {str(e)}", file=sys.stderr)
         import traceback
@@ -300,15 +278,3 @@ def schedule_notification(user_id, scheduled_time, is_one_time=False, custom_tit
         error_message = f"Failed to schedule notification: {response.text}"
         print(f"❌ {error_message}", file=sys.stderr)
         raise Exception(error_message)
-
-# Helper function to serialize Firestore data for JSON
-def serialize_firestore_data(data):
-    """Helper function to serialize Firestore data for JSON."""
-    if isinstance(data, dict):
-        return {k: serialize_firestore_data(v) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [serialize_firestore_data(item) for item in data]
-    elif hasattr(data, 'datetime'):  # Handle Firestore Timestamp
-        return data.datetime.isoformat()
-    else:
-        return data
