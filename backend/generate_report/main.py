@@ -210,6 +210,30 @@ Guidelines for each field:
             user_doc = user_ref.get()
             user_data = user_doc.to_dict()
             
+            # Get next notification time
+            next_notification_time = user_data.get('next_notification_time')
+            readable_time = "your scheduled time"
+            
+            # Format next notification time if available
+            if next_notification_time:
+                # Handle Firestore timestamp or datetime
+                if hasattr(next_notification_time, 'datetime'):
+                    time_obj = next_notification_time.datetime
+                else:
+                    time_obj = next_notification_time
+                    
+                # Format as AM/PM for better readability
+                hour = time_obj.hour
+                minute = time_obj.minute
+                am_pm = "AM" if hour < 12 else "PM"
+                display_hour = hour if hour <= 12 else hour - 12
+                if display_hour == 0:
+                    display_hour = 12
+                readable_time = f"{display_hour}:{minute:02d} {am_pm}"
+                print(f"📅 Next notification scheduled for: {readable_time}")
+            else:
+                print("⚠️ No next_notification_time found in user data")
+            
             # Get user's exercises
             user_exercises = db.collection('user_exercises').where('user_id', '==', user_id).get()
             exercise_names = []
@@ -230,13 +254,19 @@ Guidelines for each field:
             )
             
             # Save to user's document for next day use
-            user_ref.update({
+            next_notification_update = {
                 'next_day_notification': {
                     'title': notification_content['title'],
                     'body': notification_content['body'],
                     'created_at': firestore.SERVER_TIMESTAMP
                 }
-            })
+            }
+            
+            # Add next_notification_time if available
+            if next_notification_time:
+                next_notification_update['next_day_notification']['scheduled_time'] = next_notification_time
+                
+            user_ref.update(next_notification_update)
             
             print(f"✅ Generated and stored next day notification message for user {user_id}")
             
@@ -422,6 +452,27 @@ def generate_notification_content(user_name, exercise_names, user_data):
         exercise_history = user_data.get('exercise_history', [])
         streak = len(exercise_history)
         
+        # Get next notification time
+        next_notification_time = user_data.get('next_notification_time')
+        readable_time = "your scheduled time"
+        
+        # Format next notification time if available
+        if next_notification_time:
+            # Handle Firestore timestamp or datetime
+            if hasattr(next_notification_time, 'datetime'):
+                time_obj = next_notification_time.datetime
+            else:
+                time_obj = next_notification_time
+                
+            # Format as AM/PM for better readability
+            hour = time_obj.hour
+            minute = time_obj.minute
+            am_pm = "AM" if hour < 12 else "PM"
+            display_hour = hour if hour <= 12 else hour - 12
+            if display_hour == 0:
+                display_hour = 12
+            readable_time = f"{display_hour}:{minute:02d} {am_pm}"
+        
         # Create prompt for OpenAI
         prompt = f"""Generate a motivational exercise reminder notification for a physical therapy user with the following details:
 
@@ -429,6 +480,7 @@ User Name: {user_name}
 Exercises: {', '.join(exercise_names)}
 Current Streak: {streak} days
 Preferred Tone: {preferred_tone}
+Next Notification Time: {readable_time}
 
 The notification should have:
 1. A catchy title (max 44 characters)
@@ -436,6 +488,7 @@ The notification should have:
 3. Be {preferred_tone} in tone
 4. Mention specific exercises if provided
 5. Include streak information if significant (>3 days)
+6. If relevant, reference the scheduled time ({readable_time})
 
 Format the response as JSON:
 {{
