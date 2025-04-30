@@ -228,7 +228,8 @@ def update_information(request):
             if 'next_notification_time' in update_data:
                 print(f"Specific next notification time set to {update_data['next_notification_time']}. Ensure scheduler handles this.")
             
-        return (json.dumps(response_data), 200, headers)
+        print(f"Sending successful response: {json.dumps(serialize_firestore_data(response_data))}")
+        return (json.dumps(serialize_firestore_data(response_data)), 200, headers)
             
     except Exception as e:
         import traceback

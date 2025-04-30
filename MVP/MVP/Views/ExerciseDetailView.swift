@@ -313,7 +313,7 @@ struct ExerciseDetailView: View {
         appState.userId = nil
         appState.isOnboardingComplete = false
         appState.currentAgentType = nil
-
+        
         print("📊 DEBUG: ExerciseDetailView - Post-reset state:")
         print("- appState.hasUserId: \(appState.hasUserId)")
         print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
@@ -348,9 +348,9 @@ struct ExerciseDetailView: View {
                         // Set current exercise ID after session starts
                         // Ensure exercise.id is the correct string representation needed
                         self.voiceManager.setCurrentExercise(id: self.exercise.id.uuidString.lowercased())
-                        
-                        // Show the exercise view
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            
+                            // Show the exercise view
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             self.isStartingExercise = false
                             self.showingExerciseView = true
                         }
