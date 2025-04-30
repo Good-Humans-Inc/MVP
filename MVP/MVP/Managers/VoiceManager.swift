@@ -264,6 +264,7 @@ class VoiceManager: NSObject, ObservableObject {
                         dynamicVars["exercise_routine"] = .string(userManager.exerciseRoutine) // Assuming UserManager has this
                         dynamicVars["user_goals"] = .string(userManager.userGoals) // Assuming UserManager has this
                         dynamicVars["pain_description"] = .string(userManager.painDescription)
+                        dynamicVars["notification_time"] = .string(userManager.notificationTime)
 
                         // Add basic exercise info (example, adjust keys as needed)
                         if let name = exercise["name"] as? String {
