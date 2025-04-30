@@ -412,19 +412,55 @@ def select_exercise_with_claude(user_data, api_key, exercises=None):
     try:
         # Extract user info
         name = user_data.get('name', 'the user')
-        # Use the injury field instead of pain_description
-        pain_description = user_data.get('injury', '')
+        
+        # Check both pain_description and injury fields
+        pain_description = user_data.get('pain_description', '') or user_data.get('injury', '')
+        pain_level = user_data.get('pain_level', '')
+        
+        # Add pain level to description if available
+        if pain_level:
+            pain_description = f"{pain_description} (Pain level: {pain_level})"
+            
         print(f"📋 Using pain description for Claude: '{pain_description}'")
         
-        # Use specified exercises or default to all RSI exercises
-        exercises_to_use = exercises if exercises is not None else RSI_EXERCISES
+        # Use specified exercises or default to all exercises
+        exercises_to_use = exercises if exercises is not None else ALL_EXERCISES
         
-        # If user has finger pain, prioritize finger exercises
-        if pain_description and 'finger' in pain_description.lower():
-            finger_exercises = [ex for ex in ALL_EXERCISES if 'finger' in ' '.join(ex.get('target_joints', [])).lower()]
-            if finger_exercises:
-                print(f"📋 Found {len(finger_exercises)} finger exercises based on injury")
-                exercises_to_use = finger_exercises
+        # Pre-filter exercises based on pain description keywords if no target_joint was specified
+        if pain_description and exercises_to_use == ALL_EXERCISES:
+            pain_description_lower = pain_description.lower()
+            
+            # Check for specific body parts in the pain description
+            if any(keyword in pain_description_lower for keyword in ['ankle', 'foot', 'feet']):
+                print(f"📋 Found ankle-related keywords in pain description")
+                ankle_exercises = [ex for ex in ALL_EXERCISES if 'ankle' in ' '.join(ex.get('target_joints', [])).lower()]
+                if ankle_exercises:
+                    exercises_to_use = ankle_exercises
+                    
+            elif any(keyword in pain_description_lower for keyword in ['knee', 'leg']):
+                print(f"📋 Found knee-related keywords in pain description")
+                knee_exercises = [ex for ex in ALL_EXERCISES if 'knee' in ' '.join(ex.get('target_joints', [])).lower()]
+                if knee_exercises:
+                    exercises_to_use = knee_exercises
+                    
+            elif any(keyword in pain_description_lower for keyword in ['back', 'spine', 'posture']):
+                print(f"📋 Found back-related keywords in pain description")
+                back_exercises = [ex for ex in ALL_EXERCISES if 'lower_back' in ' '.join(ex.get('target_joints', [])).lower()]
+                if back_exercises:
+                    exercises_to_use = back_exercises
+                    
+            elif any(keyword in pain_description_lower for keyword in ['shoulder', 'arm', 'neck']):
+                print(f"📋 Found shoulder-related keywords in pain description")
+                shoulder_exercises = [ex for ex in ALL_EXERCISES if 'shoulder' in ' '.join(ex.get('target_joints', [])).lower()]
+                if shoulder_exercises:
+                    exercises_to_use = shoulder_exercises
+                    
+            elif any(keyword in pain_description_lower for keyword in ['finger', 'hand', 'wrist']):
+                print(f"📋 Found hand-related keywords in pain description")
+                finger_exercises = [ex for ex in ALL_EXERCISES if 'finger' in ' '.join(ex.get('target_joints', [])).lower()]
+                wrist_exercises = [ex for ex in ALL_EXERCISES if 'wrist' in ' '.join(ex.get('target_joints', [])).lower()]
+                if finger_exercises or wrist_exercises:
+                    exercises_to_use = finger_exercises + wrist_exercises
         
         # Create a JSON string of all available exercises
         exercises_json = json.dumps(exercises_to_use)
@@ -478,7 +514,7 @@ def select_exercise_with_claude(user_data, api_key, exercises=None):
                 "model": "claude-3-opus-20240229",
                 "max_tokens": 800,
                 "temperature": 0.2,
-                "system": "You are a senior physical therapist specializing in rehabilitation.",
+                "system": "You are a senior physical therapist specializing in rehabilitation. You must respond with only a JSON object.",
                 "messages": [
                     {"role": "user", "content": prompt}
                 ]
@@ -501,13 +537,19 @@ def select_exercise_with_claude(user_data, api_key, exercises=None):
         else:
             exercise_json = content  # Assume the content is just JSON
         
-        response_data = json.loads(exercise_json)
-        selected_exercise = response_data.get('selected_exercise', {})
+        try:
+            response_data = json.loads(exercise_json)
+            selected_exercise = response_data.get('selected_exercise', {})
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error: {str(e)}")
+            logger.error(f"Failed content: {content}")
+            # Use pain description to select appropriate fallback
+            return get_fallback_exercise_for_pain(pain_description, exercises_to_use)
         
         # Ensure all required fields are present
         if not all(key in selected_exercise for key in ['name', 'description', 'target_joints', 'instructions']):
             logger.warning("Missing required fields in LLM response, using fallback")
-            return get_fallback_exercise(exercises_to_use)
+            return get_fallback_exercise_for_pain(pain_description, exercises_to_use)
         
         # Preserve videoURL from original exercise if available
         for exercise in exercises_to_use:
@@ -519,7 +561,7 @@ def select_exercise_with_claude(user_data, api_key, exercises=None):
     except Exception as e:
         logger.error(f"Error in select_exercise_with_claude: {str(e)}", exc_info=True)
         # Provide a fallback exercise in case of failure
-        return get_fallback_exercise(exercises)
+        return get_fallback_exercise_for_pain(pain_description, exercises)
 
 def select_exercise_with_openai(user_data, api_key, exercises=None):
     """
@@ -529,19 +571,55 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
     try:
         # Extract user info
         name = user_data.get('name', 'the user')
-        # Use the injury field instead of pain_description
-        pain_description = user_data.get('injury', '')
+        
+        # Check both pain_description and injury fields
+        pain_description = user_data.get('pain_description', '') or user_data.get('injury', '')
+        pain_level = user_data.get('pain_level', '')
+        
+        # Add pain level to description if available
+        if pain_level:
+            pain_description = f"{pain_description} (Pain level: {pain_level})"
+            
         print(f"📋 Using pain description for OpenAI: '{pain_description}'")
         
-        # Use specified exercises or default to all RSI exercises
-        exercises_to_use = exercises if exercises is not None else RSI_EXERCISES
+        # Use specified exercises or default to all exercises
+        exercises_to_use = exercises if exercises is not None else ALL_EXERCISES
         
-        # If user has finger pain, prioritize finger exercises
-        if pain_description and 'finger' in pain_description.lower():
-            finger_exercises = [ex for ex in ALL_EXERCISES if 'finger' in ' '.join(ex.get('target_joints', [])).lower()]
-            if finger_exercises:
-                print(f"📋 Found {len(finger_exercises)} finger exercises based on injury")
-                exercises_to_use = finger_exercises
+        # Pre-filter exercises based on pain description keywords if no target_joint was specified
+        if pain_description and exercises_to_use == ALL_EXERCISES:
+            pain_description_lower = pain_description.lower()
+            
+            # Check for specific body parts in the pain description
+            if any(keyword in pain_description_lower for keyword in ['ankle', 'foot', 'feet']):
+                print(f"📋 Found ankle-related keywords in pain description")
+                ankle_exercises = [ex for ex in ALL_EXERCISES if 'ankle' in ' '.join(ex.get('target_joints', [])).lower()]
+                if ankle_exercises:
+                    exercises_to_use = ankle_exercises
+                    
+            elif any(keyword in pain_description_lower for keyword in ['knee', 'leg']):
+                print(f"📋 Found knee-related keywords in pain description")
+                knee_exercises = [ex for ex in ALL_EXERCISES if 'knee' in ' '.join(ex.get('target_joints', [])).lower()]
+                if knee_exercises:
+                    exercises_to_use = knee_exercises
+                    
+            elif any(keyword in pain_description_lower for keyword in ['back', 'spine', 'posture']):
+                print(f"📋 Found back-related keywords in pain description")
+                back_exercises = [ex for ex in ALL_EXERCISES if 'lower_back' in ' '.join(ex.get('target_joints', [])).lower()]
+                if back_exercises:
+                    exercises_to_use = back_exercises
+                    
+            elif any(keyword in pain_description_lower for keyword in ['shoulder', 'arm', 'neck']):
+                print(f"📋 Found shoulder-related keywords in pain description")
+                shoulder_exercises = [ex for ex in ALL_EXERCISES if 'shoulder' in ' '.join(ex.get('target_joints', [])).lower()]
+                if shoulder_exercises:
+                    exercises_to_use = shoulder_exercises
+                    
+            elif any(keyword in pain_description_lower for keyword in ['finger', 'hand', 'wrist']):
+                print(f"📋 Found hand-related keywords in pain description")
+                finger_exercises = [ex for ex in ALL_EXERCISES if 'finger' in ' '.join(ex.get('target_joints', [])).lower()]
+                wrist_exercises = [ex for ex in ALL_EXERCISES if 'wrist' in ' '.join(ex.get('target_joints', [])).lower()]
+                if finger_exercises or wrist_exercises:
+                    exercises_to_use = finger_exercises + wrist_exercises
         
         # Create a JSON string of all available exercises
         exercises_json = json.dumps(exercises_to_use)
@@ -593,7 +671,7 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
             json={
                 "model": "gpt-4",
                 "messages": [
-                    {"role": "system", "content": "You are a senior physical therapist specializing in rehabilitation."},
+                    {"role": "system", "content": "You are a senior physical therapist specializing in rehabilitation. You must respond with only a JSON object."},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.2,
@@ -626,14 +704,16 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing error: {str(e)}")
             logger.error(f"Failed content: {content}")
-            raise
+            
+            # Use pain description to select appropriate fallback
+            return get_fallback_exercise_for_pain(pain_description, exercises_to_use)
         
         selected_exercise = response_data.get('selected_exercise', {})
         
         # Ensure all required fields are present
         if not all(key in selected_exercise for key in ['name', 'description', 'target_joints', 'instructions']):
             logger.warning("Missing required fields in LLM response, using fallback")
-            return get_fallback_exercise(exercises_to_use)
+            return get_fallback_exercise_for_pain(pain_description, exercises_to_use)
         
         # Preserve videoURL from original exercise if available
         for exercise in exercises_to_use:
@@ -645,7 +725,7 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
     except Exception as e:
         logger.error(f"Error in select_exercise_with_openai: {str(e)}", exc_info=True)
         # Provide a fallback exercise in case of failure
-        return get_fallback_exercise(exercises)
+        return get_fallback_exercise_for_pain(pain_description, exercises)
 
 def save_exercise(exercise, user_id):
     """
@@ -673,30 +753,75 @@ def save_exercise(exercise, user_id):
     
     return exercise_doc
 
-def get_fallback_exercise(exercises=None):
+def get_fallback_exercise_for_pain(pain_description, exercises=None):
     """
-    Return a fallback exercise when API calls fail
+    Return a fallback exercise when API calls fail, based on pain description when available
     """
-    # Use the provided exercises list, or default to ALL_EXERCISES, or fall back to a hardcoded exercise
-    if exercises and len(exercises) > 0:
-        return exercises[0]
-    elif len(ALL_EXERCISES) > 0:
-        return ALL_EXERCISES[0]
-    else:
-        return {
-            "name": "Wrist Rotations",
-            "description": "Circular wrist movements to improve mobility and reduce stiffness. This exercise helps to maintain range of motion in the wrist joint and can help alleviate symptoms of RSI.",
-            "target_joints": ["wrist"],
-            "instructions": [
-                "Make a gentle fist with your hand",
-                "Slowly rotate your wrist in full circles, 10 times clockwise",
-                "Then rotate 10 times counterclockwise",
-                "Keep your forearm stable and only move your wrist",
-                "Perform this exercise 2-3 times per day"
-            ],
-            "variations": [
-                "Hold light weights (1-2 lbs) for added resistance",
-                "Use resistance bands for a more challenging workout"
-            ],
-            "videoURL": "https://storage.googleapis.com/mvp-vids/wrist_rotation.mp4"
-        }
+    # Start with the provided exercises list, or default to ALL_EXERCISES
+    exercises_to_check = exercises if exercises and len(exercises) > 0 else ALL_EXERCISES
+    
+    # If we have a pain description, try to match to a relevant exercise
+    if pain_description:
+        pain_description_lower = pain_description.lower()
+        
+        # First try to match by specific body part keywords
+        if any(keyword in pain_description_lower for keyword in ['ankle', 'foot', 'feet']):
+            ankle_exercises = [ex for ex in ALL_EXERCISES if 'ankle' in ' '.join(ex.get('target_joints', [])).lower()]
+            if ankle_exercises:
+                print(f"📋 Fallback: Selected ankle exercise based on pain description")
+                return ankle_exercises[0]
+                
+        elif any(keyword in pain_description_lower for keyword in ['knee', 'leg']):
+            knee_exercises = [ex for ex in ALL_EXERCISES if 'knee' in ' '.join(ex.get('target_joints', [])).lower()]
+            if knee_exercises:
+                print(f"📋 Fallback: Selected knee exercise based on pain description")
+                return knee_exercises[0]
+                
+        elif any(keyword in pain_description_lower for keyword in ['back', 'spine', 'posture']):
+            back_exercises = [ex for ex in ALL_EXERCISES if 'lower_back' in ' '.join(ex.get('target_joints', [])).lower()]
+            if back_exercises:
+                print(f"📋 Fallback: Selected back exercise based on pain description")
+                return back_exercises[0]
+                
+        elif any(keyword in pain_description_lower for keyword in ['shoulder', 'arm', 'neck']):
+            shoulder_exercises = [ex for ex in ALL_EXERCISES if 'shoulder' in ' '.join(ex.get('target_joints', [])).lower()]
+            if shoulder_exercises:
+                print(f"📋 Fallback: Selected shoulder exercise based on pain description")
+                return shoulder_exercises[0]
+                
+        elif any(keyword in pain_description_lower for keyword in ['finger', 'hand']):
+            finger_exercises = [ex for ex in ALL_EXERCISES if 'finger' in ' '.join(ex.get('target_joints', [])).lower()]
+            if finger_exercises:
+                print(f"📋 Fallback: Selected finger exercise based on pain description")
+                return finger_exercises[0]
+
+        elif any(keyword in pain_description_lower for keyword in ['wrist', 'carpal']):
+            wrist_exercises = [ex for ex in ALL_EXERCISES if 'wrist' in ' '.join(ex.get('target_joints', [])).lower()]
+            if wrist_exercises:
+                print(f"📋 Fallback: Selected wrist exercise based on pain description")
+                return wrist_exercises[0]
+    
+    # If we reach here, either there was no pain description or no match was found
+    # Use the first exercise from the provided list, or the first exercise from ALL_EXERCISES
+    if len(exercises_to_check) > 0:
+        return exercises_to_check[0]
+    
+    # If we still have nothing, fall back to a hardcoded exercise
+    print("⚠️ Using hardcoded fallback exercise")
+    return {
+        "name": "Wrist Rotations",
+        "description": "Circular wrist movements to improve mobility and reduce stiffness. This exercise helps to maintain range of motion in the wrist joint and can help alleviate symptoms of RSI.",
+        "target_joints": ["wrist"],
+        "instructions": [
+            "Make a gentle fist with your hand",
+            "Slowly rotate your wrist in full circles, 10 times clockwise",
+            "Then rotate 10 times counterclockwise",
+            "Keep your forearm stable and only move your wrist",
+            "Perform this exercise 2-3 times per day"
+        ],
+        "variations": [
+            "Hold light weights (1-2 lbs) for added resistance",
+            "Use resistance bands for a more challenging workout"
+        ],
+        "videoURL": "https://storage.googleapis.com/mvp-vids/wrist_rotation.mp4"
+    }
