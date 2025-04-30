@@ -327,6 +327,27 @@ def generate_exercise(request):
             logger.warning(f"User not found: {user_id}")
             return (json.dumps({'error': 'User not found'}, cls=DateTimeEncoder), 404, headers)
         
+        # Determine target joint from injury if not explicitly provided
+        if not target_joint and 'injury' in user_data:
+            injury = user_data['injury'].lower()
+            print(f"📋 Checking injury description: '{injury}'")
+            
+            # Define injury keywords for each joint type
+            joint_keywords = {
+                'wrist': ['wrist', 'hand', 'carpal', 'finger', 'forearm'],
+                'shoulder': ['shoulder', 'arm', 'upper back'],
+                'knee': ['knee', 'leg'],
+                'lower_back': ['back', 'spine', 'lumbar', 'posture'],
+                'ankle': ['ankle', 'foot', 'feet']
+            }
+            
+            # Check if injury description contains any joint keywords
+            for joint, keywords in joint_keywords.items():
+                if any(keyword in injury for keyword in keywords):
+                    target_joint = joint
+                    print(f"📋 Detected target joint from injury: {target_joint}")
+                    break
+        
         # Filter exercises by target joint if specified
         exercises_to_consider = ALL_EXERCISES
         if target_joint:
@@ -367,9 +388,12 @@ def get_user_data(user_id):
         print("❌ get_user_data: User not found in Firestore")
         return None
 
-    print(user_doc.to_dict())
+    user_data = user_doc.to_dict()
+    print("📋 User data retrieved from Firestore:", user_data)
+    print("📋 injury field:", user_data.get('injury'))
+    print("📋 pain_description field:", user_data.get('pain_description'))
     
-    return user_doc.to_dict()
+    return user_data
 
 def select_exercise_with_claude(user_data, api_key, exercises=None):
     """
@@ -379,7 +403,9 @@ def select_exercise_with_claude(user_data, api_key, exercises=None):
     try:
         # Extract user info
         name = user_data.get('name', 'the user')
-        pain_description = user_data.get('pain_description', '')
+        # Check both pain_description and injury fields
+        pain_description = user_data.get('pain_description', '') or user_data.get('injury', '')
+        print(f"📋 Using pain description for Claude: '{pain_description}'")
         
         # Use specified exercises or default to all RSI exercises
         exercises_to_use = exercises if exercises is not None else RSI_EXERCISES
@@ -487,7 +513,8 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
     try:
         # Extract user info
         name = user_data.get('name', 'the user')
-        pain_description = user_data.get('pain_description', '')
+        pain_description = user_data.get('pain_description', '')  # This returns empty string when not found
+        print(f"📋 Using pain description for OpenAI: '{pain_description}'")
         
         # Use specified exercises or default to all RSI exercises
         exercises_to_use = exercises if exercises is not None else RSI_EXERCISES
