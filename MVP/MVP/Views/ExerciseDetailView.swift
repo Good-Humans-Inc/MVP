@@ -19,19 +19,14 @@ struct ExerciseDetailView: View {
     @EnvironmentObject private var resourceCoordinator: ResourceCoordinator
     @EnvironmentObject private var cameraManager: CameraManager
     @EnvironmentObject private var visionManager: VisionManager
+    @EnvironmentObject private var notificationManager: NotificationManager
     
     var body: some View {
         ZStack {
             VStack(spacing: 20) {
-                // Top bar with reset button
+                // Top bar with reset button - Remove button but keep spacing for layout
                 HStack {
-                    Button(action: resetOnboarding) {
-                        Image(systemName: "arrow.counterclockwise.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.blue)
-                    }
-                    .padding(.leading)
-                    
+                    // Remove reset button
                     Spacer()
                 }
                 
@@ -320,13 +315,16 @@ struct ExerciseDetailView: View {
 
         // Dismiss this view and return to onboarding
         if let window = UIApplication.shared.windows.first {
-            window.rootViewController = UIHostingController(rootView: OnboardingView()
+            let onboardingView = OnboardingView()
                 .environmentObject(appState)
                 .environmentObject(voiceManager)
                 .environmentObject(resourceCoordinator)
                 .environmentObject(cameraManager)
                 .environmentObject(visionManager)
-            )
+                .environmentObject(notificationManager)
+                
+            window.rootViewController = UIHostingController(rootView: onboardingView)
+            print("✅ Created new root view controller with all environment objects")
         }
     }
     
