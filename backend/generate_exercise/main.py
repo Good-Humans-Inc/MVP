@@ -327,10 +327,40 @@ def generate_exercise(request):
             logger.warning(f"User not found: {user_id}")
             return (json.dumps({'error': 'User not found'}, cls=DateTimeEncoder), 404, headers)
         
+        # Determine target joint from injury if not explicitly provided
+        if not target_joint and 'injury' in user_data:
+            injury = user_data['injury'].lower()
+            print(f"📋 Checking injury description: '{injury}'")
+            
+            # Define injury keywords for each joint type
+            joint_keywords = {
+                'wrist': ['wrist', 'carpal'],
+                'finger': ['finger', 'hand'],
+                'shoulder': ['shoulder', 'arm', 'upper back'],
+                'knee': ['knee', 'leg'],
+                'lower_back': ['back', 'spine', 'lumbar', 'posture'],
+                'ankle': ['ankle', 'foot', 'feet']
+            }
+            
+            # Check if injury description contains any joint keywords
+            for joint, keywords in joint_keywords.items():
+                if any(keyword in injury for keyword in keywords):
+                    target_joint = joint
+                    print(f"📋 Detected target joint from injury: {target_joint}")
+                    break
+        
         # Filter exercises by target joint if specified
         exercises_to_consider = ALL_EXERCISES
         if target_joint:
-            exercises_to_consider = [ex for ex in ALL_EXERCISES if target_joint in ex.get('target_joints', [])]
+            # Special case for finger - use finger or wrist exercises
+            if target_joint == 'finger':
+                finger_exercises = [ex for ex in ALL_EXERCISES if 'finger' in ' '.join(ex.get('target_joints', [])).lower()]
+                wrist_exercises = [ex for ex in ALL_EXERCISES if 'wrist' in ex.get('target_joints', [])]
+                exercises_to_consider = finger_exercises + wrist_exercises
+                print(f"📋 Selected {len(exercises_to_consider)} exercises for finger/wrist")
+            else:
+                exercises_to_consider = [ex for ex in ALL_EXERCISES if target_joint in ex.get('target_joints', [])]
+            
             if not exercises_to_consider:
                 logger.warning(f"No exercises found for target joint: {target_joint}")
                 return (json.dumps({'error': f'No exercises found for target joint: {target_joint}'}, cls=DateTimeEncoder), 404, headers)
@@ -367,9 +397,12 @@ def get_user_data(user_id):
         print("❌ get_user_data: User not found in Firestore")
         return None
 
-    print(user_doc.to_dict())
+    user_data = user_doc.to_dict()
+    print("📋 User data retrieved from Firestore:", user_data)
+    print("📋 injury field:", user_data.get('injury'))
+    print("📋 pain_description field:", user_data.get('pain_description'))
     
-    return user_doc.to_dict()
+    return user_data
 
 def select_exercise_with_claude(user_data, api_key, exercises=None):
     """
@@ -379,10 +412,19 @@ def select_exercise_with_claude(user_data, api_key, exercises=None):
     try:
         # Extract user info
         name = user_data.get('name', 'the user')
-        pain_description = user_data.get('pain_description', '')
+        # Use the injury field instead of pain_description
+        pain_description = user_data.get('injury', '')
+        print(f"📋 Using pain description for Claude: '{pain_description}'")
         
         # Use specified exercises or default to all RSI exercises
         exercises_to_use = exercises if exercises is not None else RSI_EXERCISES
+        
+        # If user has finger pain, prioritize finger exercises
+        if pain_description and 'finger' in pain_description.lower():
+            finger_exercises = [ex for ex in ALL_EXERCISES if 'finger' in ' '.join(ex.get('target_joints', [])).lower()]
+            if finger_exercises:
+                print(f"📋 Found {len(finger_exercises)} finger exercises based on injury")
+                exercises_to_use = finger_exercises
         
         # Create a JSON string of all available exercises
         exercises_json = json.dumps(exercises_to_use)
@@ -487,10 +529,19 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
     try:
         # Extract user info
         name = user_data.get('name', 'the user')
-        pain_description = user_data.get('pain_description', '')
+        # Use the injury field instead of pain_description
+        pain_description = user_data.get('injury', '')
+        print(f"📋 Using pain description for OpenAI: '{pain_description}'")
         
         # Use specified exercises or default to all RSI exercises
         exercises_to_use = exercises if exercises is not None else RSI_EXERCISES
+        
+        # If user has finger pain, prioritize finger exercises
+        if pain_description and 'finger' in pain_description.lower():
+            finger_exercises = [ex for ex in ALL_EXERCISES if 'finger' in ' '.join(ex.get('target_joints', [])).lower()]
+            if finger_exercises:
+                print(f"📋 Found {len(finger_exercises)} finger exercises based on injury")
+                exercises_to_use = finger_exercises
         
         # Create a JSON string of all available exercises
         exercises_json = json.dumps(exercises_to_use)
