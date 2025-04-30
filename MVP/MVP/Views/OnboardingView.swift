@@ -288,60 +288,53 @@ struct OnboardingView: View {
             }
     
     private func resetOnboarding() {
-        print("🔄 DEBUG: OnboardingView - Resetting onboarding")
-        print("📊 DEBUG: OnboardingView - Pre-reset state:")
-        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
+        print("🎯 DEBUG: OnboardingView - Resetting onboarding")
+        
+        // Pre-reset state:
         print("- appState.hasUserId: \(appState.hasUserId)")
+        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
         
-        // End current session first
-        voiceManager.endElevenLabsSession()
+        // Resetting onboarding state
+        print("Resetting onboarding state")
         
-        // Reset VoiceManager state
-        voiceManager.resetOnboarding()
-        
-        // Reset AppState
-        withAnimation {
-            appState.hasUserId = false
-            appState.userId = nil
-            appState.isOnboardingComplete = false
-            appState.currentExercise = nil
-            appState.currentAgentType = nil
+        // First check if we have an active session to end 
+        if !voiceManager.isSessionActive {
+            print("No active ElevenLabs session to end")
+        } else {
+            voiceManager.endElevenLabsSession()
         }
         
-        // Reset local view state
-        isLoading = false
-        hasStartedAgent = false
-        messages.removeAll()
-        animationState = .idle
+        // Reset local state
+        self.hasStartedAgent = false
+        self.messages = []
+        self.animationState = .idle
         
-        print("📊 DEBUG: OnboardingView - Post-reset state:")
-        print("- appState.hasUserId: \(appState.hasUserId)")
-        print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
-        
-        // Clear UserDefaults
-        UserDefaults.standard.removeObject(forKey: "UserId")
-        UserDefaults.standard.removeObject(forKey: "UserExercises")
-        
-        // Restart onboarding agent after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            // Ensure we're on the main thread
-            DispatchQueue.main.async {
-                // Reset the view hierarchy to ensure environment objects are maintained
-                if let window = UIApplication.shared.windows.first {
-                    let onboardingView = OnboardingView()
-                        .environmentObject(appState)
-                        .environmentObject(voiceManager)
-                        .environmentObject(resourceCoordinator)
-                        .environmentObject(cameraManager)
-                        .environmentObject(visionManager)
-                        .environmentObject(notificationManager)
-                    
-                    window.rootViewController = UIHostingController(rootView: onboardingView)
-                }
-                
-                // Start the onboarding agent
-                voiceManager.startOnboardingAgent()
-                appState.currentAgentType = .onboarding
+        // Reset the AppState (this ensures we don't create a retain cycle)
+        DispatchQueue.main.async {
+            // Update AppState properties safely
+            self.appState.hasUserId = false
+            self.appState.userId = nil
+            self.appState.isOnboardingComplete = false
+            
+            // Clear notification badge (safely)
+            if self.notificationManager.isAuthorized {
+                self.notificationManager.clearBadge()
+                print("Notification badge cleared during reset")
+            } else {
+                print("Notification manager not authorized - skipping badge clear")
+            }
+            
+            // Clear any user defaults related to onboarding
+            UserDefaults.standard.removeObject(forKey: "UserId")
+            UserDefaults.standard.removeObject(forKey: "OnboardingComplete")
+            
+            // IMPORTANT: DO NOT RECREATE THE VIEW HIERARCHY - instead restart the agent
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                // Start fresh with onboarding agent
+                self.voiceManager.startOnboardingAgent()
+                self.appState.currentAgentType = .onboarding
+                self.hasStartedAgent = true
+                print("Restarted onboarding agent")
             }
         }
     }

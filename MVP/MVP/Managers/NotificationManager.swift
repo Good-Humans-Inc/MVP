@@ -55,6 +55,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         }
     }
     
+    /// Clear the application badge count
+    func clearBadge() {
+        DispatchQueue.main.async {
+            UIApplication.shared.applicationIconBadgeNumber = 0
+            print("📱 Application badge cleared")
+        }
+    }
+    
     /// Schedule a local notification
     func scheduleLocalNotification(title: String, body: String, timeInterval: TimeInterval, identifier: String, isOneTime: Bool = false) {
         let content = UNMutableNotificationContent()
