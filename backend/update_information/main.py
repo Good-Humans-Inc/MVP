@@ -122,7 +122,7 @@ def update_information(request):
                     # Create target time for TODAY in user's timezone
                     target_time_today = now_user_tz.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-                    # If the target time has already passed today, schedule for tomorrow
+                    # If target time has already passed today, schedule for tomorrow
                     if target_time_today <= now_user_tz:
                         target_datetime = target_time_today + timedelta(days=1)
                         print(f"Target time {hour:02d}:{minute:02d} already passed today in user TZ. Scheduling for tomorrow.")
@@ -130,10 +130,29 @@ def update_information(request):
                         target_datetime = target_time_today
                         print(f"Target time {hour:02d}:{minute:02d} is later today in user TZ. Scheduling for today.")
 
-                    # Firestore stores timestamps ideally in UTC. The client SDK handles conversion.
-                    # The target_datetime is already timezone-aware.
-                    update_data['next_notification_time'] = target_datetime
-                    print(f"Prepared update for next_notification_time: {target_datetime.isoformat()}")
+                    # Convert to UTC for storage
+                    target_time_utc = target_datetime.astimezone(timezone.utc)
+                    
+                    # Store without timezone info
+                    utc_datetime_no_tzinfo = datetime(
+                        target_time_utc.year, 
+                        target_time_utc.month,
+                        target_time_utc.day,
+                        target_time_utc.hour,
+                        target_time_utc.minute,
+                        target_time_utc.second
+                    )
+                    
+                    # Set the one-time flag
+                    is_one_time = True
+                    
+                    # Store both the time and the one-time flag
+                    update_data['next_notification_time'] = utc_datetime_no_tzinfo
+                    update_data['is_one_time_notification'] = is_one_time
+                    
+                    local_hour = hour 
+                    local_minute = minute
+                    print(f"✅ This will be {local_hour:02d}:{local_minute:02d} in the user's local timezone")
 
                 else:
                     print(f"Invalid hour/minute range in next_notification_time: {next_notification_time_input}")
@@ -204,10 +223,11 @@ def update_information(request):
             
             # Schedule the next notification
             try:
+                is_one_time = True if next_notification_time_input else False
                 task_response = schedule_notification_task(
                     user_id,
                     next_time.isoformat(),
-                    is_one_time=False
+                    is_one_time=is_one_time
                 )
                 if task_response and 'notification_id' in task_response:
                     scheduled_task_id = task_response['notification_id']
