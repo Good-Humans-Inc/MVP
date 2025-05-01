@@ -538,8 +538,8 @@ def select_exercise_with_claude(user_data, api_key, exercises=None):
             exercise_json = content  # Assume the content is just JSON
         
         try:
-        response_data = json.loads(exercise_json)
-        selected_exercise = response_data.get('selected_exercise', {})
+            response_data = json.loads(exercise_json)
+            selected_exercise = response_data.get('selected_exercise', {})
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing error: {str(e)}")
             logger.error(f"Failed content: {content}")
@@ -699,7 +699,7 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
                 logger.info(f"Cleaned content: {content}")
         
         try:
-        response_data = json.loads(content)
+            response_data = json.loads(content)
             logger.info(f"Parsed JSON: {response_data}")
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing error: {str(e)}")

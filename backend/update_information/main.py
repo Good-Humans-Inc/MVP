@@ -352,7 +352,24 @@ def calculate_next_notification_time(hour, minute, user_timezone_offset, current
     target_time_utc = user_target_time.astimezone(timezone.utc)
     print(f"Final notification time (UTC): {target_time_utc.isoformat()}")
     
-    return target_time_utc
+    # *** FIX: Store as a native datetime without timezone info for Firestore ***
+    # Firestore can handle timezone-aware datetimes properly, but let's explicitly create a
+    # UTC datetime without timezone info to guarantee consistent behavior across different clients
+    utc_datetime_no_tzinfo = datetime(
+        target_time_utc.year,
+        target_time_utc.month,
+        target_time_utc.day,
+        target_time_utc.hour,
+        target_time_utc.minute,
+        target_time_utc.second,
+        target_time_utc.microsecond
+    )
+    
+    print(f"Converted to UTC datetime without timezone info: {utc_datetime_no_tzinfo.isoformat()}Z")
+    print(f"This will be {hour:02d}:{minute:02d} in the user's local timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset})")
+    
+    # Return the UTC datetime without timezone info
+    return utc_datetime_no_tzinfo
 
 # Helper function to serialize Firestore data for JSON
 def serialize_firestore_data(data):

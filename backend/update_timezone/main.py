@@ -79,10 +79,10 @@ def update_timezone(request):
                 local_hour = notification_prefs.get('hour_local')
                 local_minute = notification_prefs.get('minute_local')
                 
-                # Calculate UTC time from local time based on new timezone
-                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                # Calculate the next notification time
+                now = datetime.datetime.now(datetime.timezone.utc)
                 user_tz = datetime.timezone(datetime.timedelta(hours=timezone_offset_float))
-                now_user_tz = now_utc.astimezone(user_tz)
+                now_user_tz = now.astimezone(user_tz)
                 
                 # Create a datetime with the notification time in user's timezone
                 notification_time_local = now_user_tz.replace(
@@ -92,8 +92,28 @@ def update_timezone(request):
                     microsecond=0
                 )
                 
-                # Convert back to UTC to get the UTC hour/minute
+                # If target time has already passed today, schedule for tomorrow
+                if notification_time_local <= now_user_tz:
+                    notification_time_local = notification_time_local + datetime.timedelta(days=1)
+                
+                # Convert back to UTC for storage
                 notification_time_utc = notification_time_local.astimezone(datetime.timezone.utc)
+                
+                # Store as UTC datetime without timezone info for consistent Firestore storage
+                next_notification_time = datetime.datetime(
+                    notification_time_utc.year,
+                    notification_time_utc.month,
+                    notification_time_utc.day,
+                    notification_time_utc.hour,
+                    notification_time_utc.minute,
+                    notification_time_utc.second,
+                    notification_time_utc.microsecond
+                )
+                
+                update_data['next_notification_time'] = next_notification_time
+                
+                print(f"Updated next notification time to {next_notification_time.isoformat()}Z based on local time {local_hour}:{local_minute} in timezone UTC{'+' if timezone_offset_float >= 0 else ''}{timezone_offset_float}")
+                print(f"This UTC time is equivalent to {local_hour:02d}:{local_minute:02d} in the user's local timezone")
                 
                 # Update notification preferences with new UTC values
                 update_data['notification_preferences'] = {
@@ -103,27 +123,6 @@ def update_timezone(request):
                     'timezone_offset': timezone_offset_float,
                     'timezone_updated_at': firestore.SERVER_TIMESTAMP
                 }
-                
-                # Also calculate the next notification time
-                now = datetime.datetime.now(datetime.timezone.utc)
-                user_now = now.astimezone(user_tz)
-                
-                target_time = user_now.replace(
-                    hour=local_hour,
-                    minute=local_minute,
-                    second=0,
-                    microsecond=0
-                )
-                
-                # If target time has already passed today, schedule for tomorrow
-                if target_time <= user_now:
-                    target_time = target_time + datetime.timedelta(days=1)
-                
-                # Convert back to UTC for storage
-                next_notification_time = target_time.astimezone(datetime.timezone.utc)
-                update_data['next_notification_time'] = next_notification_time
-                
-                print(f"Updated next notification time to {next_notification_time.isoformat()} based on local time {local_hour}:{local_minute} in timezone UTC{'+' if timezone_offset_float >= 0 else ''}{timezone_offset_float}")
         
         # Update the user document
         user_ref.update(update_data)
