@@ -33,7 +33,7 @@ struct HandPoseView: View {
     }
     
     // Draw a subtle palm area to better visualize hand shape
-    private func drawPalmArea(_ geometry: GeometryReader) -> some View {
+    private func drawPalmArea(_ geometry: GeometryProxy) -> some View {
         let palmJoints: [HandJointType] = [.wrist, .thumbCMC, .indexMCP, .middleMCP, .ringMCP, .littleMCP]
         
         // Only proceed if we have all the palm joints
