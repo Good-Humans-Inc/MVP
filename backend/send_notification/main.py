@@ -240,15 +240,15 @@ def send_notification(request):
                 'fcm_message_id': response
             }), 200, headers)
             
-        except messaging.ApiCallError as fcm_error:
-            error_msg = str(fcm_error)
+        except (messaging.UnregisteredError, messaging.SenderIdMismatchError) as token_error:
+            # Handle invalid token errors
+            error_msg = str(token_error)
+            print(f"FCM Token error: {error_msg}")
             
-            # Handle invalid token
-            if 'registration-token-not-registered' in error_msg.lower():
-                user_ref.update({
-                    'fcm_token': firestore.DELETE_FIELD,
-                    'notification_status': 'token_expired'
-                })
+            user_ref.update({
+                'fcm_token': firestore.DELETE_FIELD,
+                'notification_status': 'token_expired'
+            })
             
             # Update notification record
             notification_ref.update({
@@ -259,7 +259,41 @@ def send_notification(request):
             
             return (json.dumps({
                 'status': 'error',
-                'message': f'FCM API Error: {error_msg}'
+                'message': f'FCM Token Error: {error_msg}'
+            }), 500, headers)
+            
+        except firebase_admin._messaging_utils.ThirdPartyAuthError as auth_error:
+            # Handle authentication errors with FCM
+            error_msg = f"Firebase authentication error: {str(auth_error)}"
+            print(error_msg)
+            
+            # Update notification record
+            notification_ref.update({
+                'status': 'failed',
+                'error': error_msg,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            })
+            
+            return (json.dumps({
+                'status': 'error',
+                'message': error_msg
+            }), 500, headers)
+            
+        except Exception as fcm_error:
+            # Handle all other FCM errors
+            error_msg = str(fcm_error)
+            print(f"FCM general error: {error_msg}")
+            
+            # Update notification record
+            notification_ref.update({
+                'status': 'failed',
+                'error': error_msg,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            })
+            
+            return (json.dumps({
+                'status': 'error',
+                'message': f'Notification Error: {error_msg}'
             }), 500, headers)
             
     except Exception as e:
