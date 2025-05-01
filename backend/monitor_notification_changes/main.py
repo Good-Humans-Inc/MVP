@@ -203,7 +203,7 @@ def process_notification_change(notification_id, document_data):
         
         # Initialize Firestore client
         db = admin_firestore.Client()
-        
+            
         # Check if this is a new or updated notification
         if status == "scheduled":
             # Check if there's a scheduled_time field
@@ -330,7 +330,7 @@ def process_notification_change(notification_id, document_data):
         import traceback
         print(f"❌ Error processing notification {notification_id}: {str(e)}", file=sys.stderr)
         print(f"❌ Traceback: {traceback.format_exc()}", file=sys.stderr)
-        
+                    
         # Update notification status to error
         try:
             db = admin_firestore.Client()
@@ -402,7 +402,7 @@ def process_user_notification_update(user_id):
             print(f"📅 Existing next notification time: {existing_next_time}", file=sys.stderr)
     else:
         print("📅 No existing next notification time", file=sys.stderr)
-    
+                        
                     # Calculate the next notification time
                     now = datetime.now(timezone.utc)
                     next_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)

@@ -66,9 +66,10 @@ class VisionManager: NSObject, ObservableObject {
         // Configure to track all hand landmark points for RSI exercise tracking
         handPoseRequest?.revision = VNDetectHumanHandPoseRequestRevision1
         
-        requests = [handPoseRequest!] // Add to requests array
+        // Include both body pose and hand pose requests
+        requests = [bodyPoseRequest!, handPoseRequest!]
         
-        print("👁 Vision requests configured for hand tracking")
+        print("👁 Vision requests configured for body and hand tracking")
     }
     
     func startProcessing(_ videoOutput: AVCaptureVideoDataOutput) {
@@ -118,24 +119,37 @@ class VisionManager: NSObject, ObservableObject {
         }
         lastProcessedTime = now
         
-        // Process hand pose detection
+        // Create request handler
         let handler = VNImageRequestHandler(cvPixelBuffer: imageBuffer, orientation: .up, options: [:])
         
         do {
-            // Process body pose
-            if let bodyPoseRequest = bodyPoseRequest {
-                try handler.perform([bodyPoseRequest])
-                if let observation = bodyPoseRequest.results?.first {
-                    processBodyPoseObservation(observation)
+            // Perform all vision requests at once
+            try handler.perform(requests)
+            
+            // Process body pose if available
+            if let bodyPoseRequest = bodyPoseRequest, 
+               let observation = bodyPoseRequest.results?.first {
+                processBodyPoseObservation(observation)
+                
+                // Debug body pose detection
+                if frameCount % 30 == 0 {
+                    print("👤 Body detected with \(observation.availableJointNames.count) joints")
                 }
             }
             
-            // Process hand pose
-            if let handPoseRequest = handPoseRequest {
-                try handler.perform([handPoseRequest])
-                if let observation = handPoseRequest.results?.first {
-                    processHandPoseObservation(observation)
+            // Process hand pose if available
+            if let handPoseRequest = handPoseRequest, 
+               let observation = handPoseRequest.results?.first {
+                processHandPoseObservation(observation)
+                
+                // Debug hand pose detection
+                if frameCount % 30 == 0 {
+                    print("👋 Hand detected with \(observation.availableJointNames.count) joints")
+                    // Determine if left or right hand and log
+                    determineHandedness(observation)
                 }
+            } else if frameCount % 100 == 0 {
+                print("👋 No hand detected in recent frames")
             }
         } catch {
             print("👁 Vision processing error: \(error)")
@@ -323,6 +337,42 @@ class VisionManager: NSObject, ObservableObject {
             self.isProcessing = false
             self.detectedHands.removeAll()
             self.processingError = nil
+        }
+    }
+    
+    // MARK: - Hand Detection Enhancements
+    
+    // Determine if the detected hand is left or right
+    private func determineHandedness(_ observation: VNHumanHandPoseObservation) {
+        // We'll use the position of the thumb relative to the wrist and index finger
+        // This is a simple heuristic and not 100% accurate
+        
+        do {
+            let wristPoint = try observation.recognizedPoint(.wrist)
+            let thumbTipPoint = try observation.recognizedPoint(.thumbTip)
+            let indexTipPoint = try observation.recognizedPoint(.indexTip)
+            
+            if wristPoint.confidence > 0.5 && thumbTipPoint.confidence > 0.5 && indexTipPoint.confidence > 0.5 {
+                // Check if thumb is to the left or right of the line from wrist to index finger
+                let wristX = wristPoint.location.x
+                let wristY = wristPoint.location.y
+                let indexX = indexTipPoint.location.x
+                let indexY = indexTipPoint.location.y
+                let thumbX = thumbTipPoint.location.x
+                let thumbY = thumbTipPoint.location.y
+                
+                // Calculate the cross product to determine which side the thumb is on
+                let crossProduct = (indexX - wristX) * (thumbY - wristY) - (indexY - wristY) * (thumbX - wristX)
+                
+                let isLeftHand = crossProduct > 0
+                
+                DispatchQueue.main.async {
+                    self.isLeftHand = isLeftHand
+                    print("👋 Detected \(isLeftHand ? "LEFT" : "RIGHT") hand")
+                }
+            }
+        } catch {
+            print("Error determining handedness: \(error)")
         }
     }
 }
