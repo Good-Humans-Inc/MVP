@@ -147,16 +147,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
     // MARK: - Timezone Management
     
     private func checkAndUpdateTimezone() {
-        // Get the notificationManager if available
-        guard let notificationManager = try? Container.shared.resolve(NotificationManager.self) else {
-            // If notification manager isn't available yet, handle timezone change directly
-            checkTimezoneChangeDirect()
-            return
-        }
+        // Since Container is not accessible, go directly to checkTimezoneChangeDirect
+        checkTimezoneChangeDirect()
         
-        // Use the NotificationManager to check for timezone changes
-        notificationManager.checkTimezoneChange()
-        print("🕒 Timezone check handled by NotificationManager")
+        // We'll let the NotificationManager check timezone changes when it's initialized
+        print("🕒 Timezone check handled by AppDelegate, NotificationManager will check again when ready")
     }
     
     private func checkTimezoneChangeDirect() {
