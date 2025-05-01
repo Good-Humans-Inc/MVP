@@ -10,7 +10,7 @@ struct ExerciseView: View {
     @State private var timer: Timer? = nil
     @State private var showingExerciseReport = false
     @State private var exerciseDuration: TimeInterval = 0
-    @State private var coachMessages: [String] = []
+    //@State private var coachMessages: [String] = []
     @State private var showCoachFeedback = false
     @State private var isStoppingExercise = false
     @State private var showErrorAlert = false
@@ -38,8 +38,19 @@ struct ExerciseView: View {
             CameraPreview(session: cameraManager.session)
                 .edgesIgnoringSafeArea(.all)
             
-            // Hand pose overlay
-            if let handPose = visionManager.currentHandPose {
+            // Body pose overlay for general exercises
+            if let bodyPose = visionManager.currentBodyPose, !isRSIExercise() {
+                BodyPoseView(
+                    bodyPose: bodyPose,
+                    lineColor: .green,
+                    jointColor: .blue,
+                    painPoints: visionManager.painPoints
+                )
+                .edgesIgnoringSafeArea(.all)
+            }
+            
+            // Hand pose overlay for RSI exercises
+            if let handPose = visionManager.currentHandPose, isRSIExercise() {
                 HandPoseView(handPose: handPose)
                     .edgesIgnoringSafeArea(.all)
             }
@@ -98,19 +109,19 @@ struct ExerciseView: View {
     // MARK: - UI Components
     
     // Coach message view
-    private var coachMessageView: some View {
-        VStack {
-            Text(coachMessages.last ?? "")
-                .padding()
-                .background(Color.white.opacity(0.8))
-                .foregroundColor(.black)
-                .cornerRadius(12)
-                .padding(.horizontal)
-                .padding(.top, 40)
+    // private var coachMessageView: some View {
+    //     VStack {
+    //         Text(coachMessages.last ?? "")
+    //             .padding()
+    //             .background(Color.white.opacity(0.8))
+    //             .foregroundColor(.black)
+    //             .cornerRadius(12)
+    //             .padding(.horizontal)
+    //             .padding(.top, 40)
             
-            Spacer()
-        }
-    }
+    //         Spacer()
+    //     }
+    // }
     
     // Controls view for active exercise
     private var exerciseControlsView: some View {
@@ -184,7 +195,7 @@ struct ExerciseView: View {
         }
         
         // Set initial coach message
-        coachMessages = ["I'll help guide you through this exercise. Let me see your form..."]
+        //coachMessages = ["I'll help guide you through this exercise. Let me see your form..."]
         showCoachFeedback = true
         
         // Auto-hide initial message after a few seconds
@@ -222,7 +233,7 @@ struct ExerciseView: View {
             }
             
             // Add message to the coach messages
-            self.coachMessages.append(message)
+            //self.coachMessages.append(message)
             
             // Show the feedback
             self.showCoachFeedback = true
@@ -307,6 +318,23 @@ struct ExerciseView: View {
         let minutes = Int(timeInterval) / 60
         let seconds = Int(timeInterval) % 60
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+    
+    // Helper to determine if this is an RSI exercise
+    private func isRSIExercise() -> Bool {
+        // Check if exercise is for hands/wrists based on targetJoints
+        let rsiJointTypes: Set<BodyJointType> = [
+            .leftWrist, .rightWrist,
+            .leftElbow, .rightElbow
+        ]
+        
+        // Check if any of the exercise's target joints are wrist/hand related
+        return exercise.targetJoints.contains { joint in
+            rsiJointTypes.contains(joint)
+        } || exercise.name.contains("RSI") || 
+           exercise.name.contains("Wrist") || 
+           exercise.name.contains("Hand") ||
+           exercise.name.contains("Finger")
     }
 }
 

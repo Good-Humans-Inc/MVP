@@ -26,22 +26,6 @@ struct ContentView: View {
                     .environmentObject(visionManager)
                     .environmentObject(notificationManager)
                     .transition(.opacity)
-                    .overlay(
-                        VStack {
-                            HStack {
-                                Spacer()
-                                Button(action: {
-                                    showingNotificationSettings = true
-                                }) {
-                                    Image(systemName: "bell.fill")
-                                        .font(.title2)
-                                        .foregroundColor(.blue)
-                                        .padding()
-                                }
-                            }
-                            Spacer()
-                        }
-                    )
             } else if appState.isOnboardingComplete || appState.hasUserId {
                 // If onboarding is complete or we have a user ID, show loading with exercise fetch
                 ProgressView("Loading your exercise...")

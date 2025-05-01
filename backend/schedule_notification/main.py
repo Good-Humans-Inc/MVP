@@ -12,7 +12,7 @@ import google.auth
 try:
     app = firebase_admin.get_app()
 except ValueError:
-    firebase_admin.initialize_app()
+firebase_admin.initialize_app()
 
 db = firestore.Client(project='pepmvp', database='pep-mvp')
 
@@ -118,10 +118,10 @@ def schedule_notification(request):
             'us-central1',  # Choose your region
             'notification-queue'  # Your queue name - create this in GCP Console
         )
-        
+            
         # Calculate seconds from epoch for the scheduled time
         scheduled_seconds = int(scheduled_time.timestamp())
-        
+            
         # Create payload for the Cloud Task
         payload = {
             'notification_id': notification_id,
@@ -188,4 +188,4 @@ def serialize_firestore_data(data):
     elif isinstance(data, datetime):  # Handle Python datetime objects
         return data.isoformat()
     else:
-        return data
+        return data 
