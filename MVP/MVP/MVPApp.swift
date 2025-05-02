@@ -24,6 +24,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
             setupForFirstLaunch()
         }
         
+        // Check for timezone changes
+        checkAndUpdateTimezone()
+        
         // Configure App Check for development
         #if DEBUG
         let providerFactory = AppCheckDebugProviderFactory()
@@ -139,6 +142,84 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
         } catch {
             print("❌ Error pre-initializing audio session: \(error)")
         }
+    }
+    
+    // MARK: - Timezone Management
+    
+    private func checkAndUpdateTimezone() {
+        // Since Container is not accessible, go directly to checkTimezoneChangeDirect
+        checkTimezoneChangeDirect()
+        
+        // We'll let the NotificationManager check timezone changes when it's initialized
+        print("🕒 Timezone check handled by AppDelegate, NotificationManager will check again when ready")
+    }
+    
+    private func checkTimezoneChangeDirect() {
+        // Get current timezone offset
+        let currentOffset = TimeZone.current.secondsFromGMT() / 3600
+        let currentOffsetString = String(currentOffset)
+        
+        // Get last known timezone offset
+        let timezoneCacheKey = "lastKnownTimezone"
+        let defaults = UserDefaults.standard
+        let lastKnownOffset = defaults.string(forKey: timezoneCacheKey)
+        
+        print("📱 Current timezone offset: \(currentOffsetString), Last known: \(lastKnownOffset ?? "none")")
+        
+        // Check if timezone has changed
+        if lastKnownOffset != currentOffsetString {
+            print("🕒 Timezone has changed from \(lastKnownOffset ?? "unknown") to \(currentOffsetString)")
+            
+            // Update server when user ID is available
+            if let userId = UserDefaults.standard.string(forKey: "UserId") {
+                updateTimezoneOnServer(userId: userId, timezone: currentOffsetString)
+            } else {
+                print("⚠️ User ID not available yet, timezone update will be handled by NotificationManager")
+            }
+            
+            // Cache the new timezone
+            defaults.set(currentOffsetString, forKey: timezoneCacheKey)
+        }
+    }
+    
+    private func updateTimezoneOnServer(userId: String, timezone: String) {
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_timezone") else {
+            print("❌ Invalid URL for timezone update")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: String] = [
+            "user_id": userId,
+            "timezone": timezone
+        ]
+        
+        print("🕒 Updating timezone on server: \(body)")
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            print("❌ Failed to serialize timezone update request")
+            return
+        }
+        
+        request.httpBody = jsonData
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Error updating timezone: \(error.localizedDescription)")
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("✅ Timezone updated successfully")
+                } else {
+                    print("❌ Timezone update failed with status: \(httpResponse.statusCode)")
+                }
+            }
+        }.resume()
     }
     
     // MARK: - Push Notification Handling

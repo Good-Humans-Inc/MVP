@@ -203,7 +203,7 @@ def process_notification_change(notification_id, document_data):
         
         # Initialize Firestore client
         db = admin_firestore.Client()
-        
+            
         # Check if this is a new or updated notification
         if status == "scheduled":
             # Check if there's a scheduled_time field
@@ -303,7 +303,7 @@ def process_notification_change(notification_id, document_data):
                 
                 if not task_name:
                     print(f"⚠️ Empty task_name for cancelled notification {notification_id}", file=sys.stderr)
-                        return
+                    return
                     
                 try:
                     # Cancel the notification
@@ -320,7 +320,7 @@ def process_notification_change(notification_id, document_data):
                         "status": "error",
                         "error_message": str(cancel_error)
                     })
-                        else:
+            else:
                 print(f"⚠️ No task_name found for cancelled notification {notification_id}", file=sys.stderr)
         
         # Process user's notification update
@@ -330,7 +330,7 @@ def process_notification_change(notification_id, document_data):
         import traceback
         print(f"❌ Error processing notification {notification_id}: {str(e)}", file=sys.stderr)
         print(f"❌ Traceback: {traceback.format_exc()}", file=sys.stderr)
-        
+                    
         # Update notification status to error
         try:
             db = admin_firestore.Client()
@@ -355,43 +355,43 @@ def cancel_notification(task_name):
 def process_user_notification_update(user_id):
     """Process a user document update to schedule notifications."""
     print(f"👤 Processing notification update for user ID: {user_id}", file=sys.stderr)
+
+    # Fetch user document from Firestore to get current state
+    user_ref = db.collection('users').document(user_id)
+    user_doc = user_ref.get()
     
-                    # Fetch user document from Firestore to get current state
-                    user_ref = db.collection('users').document(user_id)
-                    user_doc = user_ref.get()
-                    
-                    if not user_doc.exists:
-                        print(f"❌ User document {user_id} not found", file=sys.stderr)
-                        return
-                    
-                    user_data = user_doc.to_dict()
-                    print(f"📋 User data retrieved: {user_data.get('name', 'Unknown user')}", file=sys.stderr)
-                    
-                    # Check FCM token
-                    fcm_token = user_data.get('fcm_token')
-                    if not fcm_token:
-                        print(f"❌ No FCM token found for user {user_id}", file=sys.stderr)
-                        return
-                    
-                    print(f"📱 Found FCM token: {fcm_token[:10]}...", file=sys.stderr)
-                    
-                    # Check if notifications are enabled
-                    notification_prefs = user_data.get('notification_preferences', {})
-                    is_enabled = notification_prefs.get('is_enabled', False)
-                    
-                    if not is_enabled:
-                        print(f"⏭️ Notifications are disabled for user {user_id}", file=sys.stderr)
-                        # Cancel any scheduled notifications
-                        cancel_user_notifications(user_id)
-                        return
-                    
-                    # Get notification time parameters
-                    hour = notification_prefs.get('hour')
-                    minute = notification_prefs.get('minute')
-                    
-                    if hour is None or minute is None:
-                        print(f"❌ Invalid notification time: hour={hour}, minute={minute}", file=sys.stderr)
-                        return
+    if not user_doc.exists:
+        print(f"❌ User document {user_id} not found", file=sys.stderr)
+        return
+    
+    user_data = user_doc.to_dict()
+    print(f"📋 User data retrieved: {user_data.get('name', 'Unknown user')}", file=sys.stderr)
+    
+    # Check FCM token
+    fcm_token = user_data.get('fcm_token')
+    if not fcm_token:
+        print(f"❌ No FCM token found for user {user_id}", file=sys.stderr)
+        return
+    
+    print(f"📱 Found FCM token: {fcm_token[:10]}...", file=sys.stderr)
+    
+    # Check if notifications are enabled
+    notification_prefs = user_data.get('notification_preferences', {})
+    is_enabled = notification_prefs.get('is_enabled', False)
+    
+    if not is_enabled:
+        print(f"⏭️ Notifications are disabled for user {user_id}", file=sys.stderr)
+        # Cancel any scheduled notifications
+        cancel_user_notifications(user_id)
+        return
+    
+    # Get notification time parameters
+    hour = notification_prefs.get('hour')
+    minute = notification_prefs.get('minute')
+    
+    if hour is None or minute is None:
+        print(f"❌ Invalid notification time: hour={hour}, minute={minute}", file=sys.stderr)
+        return
                         
     # Get the current notification time if already set
     existing_next_time = user_data.get('next_notification_time')
@@ -402,14 +402,14 @@ def process_user_notification_update(user_id):
             print(f"📅 Existing next notification time: {existing_next_time}", file=sys.stderr)
     else:
         print("📅 No existing next notification time", file=sys.stderr)
-    
-                    # Calculate the next notification time
-                    now = datetime.now(timezone.utc)
-                    next_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                    
-                    # If the time has already passed today, schedule for tomorrow
-                    if next_time <= now:
-                        next_time = next_time + timedelta(days=1)
+                        
+        # Calculate the next notification time
+        now = datetime.now(timezone.utc)
+        next_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        
+        # If the time has already passed today, schedule for tomorrow
+        if next_time <= now:
+            next_time = next_time + timedelta(days=1)
         print(f"⏭️ Time today has passed, scheduling for tomorrow: {next_time.isoformat()}", file=sys.stderr)
     
     print(f"⏰ Calculated next notification time: {next_time.isoformat()}", file=sys.stderr)
@@ -437,36 +437,36 @@ def process_user_notification_update(user_id):
     
     print(f"⏰ Final next notification time: {next_time.isoformat()}", file=sys.stderr)
                     
-                    # Cancel any existing scheduled notifications
-                    cancel_user_notifications(user_id)
-                    
-                    # Schedule the next notification using Cloud Tasks
-                    try:
+    # Cancel any existing scheduled notifications
+    cancel_user_notifications(user_id)
+    
+    # Schedule the next notification using Cloud Tasks
+    try:
         # Convert datetime to ISO string for the API call
         next_time_iso = next_time.isoformat()
         
-                        response_data = schedule_notification(
+        response_data = schedule_notification(
                             user_id=user_id,
             scheduled_time=next_time_iso,
                             is_one_time=False
                         )
                         
-                        # Update the user's next notification time
-        try:
-                        user_ref.update({
+    # Update the user's next notification time
+    try:
+            user_ref.update({
                             'next_notification_time': next_time
                         })
             print(f"✅ Updated user's next_notification_time to {next_time.isoformat()}", file=sys.stderr)
-        except Exception as update_error:
-            print(f"❌ Error updating user's next_notification_time: {str(update_error)}", file=sys.stderr)
+    except Exception as update_error:
+        print(f"❌ Error updating user's next_notification_time: {str(update_error)}", file=sys.stderr)
+                    
+        print(f"✅ Successfully scheduled notification for {user_id} at {next_time.isoformat()}", file=sys.stderr)
                         
-                        print(f"✅ Successfully scheduled notification for {user_id} at {next_time.isoformat()}", file=sys.stderr)
-                        
-                    except Exception as schedule_error:
+    except Exception as schedule_error:
                         print(f"❌ Error scheduling notification: {str(schedule_error)}", file=sys.stderr)
         # Try to log more details about the error
-        import traceback
-        print(f"📋 Schedule error traceback: {traceback.format_exc()}", file=sys.stderr)
+    import traceback
+    print(f"📋 Schedule error traceback: {traceback.format_exc()}", file=sys.stderr)
 
 def cancel_user_notifications(user_id):
     """Cancel all scheduled notifications for a user."""

@@ -24,12 +24,6 @@ struct ExerciseDetailView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 20) {
-                // Top bar with reset button - Remove button but keep spacing for layout
-                HStack {
-                    // Remove reset button
-                    Spacer()
-                }
-                
                 // Exercise video or image
                 videoPreviewSection
                     .alert(isPresented: $showErrorAlert) {

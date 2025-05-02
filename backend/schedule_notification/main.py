@@ -49,6 +49,7 @@ def schedule_notification(request):
         is_one_time = request_json.get('is_one_time', False)
         custom_title = request_json.get('custom_title', None)
         custom_body = request_json.get('custom_body', None)
+        force_today = request_json.get('force_today', False)
         
         # Validate required parameters
         if not user_id or not scheduled_time_str:
@@ -118,10 +119,10 @@ def schedule_notification(request):
             'us-central1',  # Choose your region
             'notification-queue'  # Your queue name - create this in GCP Console
         )
-        
+            
         # Calculate seconds from epoch for the scheduled time
         scheduled_seconds = int(scheduled_time.timestamp())
-        
+            
         # Create payload for the Cloud Task
         payload = {
             'notification_id': notification_id,
@@ -188,4 +189,4 @@ def serialize_firestore_data(data):
     elif isinstance(data, datetime):  # Handle Python datetime objects
         return data.isoformat()
     else:
-        return data
+        return data 

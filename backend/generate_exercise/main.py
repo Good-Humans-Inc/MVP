@@ -397,7 +397,7 @@ def get_user_data(user_id):
     if not user_doc.exists:
         print("❌ get_user_data: User not found in Firestore")
         return None
-
+    
     user_data = user_doc.to_dict()
     print("📋 User data retrieved from Firestore:", user_data)
     
@@ -422,7 +422,7 @@ def get_user_data(user_id):
     print("📋 injury field:", user_data.get('injury'))
     print("📋 pain_description field:", user_data.get('pain_description'))
     print(f"📋 Returning notification_time: '{user_data.get('notification_time')}'") # Verify return value
-    
+
     return user_data
 
 def select_exercise_with_claude(user_data, api_key, exercises=None):

@@ -13,6 +13,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     // MARK: - Private Properties
     private let notificationCenter = UNUserNotificationCenter.current()
     private let defaults = UserDefaults.standard
+    private let timezoneCacheKey = "lastKnownTimezone"
     
     // MARK: - Initialization
     override init() {
@@ -39,6 +40,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 print("❌ Notification permission denied: \(String(describing: error))")
             }
         }
+        
+        // Check if timezone has changed since last app launch
+        checkTimezoneChange()
     }
     
     // MARK: - Public Methods
@@ -150,8 +154,11 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         self.notificationPreferences = preferences
         savePreferences()
         
-        // Apply the new preferences
+        // Apply the new preferences locally
         applyNotificationPreferences()
+        
+        // Send preferences to server
+        applyNotificationPreferencesToServer()
     }
     
     /// Apply current notification preferences
@@ -253,9 +260,13 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let body: [String: String] = [
+        // Get timezone offset in hours
+        let timezoneOffset = TimeZone.current.secondsFromGMT() / 3600
+        
+        let body: [String: Any] = [
             "user_id": userId,
-            "fcm_token": token
+            "fcm_token": token,
+            "timezone": String(timezoneOffset) // Add timezone information
         ]
         
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
@@ -276,6 +287,69 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                     print("✅ FCM token updated successfully via API")
                 } else {
                     print("❌ FCM token update failed with status: \(httpResponse.statusCode)")
+                }
+            }
+        }.resume()
+    }
+    
+    /// Apply notification preferences by calling the update_information API
+    func applyNotificationPreferencesToServer() {
+        guard let userId = UserDefaults.standard.string(forKey: "UserId") else {
+            print("❌ No user ID available for notification preferences update")
+            return
+        }
+        
+        guard notificationPreferences.isEnabled else {
+            print("⚠️ Notifications are disabled, not updating server")
+            return
+        }
+        
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_information") else {
+            print("❌ Invalid URL for notification preferences update")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        // Format hour and minute as HH:MM
+        let hourString = String(format: "%02d", notificationPreferences.hour)
+        let minuteString = String(format: "%02d", notificationPreferences.minute)
+        let notificationTime = "\(hourString):\(minuteString)"
+        
+        // Get timezone offset in hours
+        let timezoneOffset = TimeZone.current.secondsFromGMT() / 3600
+        
+        let body: [String: Any] = [
+            "user_id": userId,
+            "notification_time": notificationTime,
+            "timezone": String(timezoneOffset)
+        ]
+        
+        print("📱 Sending notification preferences to server: \(body)")
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            print("❌ Failed to serialize notification preferences")
+            return
+        }
+        
+        request.httpBody = jsonData
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Error updating notification preferences: \(error.localizedDescription)")
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("✅ Notification preferences updated successfully via API")
+                    if let data = data, let responseDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        print("📱 Server response: \(responseDict)")
+                    }
+                } else {
+                    print("❌ Notification preferences update failed with status: \(httpResponse.statusCode)")
                 }
             }
         }.resume()
@@ -332,6 +406,92 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         if let data = try? JSONEncoder().encode(notificationPreferences) {
             defaults.set(data, forKey: "notificationPreferences")
         }
+    }
+    
+    // MARK: - Timezone Management
+    
+    /// Check if timezone has changed since last app launch
+    func checkTimezoneChange() {
+        // Get current timezone offset
+        let currentOffset = TimeZone.current.secondsFromGMT() / 3600
+        let currentOffsetString = String(currentOffset)
+        
+        // Get last known timezone offset
+        let lastKnownOffset = defaults.string(forKey: timezoneCacheKey)
+        
+        print("📱 Current timezone offset: \(currentOffsetString), Last known: \(lastKnownOffset ?? "none")")
+        
+        // Check if timezone has changed
+        if lastKnownOffset != currentOffsetString {
+            print("🕒 Timezone has changed from \(lastKnownOffset ?? "unknown") to \(currentOffsetString)")
+            
+            // Update timezone on server
+            updateTimezoneOnServer(timezone: currentOffsetString)
+            
+            // Cache the new timezone
+            defaults.set(currentOffsetString, forKey: timezoneCacheKey)
+        }
+    }
+    
+    /// Update timezone on server
+    func updateTimezoneOnServer(timezone: String) {
+        guard let userId = UserDefaults.standard.string(forKey: "UserId") else {
+            print("❌ No user ID available for timezone update")
+            return
+        }
+        
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_timezone") else {
+            print("❌ Invalid URL for timezone update")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: String] = [
+            "user_id": userId,
+            "timezone": timezone
+        ]
+        
+        print("🕒 Updating timezone on server: \(body)")
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            print("❌ Failed to serialize timezone update request")
+            return
+        }
+        
+        request.httpBody = jsonData
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ Error updating timezone: \(error.localizedDescription)")
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("✅ Timezone updated successfully")
+                    
+                    // Parse response to check if notification times were updated
+                    if let data = data,
+                       let responseDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        print("🕒 Timezone update response: \(responseDict)")
+                        
+                        // If notification times were updated, we may want to refresh the UI
+                        if let utcHour = responseDict["utc_hour"] as? Int,
+                           let utcMinute = responseDict["utc_minute"] as? Int {
+                            print("📅 Notification times updated: UTC \(utcHour):\(utcMinute)")
+                        }
+                    }
+                } else {
+                    print("❌ Timezone update failed with status: \(httpResponse.statusCode)")
+                    if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                        print("Response: \(responseString)")
+                    }
+                }
+            }
+        }.resume()
     }
 }
 

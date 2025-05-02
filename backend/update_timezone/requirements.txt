@@ -1,0 +1,5 @@
+functions-framework==3.0.0
+firebase-admin==6.1.0
+google-cloud-firestore==2.9.1
+google-cloud-tasks==2.13.1
+requests==2.31.0 
