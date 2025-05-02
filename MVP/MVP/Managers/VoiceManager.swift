@@ -243,77 +243,91 @@ class VoiceManager: NSObject, ObservableObject {
                 if agentType == .exerciseCoach {
                     if let exercisesData = UserDefaults.standard.data(forKey: "UserExercises"),
                        let exercises = try? JSONSerialization.jsonObject(with: exercisesData) as? [[String: Any]],
-                       let exercise = exercises.first { exerciseDict in
-                           // Add logic here to select the correct exercise if needed
-                           // For now, just taking the first one found in UserDefaults
-                           true // Placeholder condition
-                       } { // Closing brace for the closure
+                       let exercise = exercises.first { _ in true /* Placeholder */ } {
 
+                        // ---- ALL DYNAMIC VAR ASSIGNMENT GOES INSIDE THIS BLOCK ----
                         print("🔍 Debug - Adding exercise and user information to dynamic variables for Exercise Coach")
 
-                        // Add user info to dynamic variables
+                        // Define userManager here, inside the block where exercise is valid
                         let userManager = UserManager.shared
-                        print("🔍 Debug - user_name: \(userManager.userName)")
-                        print("🔍 Debug - user_id: \(userManager.userId ?? "nil")")
-                        dynamicVars["user_name"] = .string(userManager.userName)
-                        // Add user ID safely
+                        print("🔍 Debug - Populating dynamic variables with MISSING checks...")
+
+                        // Helper function for conditional string assignment
+                        func assignString(_ key: String, _ value: String) {
+                            dynamicVars[key] = value.isEmpty ? .string("MISSING") : .string(value)
+                            print("  - \(key): \(dynamicVars[key]!)")
+                        }
+
+                        // User Info with checks
+                        let nameToSend = userManager.userName.isEmpty ? "User" : userManager.userName
+                        dynamicVars["user_name"] = .string(nameToSend)
+                        print("  - user_name: \(dynamicVars["user_name"]!)")
+
                         if let userId = userManager.userId {
                              dynamicVars["user_id"] = .string(userId)
+                             print("  - user_id: \(dynamicVars["user_id"]!)")
+                        } else {
+                            dynamicVars["user_id"] = .string("MISSING")
+                            print("  - user_id: MISSING (from nil)")
                         }
-                        dynamicVars["user_age"] = .int(userManager.userAge)
-                        dynamicVars["exercise_routine"] = .string(userManager.exerciseRoutine) // Assuming UserManager has this
-                        dynamicVars["user_goals"] = .string(userManager.userGoals) // Assuming UserManager has this
-                        dynamicVars["pain_description"] = .string(userManager.painDescription)
-                        print("🔍 Debug - userManager.notificationTime: \(userManager.notificationTime)")
-                        dynamicVars["notification_time"] = .string(userManager.notificationTime)
+                        if userManager.userAge > 0 {
+                            dynamicVars["user_age"] = .int(userManager.userAge)
+                            print("  - user_age: \(dynamicVars["user_age"]!)")
+                        } else {
+                            dynamicVars["user_age"] = .string("MISSING")
+                            print("  - user_age: MISSING (value: \(userManager.userAge))")
+                        }
+                        assignString("exercise_routine", userManager.exerciseRoutine)
+                        assignString("user_goals", userManager.userGoals)
+                        assignString("pain_description", userManager.painDescription)
+                        // Log the value right before assignment
+                        print("🔍 Debug - Value of userManager.notificationTime before assignString: '\(userManager.notificationTime)'")
+                        assignString("notification_time", userManager.notificationTime)
 
-                        // Add basic exercise info (example, adjust keys as needed)
+                        // Add basic exercise info using the 'exercise' dictionary
                         if let name = exercise["name"] as? String {
                             dynamicVars["exercise_name"] = .string(name)
                         }
                         if let description = exercise["description"] as? String {
                             dynamicVars["exercise_description"] = .string(description)
                         }
-
-                        // Add instructions as a formatted string
                         if let instructions = exercise["instructions"] as? [String] {
                             let numberedInstructions = instructions.enumerated()
                                 .map { (index, instruction) in "\(index + 1). \(instruction)" }
                                 .joined(separator: "\n")
                             dynamicVars["exercise_instructions"] = .string(numberedInstructions)
                         }
-
-                        // Add variations as a formatted string
                         if let variations = exercise["variations"] as? [String] {
                             let formattedVariations = variations
                                 .map { "• \($0)" }
                                 .joined(separator: "\n")
                             dynamicVars["exercise_variations"] = .string(formattedVariations)
                         }
-
-                        // Add target joints
                         if let targetJoints = exercise["target_joints"] as? [String] {
                             dynamicVars["target_joints"] = .string(targetJoints.joined(separator: ", "))
                         }
-
-                        // Add exercise ID
                         if let firestoreId = exercise["firestoreId"] as? String {
                             dynamicVars["exercise_id"] = .string(firestoreId)
-                            self.currentExerciseId = firestoreId // Store the current exercise ID
+                            self.currentExerciseId = firestoreId
                         } else if let id = exercise["id"] as? String {
                             dynamicVars["exercise_id"] = .string(id.lowercased())
-                            self.currentExerciseId = id.lowercased() // Store the current exercise ID
+                            self.currentExerciseId = id.lowercased()
                         }
+                        // ---- END DYNAMIC VAR ASSIGNMENT BLOCK ----
 
                         print("✅ Added exercise dynamic variables:")
                         dynamicVars.forEach { key, value in
                             print("- \(key): \(value)")
                         }
                     } else {
-                        print("⚠️ Warning: Could not load exercise information from UserDefaults for Exercise Coach")
+                        print("⚠️ Warning: Could not load or find exercise information from UserDefaults for Exercise Coach")
+                        // Consider what dynamic vars to send if exercise load fails - maybe just user info?
+                        // let userManager = UserManager.shared // Define here if needed
+                        // ... assign user info with MISSING checks ...
                     }
-                }
-                
+                } // End if agentType == .exerciseCoach
+
+                // Config and session start happens AFTER dynamicVars are populated
                 let config = ElevenLabsSDK.SessionConfig(
                     agentId: agentType.agentId,
                     dynamicVariables: dynamicVars
@@ -535,11 +549,10 @@ class VoiceManager: NSObject, ObservableObject {
                 throw ElevenLabsSDK.ClientToolError.invalidParameters
             }
             
-            // save user info to UserManager. UserManager already has a didSet observer on the userId property that handles saving to UserDefaults
+            // Save user info to UserManager
             let userManager = UserManager.shared
-            print("🔍 Debug - saveUserId: before userManager.userId: \(userManager.userId)")
             userManager.userId = userId
-            print("🔍 Debug - saveUserId: after userManager.userId: \(userManager.userId)")
+
             // Update published property on main thread
             DispatchQueue.main.async {
                 // Post notification for other parts of the app
@@ -549,7 +562,7 @@ class VoiceManager: NSObject, ObservableObject {
                     userInfo: ["user_id": userId]
                 )
             }
-            
+
             print("✅ Saved user ID: \(userId)")
 
             // Set onboarding as completed

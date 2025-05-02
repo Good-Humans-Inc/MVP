@@ -17,6 +17,10 @@ db = firestore.Client(project='pepmvp', database='pep-mvp')
 
 @functions_framework.http
 def update_information(request):
+    print("--- update_information function entered ---")
+    print(f"Received request: Method={request.method}, URL={request.url}")
+    print(f"Incoming Request Headers: {request.headers}")
+    
     # Enable CORS
     if request.method == 'OPTIONS':
         headers = {
@@ -161,7 +165,7 @@ def update_information(request):
         
         # If no updates provided
         if not update_data:
-            return (json.dumps({'error': 'No update data provided'}), 400, headers)
+            return (json.dumps({'success': True, 'message': 'No valid update data provided in the request'}), 200, headers)
         
         # Update user document
         print(f"Updating Firestore for user {user_id} with data: {update_data}")
@@ -184,40 +188,64 @@ def update_information(request):
         scheduled_task_id = None
         
         if notification_updated:
-            # Use the standardized function to calculate next notification time
-            next_time = calculate_next_notification_time(
-                hour=update_data['notification_preferences']['hour'],
-                minute=update_data['notification_preferences']['minute'],
-                user_timezone_offset=user_timezone_offset_hours
-            )
-            
-            # Update the user's next_notification_time
-            user_ref.update({
-                'next_notification_time': next_time
-            })
-            
+            try:
+                # Use the standardized function to calculate next notification time
+                next_time = calculate_next_notification_time(
+                    hour=update_data['notification_preferences']['hour'],
+                    minute=update_data['notification_preferences']['minute'],
+                    user_timezone_offset=user_timezone_offset_hours
+                )
+                
+                # Update the user's next_notification_time in Firestore again
+                print(f"Updating next_notification_time based on recurring pref change to: {next_time.isoformat()}")
+                user_ref.update({
+                    'next_notification_time': next_time
+                })
+                # Reflect this update in the response (using the serialized version)
+                response_updated_values = {}
+                for key, value in update_data.items():
+                    if isinstance(value, datetime):
+                        response_updated_values[key] = value.isoformat()
+                    elif isinstance(value, type(firestore.SERVER_TIMESTAMP)):
+                        response_updated_values[key] = None
+                    else:
+                        response_updated_values[key] = value
+                response_updated_values['next_notification_time'] = next_time.isoformat()
+            except Exception as e:
+                print(f"❌ Error calculating or updating next_notification_time for recurring: {str(e)}")
+                # Decide if this is fatal or just log and continue
+
             # Cancel any existing scheduled notifications
             try:
                 cancel_existing_scheduled_notifications(user_id)
             except Exception as e:
-                print(f"Error cancelling existing notifications: {str(e)}")
+                print(f"❌ Error cancelling existing notifications: {str(e)}")
+                # Log but likely continue
             
             # Schedule the next notification
             try:
                 task_response = schedule_notification_task(
                     user_id,
-                    next_time.isoformat(),
+                    next_time.isoformat(), 
                     is_one_time=False
                 )
                 if task_response and 'notification_id' in task_response:
                     scheduled_task_id = task_response['notification_id']
+                    response_updated_values['scheduled_notification_id'] = scheduled_task_id
             except Exception as e:
-                print(f"Error scheduling new notification: {str(e)}")
+                print(f"❌ Error scheduling new notification via task: {str(e)}")
+                # Log but likely continue, response won't include scheduled_notification_id
+        
+        elif 'next_notification_time' in update_data:
+            # Logic for specifically setting a one-off next notification time
+            # This might also involve calling schedule_notification_task with is_one_time=True
+            # For now, just log.
+            print(f"Specific next notification time was set to {response_updated_values.get('next_notification_time')}. Ensure scheduler handles this.")
         
         response_data = {
             'status': 'success',
             'message': 'User information updated successfully',
-            'updated_values': update_data
+            'updated_values': response_updated_values
         }
         
         if scheduled_task_id:
@@ -225,8 +253,8 @@ def update_information(request):
             
         if notification_updated:
             print("Recurring notification preferences updated. Consider triggering schedule update.")
-            if 'next_notification_time' in update_data:
-                print(f"Specific next notification time set to {update_data['next_notification_time']}. Ensure scheduler handles this.")
+            if 'next_notification_time' in response_data['updated_values']:
+                print(f"Specific next notification time set to {response_data['updated_values']['next_notification_time']}. Ensure scheduler handles this.")
             
         print(f"Sending successful response: {json.dumps(serialize_firestore_data(response_data))}")
         return (json.dumps(serialize_firestore_data(response_data)), 200, headers)

@@ -389,9 +389,10 @@ def generate_exercise(request):
 
 def get_user_data(user_id):
     """
-    Retrieve user data from Firestore
+    Retrieve user data from Firestore and derive notification_time string.
     """
-    user_doc = db.collection('users').document(user_id).get()
+    user_ref = db.collection('users').document(user_id)
+    user_doc = user_ref.get()
     
     if not user_doc.exists:
         print("❌ get_user_data: User not found in Firestore")
@@ -399,8 +400,28 @@ def get_user_data(user_id):
 
     user_data = user_doc.to_dict()
     print("📋 User data retrieved from Firestore:", user_data)
+    
+    # --- Derive notification_time string --- 
+    notification_time_str = "" # Default to empty string
+    if 'notification_preferences' in user_data and isinstance(user_data['notification_preferences'], dict):
+        prefs = user_data['notification_preferences']
+        hour = prefs.get('hour')
+        minute = prefs.get('minute')
+        # Ensure hour and minute are integers
+        if isinstance(hour, int) and isinstance(minute, int) and 0 <= hour <= 23 and 0 <= minute <= 59:
+            notification_time_str = f"{hour:02d}:{minute:02d}"
+            print(f"✅ Derived notification_time string: {notification_time_str}")
+        else:
+            print(f"⚠️ Found notification_preferences but hour/minute were invalid or missing: hour={hour}, minute={minute}")
+            
+    # Add the derived string to the user_data dictionary (overwrites if already present)
+    user_data['notification_time'] = notification_time_str
+    # --- End derivation --- 
+
+    # Original debug prints
     print("📋 injury field:", user_data.get('injury'))
     print("📋 pain_description field:", user_data.get('pain_description'))
+    print(f"📋 Returning notification_time: '{user_data.get('notification_time')}'") # Verify return value
     
     return user_data
 

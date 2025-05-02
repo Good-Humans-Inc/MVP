@@ -63,8 +63,21 @@ def get_latest_feedback(request):
             }, 200, headers
         
         # Get the latest analysis
-        latest_analysis = list(analyses)[0].to_dict()
-        
+        doc_snapshot = list(analyses)[0]
+        latest_analysis = doc_snapshot.to_dict()
+
+        # --- Add Detailed Debug Logging --- 
+        retrieved_timestamp = latest_analysis.get('timestamp', 'N/A')
+        # Ensure timestamp is serializable if it's a datetime object
+        if hasattr(retrieved_timestamp, 'isoformat'):
+            retrieved_timestamp = retrieved_timestamp.isoformat()
+        print(f"DEBUG: Retrieved analysis doc ID: {doc_snapshot.id}")
+        print(f"DEBUG: Retrieved analysis timestamp: {retrieved_timestamp}")
+        print(f"DEBUG: latest_analysis dictionary keys: {list(latest_analysis.keys())}")
+        print(f"DEBUG: Value for 'raw_response' using .get(): {latest_analysis.get('raw_response')}")
+        print(f"DEBUG: Type of value for 'raw_response': {type(latest_analysis.get('raw_response'))}")
+        # --- End Debug Logging --- 
+
         return {
             'success': True,
             'hasAnalysis': True,
