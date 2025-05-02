@@ -78,6 +78,72 @@ class UserManager: ObservableObject {
         }
     }
     
+    func checkAndUpdateTimezoneIfNeeded() {
+        // Get current timezone offset
+        let currentOffset = TimeZone.current.secondsFromGMT() / 3600
+        let currentOffsetString = String(currentOffset)
+        
+        // Get last known timezone offset
+        let timezoneCacheKey = "lastKnownTimezone"
+        let defaults = UserDefaults.standard
+        let lastKnownOffset = defaults.string(forKey: timezoneCacheKey)
+        
+        print("📱 UserManager: Current timezone offset: \(currentOffsetString), Last known: \(lastKnownOffset ?? "none")")
+        
+        // Check if timezone has changed
+        if lastKnownOffset != currentOffsetString {
+            print("🕒 UserManager: Timezone has changed from \(lastKnownOffset ?? "unknown") to \(currentOffsetString)")
+            
+            // Update server when user ID is available
+            if let userId = self.userId {
+                updateTimezoneOnServer(userId: userId, timezone: currentOffsetString)
+                
+                // Cache the new timezone
+                defaults.set(currentOffsetString, forKey: timezoneCacheKey)
+            }
+        }
+    }
+
+    private func updateTimezoneOnServer(userId: String, timezone: String) {
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_timezone") else {
+            print("❌ UserManager: Invalid URL for timezone update")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: String] = [
+            "user_id": userId,
+            "timezone": timezone
+        ]
+        
+        print("🕒 UserManager: Updating timezone on server: \(body)")
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            print("❌ UserManager: Failed to serialize timezone update request")
+            return
+        }
+        
+        request.httpBody = jsonData
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ UserManager: Error updating timezone: \(error.localizedDescription)")
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("✅ UserManager: Timezone updated successfully")
+                } else {
+                    print("❌ UserManager: Timezone update failed with status: \(httpResponse.statusCode)")
+                }
+            }
+        }.resume()
+    }
+    
     func loadUserData() {
         print("🔄 UserManager loadUserData: Loading user data")
         guard let userId = self.userId else {
@@ -151,3 +217,4 @@ extension URL {
         return components.url!
     }
 } 
+
