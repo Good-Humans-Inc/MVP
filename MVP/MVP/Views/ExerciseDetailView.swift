@@ -260,7 +260,7 @@ struct ExerciseDetailView: View {
                         .foregroundColor(.white)
                         .rotationEffect(.degrees(90))
                     
-                    Text("Place your device 5-6 feet away")
+                    Text("Make sure Pep can see targeted body part!")
                         .foregroundColor(.white)
                         .padding(.top, 8)
                 }

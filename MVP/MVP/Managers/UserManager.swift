@@ -121,7 +121,25 @@ class UserManager: ObservableObject {
                         self.exerciseRoutine = userData["exercise_routine"] as? String ?? ""
                         self.userGoals = userData["user_goals"] as? String ?? ""
                         self.painDescription = userData["pain_description"] as? String ?? ""
-                        self.notificationTime = userData["notification_time"] as? String ?? ""
+
+                        // Convert notification time format
+                        if let timeString24hr = userData["notification_time"] as? String {
+                            let inputFormatter = DateFormatter()
+                            inputFormatter.dateFormat = "HH:mm" // 24-hour format from backend
+
+                            if let date = inputFormatter.date(from: timeString24hr) {
+                                let outputFormatter = DateFormatter()
+                                outputFormatter.dateFormat = "h:mm a" // 12-hour format with AM/PM
+                                self.notificationTime = outputFormatter.string(from: date)
+                                print("✅ Converted notification time to: \(self.notificationTime)")
+                            } else {
+                                print("⚠️ Could not parse notification time: \(timeString24hr), using original value.")
+                                self.notificationTime = timeString24hr // Keep original if parsing fails
+                            }
+                        } else {
+                            self.notificationTime = "" // Default if not found
+                        }
+
                         self.isDataLoaded = true
                         
                         print("✅ UserManager loadUserData: User data loaded successfully")

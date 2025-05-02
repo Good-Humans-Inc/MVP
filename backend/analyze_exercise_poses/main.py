@@ -213,7 +213,7 @@ def analyze_exercise_poses(request):
 The user is performing: {exercise_info['name']}
 Instructions they should follow: {exercise_info['instructions']}
 
-This sequence of {len(images)} images are screenshots of the user performing the exercise. Are they doing it mostly correctly? Say user is doing the exercise correctly if so, and you can point out succinctly what they are doing well. If there are major problems, concisely explain what's wrong and how to fix it. Max 2-3 sentences. Remember, you are only seeing a few snapshots of them doing exercises and not the full video, so you should infer what their complete motion looks like based on these snapshots.
+This sequence of {len(images)} images are screenshots of the user performing the exercise. Are they doing it mostly correctly? Say user is doing the exercise correctly if so, and you can point out succinctly what they are doing well. If there are major problems, concisely explain what's wrong and how to fix it. Be extremely concise. Max 2-3 sentences. Remember, you are only seeing a few snapshots of them doing exercises and not the full video, so you should infer what their complete motion looks like based on these snapshots.
 
 Pay special attention to the progression of the exercise through the sequence of images.
 Format your response with clear sections for Issues and Suggestions, using bullet points.""")
