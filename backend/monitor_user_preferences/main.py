@@ -301,18 +301,23 @@ def process_user_notification_update(user_id):
             print(f"❌ Invalid notification time: hour={hour}, minute={minute}", file=sys.stderr)
             return
         
-        # Determine user's timezone by inspecting existing timestamps
-        user_timezone_offset = None
-        timezone_indicators = ['last_updated', 'last_token_update', 'updated_at', 'next_notification_time']
+        # Determine user's timezone by inspecting existing timestamps or from stored preference
+        user_timezone_offset = notification_prefs.get('timezone_offset')
         
-        for field in timezone_indicators:
-            if field in user_data and user_data[field]:
-                timestamp_value = user_data[field]
-                # Check if the timestamp has timezone information
-                if hasattr(timestamp_value, 'tzinfo') and timestamp_value.tzinfo:
-                    user_timezone_offset = timestamp_value.utcoffset().total_seconds() / 3600
-                    print(f"✅ Found user timezone offset: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}", file=sys.stderr)
-                    break
+        # If not stored in preferences, try to get from timestamps
+        if user_timezone_offset is None:
+            timezone_indicators = ['last_updated', 'last_token_update', 'updated_at', 'next_notification_time']
+            
+            for field in timezone_indicators:
+                if field in user_data and user_data[field]:
+                    timestamp_value = user_data[field]
+                    # Check if the timestamp has timezone information
+                    if hasattr(timestamp_value, 'tzinfo') and timestamp_value.tzinfo:
+                        user_timezone_offset = timestamp_value.utcoffset().total_seconds() / 3600
+                        print(f"✅ Found user timezone offset: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}", file=sys.stderr)
+                        break
+        else:
+            print(f"✅ Using stored timezone offset: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}", file=sys.stderr)
         
         # Default to UTC if we couldn't determine timezone
         if user_timezone_offset is None:
@@ -331,18 +336,29 @@ def process_user_notification_update(user_id):
         now = datetime.now(timezone.utc)
         print(f"🕒 Current time (UTC): {now.isoformat()}", file=sys.stderr)
         
-        # Create a time in the user's timezone first
-        user_hour_in_utc = hour - user_timezone_offset
-        print(f"🕒 User's {hour}:{minute} in their timezone is {user_hour_in_utc}:{minute} in UTC", file=sys.stderr)
+        # Check if UTC hour/minute are directly stored - use them if available
+        hour_utc = notification_prefs.get('hour_utc')
+        minute_utc = notification_prefs.get('minute_utc')
+        
+        if hour_utc is not None and minute_utc is not None:
+            # Use the pre-calculated UTC values
+            try:
+                hour_utc = int(hour_utc)
+                minute_utc = int(minute_utc)
+                print(f"🕒 Using stored UTC values: hour_utc={hour_utc}, minute_utc={minute_utc}", file=sys.stderr)
+            except (ValueError, TypeError):
+                print(f"❌ Could not convert UTC values to integers, falling back to conversion", file=sys.stderr)
+                hour_utc = None
+        
+        if hour_utc is None:
+            # Create a time in the user's timezone first, then convert to UTC
+            # CORRECTED CONVERSION: Add the offset to convert from local to UTC
+            hour_utc = (hour + user_timezone_offset) % 24
+            minute_utc = minute
+            print(f"🕒 User's {hour}:{minute} in their timezone is {hour_utc}:{minute_utc} in UTC", file=sys.stderr)
         
         # Calculate next notification time in UTC based on user's preferred local time
-        next_time = now.replace(hour=int(user_hour_in_utc) % 24, minute=minute, second=0, microsecond=0)
-        if int(user_hour_in_utc) < 0:
-            # Handle case where user timezone pushes hour to previous day
-            next_time = next_time + timedelta(days=1)
-        elif int(user_hour_in_utc) >= 24:
-            # Handle case where user timezone pushes hour to next day
-            next_time = next_time - timedelta(days=1)
+        next_time = now.replace(hour=hour_utc, minute=minute_utc, second=0, microsecond=0)
             
         print(f"🕒 Initial calculated time (UTC): {next_time.isoformat()}", file=sys.stderr)
         

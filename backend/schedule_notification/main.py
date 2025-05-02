@@ -69,6 +69,16 @@ def schedule_notification(request):
         if not fcm_token:
             return (json.dumps({'error': 'No FCM token found for user'}), 400, headers)
         
+        # Check for timezone offset in user data
+        user_timezone_offset = user_data.get('notification_timezone_offset', 0)
+        
+        # Also check notification preferences for timezone information
+        notification_prefs = user_data.get('notification_preferences', {})
+        if not user_timezone_offset and 'timezone_offset' in notification_prefs:
+            user_timezone_offset = notification_prefs.get('timezone_offset', 0)
+            
+        print(f"User timezone offset: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}")
+            
         # Create notification ID for tracking
         notification_id = str(uuid.uuid4())
         
@@ -98,13 +108,15 @@ def schedule_notification(request):
             'user_id': user_id,
             'type': 'exercise_reminder',
             'scheduled_for': scheduled_time,
+            'scheduled_time_utc': scheduled_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
             'status': 'scheduled',
             'created_at': firestore.SERVER_TIMESTAMP,
             'is_one_time': is_one_time,
             'content': {
                 'title': notification_title,
                 'body': notification_body
-            }
+            },
+            'user_timezone_offset': user_timezone_offset
         }
         
         db.collection('notifications').document(notification_id).set(notification_data)
@@ -160,7 +172,10 @@ def schedule_notification(request):
         # If this is a recurring notification, update the user's next_notification_time
         if not is_one_time:
             user_ref.update({
-                'next_notification_time': scheduled_time
+                'next_notification_time': scheduled_time,
+                'next_notification_time_utc': scheduled_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                'next_notification_utc_hour': scheduled_time.hour,
+                'next_notification_utc_minute': scheduled_time.minute
             })
         
         return (json.dumps({

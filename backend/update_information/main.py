@@ -94,17 +94,23 @@ def update_information(request):
                 # Parse notification time (expected format: "HH:MM")
                 hour, minute = map(int, notification_time.split(':'))
                 if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    # Convert local hour to UTC hour for storage
+                    utc_hour = (hour + user_timezone_offset_hours) % 24
+                    
                     update_data['notification_preferences'] = {
                         'is_enabled': True,
                         'frequency': 'daily',  # Default to daily
-                        'hour': hour,
-                        'minute': minute,
+                        'hour': hour,          # Local hour (what user sees)
+                        'minute': minute,      # Local minute
+                        'hour_utc': utc_hour,  # UTC hour (for scheduling)
+                        'minute_utc': minute,  # UTC minute
+                        'timezone_offset': user_timezone_offset_hours,  # Store timezone offset
                         'updated_at': firestore.SERVER_TIMESTAMP,
                         'updated_by': 'elevenlabs_agent',
                         'last_scheduled_utc': None
                     }
                     notification_updated = True
-                    print(f"Prepared update for notification_preferences: HH:MM {hour:02d}:{minute:02d}")
+                    print(f"Prepared update for notification_preferences: Local {hour:02d}:{minute:02d}, UTC {utc_hour:02d}:{minute:02d}")
                 else:
                     print(f"Invalid hour/minute range in notification_time: {notification_time}")
                     return (json.dumps({'error': 'Invalid notification time format (range)'}), 400, headers)
@@ -156,7 +162,7 @@ def update_information(request):
                     update_data['next_notification_time_utc'] = utc_datetime_no_tzinfo.strftime("%Y-%m-%dT%H:%M:%S.000Z")
                     update_data['next_notification_utc_hour'] = utc_datetime_no_tzinfo.hour
                     update_data['next_notification_utc_minute'] = utc_datetime_no_tzinfo.minute
-                    update_data['is_one_time_notification'] = is_one_time
+                    update_data['next_notification_time_manual_override'] = True
                     # Track if this was forced to be today
                     if force_today:
                         update_data['force_today'] = True
@@ -226,7 +232,8 @@ def update_information(request):
                 'next_notification_time': next_time,
                 'next_notification_time_utc': next_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
                 'next_notification_utc_hour': next_time.hour,
-                'next_notification_utc_minute': next_time.minute
+                'next_notification_utc_minute': next_time.minute,
+                'notification_timezone_offset': user_timezone_offset_hours  # Store timezone offset
             })
             
             # Cancel any existing scheduled notifications
