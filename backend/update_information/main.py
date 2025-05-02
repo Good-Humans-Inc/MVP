@@ -51,7 +51,8 @@ def update_information(request):
         next_notification_time_input = request_json.get('next_notification_time')
         user_goals = request_json.get('user_goals')
         exercise_routine = request_json.get('exercise_routine')
-        user_timezone_input = request_json.get('timezone') 
+        user_timezone_input = request_json.get('timezone')
+        force_today = request_json.get('force_today', False)  # New flag to force notification for today
         
         # Prepare update data
         update_data = {}
@@ -122,13 +123,17 @@ def update_information(request):
                     # Create target time for TODAY in user's timezone
                     target_time_today = now_user_tz.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-                    # If target time has already passed today, schedule for tomorrow
-                    if target_time_today <= now_user_tz:
+                    # If the target time has already passed today, schedule for tomorrow
+                    # unless force_today is True
+                    if target_time_today <= now_user_tz and not force_today:
                         target_datetime = target_time_today + timedelta(days=1)
                         print(f"Target time {hour:02d}:{minute:02d} already passed today in user TZ. Scheduling for tomorrow.")
                     else:
                         target_datetime = target_time_today
-                        print(f"Target time {hour:02d}:{minute:02d} is later today in user TZ. Scheduling for today.")
+                        if target_time_today <= now_user_tz and force_today:
+                            print(f"Target time {hour:02d}:{minute:02d} already passed today, but force_today=True. Scheduling for today anyway.")
+                        else:
+                            print(f"Target time {hour:02d}:{minute:02d} is later today in user TZ. Scheduling for today.")
 
                     # Convert to UTC for storage
                     target_time_utc = target_datetime.astimezone(timezone.utc)
@@ -148,7 +153,13 @@ def update_information(request):
                     
                     # Store both the time and the one-time flag
                     update_data['next_notification_time'] = utc_datetime_no_tzinfo
+                    update_data['next_notification_time_utc'] = utc_datetime_no_tzinfo.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                    update_data['next_notification_utc_hour'] = utc_datetime_no_tzinfo.hour
+                    update_data['next_notification_utc_minute'] = utc_datetime_no_tzinfo.minute
                     update_data['is_one_time_notification'] = is_one_time
+                    # Track if this was forced to be today
+                    if force_today:
+                        update_data['force_today'] = True
                     
                     local_hour = hour 
                     local_minute = minute
@@ -212,7 +223,10 @@ def update_information(request):
             
             # Update the user's next_notification_time
             user_ref.update({
-                'next_notification_time': next_time
+                'next_notification_time': next_time,
+                'next_notification_time_utc': next_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                'next_notification_utc_hour': next_time.hour,
+                'next_notification_utc_minute': next_time.minute
             })
             
             # Cancel any existing scheduled notifications
@@ -227,7 +241,8 @@ def update_information(request):
                 task_response = schedule_notification_task(
                     user_id,
                     next_time.isoformat(),
-                    is_one_time=is_one_time
+                    is_one_time=is_one_time,
+                    force_today=force_today
                 )
                 if task_response and 'notification_id' in task_response:
                     scheduled_task_id = task_response['notification_id']
@@ -286,7 +301,7 @@ def cancel_existing_scheduled_notifications(user_id):
             except Exception as e:
                 print(f"Error deleting Cloud Task {task_name}: {str(e)}")
 
-def schedule_notification_task(user_id, scheduled_time, is_one_time=False, custom_title=None, custom_body=None):
+def schedule_notification_task(user_id, scheduled_time, is_one_time=False, custom_title=None, custom_body=None, force_today=False):
     """Call the schedule_notification Cloud Function."""
     # Get the GCP project ID
     project_id = 'pepmvp'  # Your GCP project ID
@@ -295,7 +310,8 @@ def schedule_notification_task(user_id, scheduled_time, is_one_time=False, custo
     payload = {
         'user_id': user_id,
         'scheduled_time': scheduled_time,
-        'is_one_time': is_one_time
+        'is_one_time': is_one_time,
+        'force_today': force_today
     }
     
     if custom_title:
@@ -385,7 +401,11 @@ def calculate_next_notification_time(hour, minute, user_timezone_offset, current
         target_time_utc.microsecond
     )
     
+    # Create explicit UTC string representation
+    utc_time_str = utc_datetime_no_tzinfo.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    
     print(f"Converted to UTC datetime without timezone info: {utc_datetime_no_tzinfo.isoformat()}Z")
+    print(f"UTC string representation: {utc_time_str}")
     print(f"This will be {hour:02d}:{minute:02d} in the user's local timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset})")
     
     # Return the UTC datetime without timezone info
