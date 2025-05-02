@@ -418,6 +418,7 @@ struct MVPApp: App {
     @StateObject private var visionManager: VisionManager
     @StateObject private var resourceCoordinator: ResourceCoordinator
     @StateObject private var notificationManager: NotificationManager
+    @StateObject private var userManager = UserManager.shared
     
     init() {
         // Initialize managers with dependency injection
@@ -449,6 +450,7 @@ struct MVPApp: App {
                 .environmentObject(visionManager)
                 .environmentObject(resourceCoordinator)
                 .environmentObject(notificationManager)
+                .environmentObject(userManager)
                 .onAppear {
                     // Configure resource coordinator with other managers
                     resourceCoordinator.configure(

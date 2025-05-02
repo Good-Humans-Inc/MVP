@@ -20,6 +20,7 @@ struct ExerciseDetailView: View {
     @EnvironmentObject private var cameraManager: CameraManager
     @EnvironmentObject private var visionManager: VisionManager
     @EnvironmentObject private var notificationManager: NotificationManager
+    @EnvironmentObject private var userManager: UserManager
     
     var body: some View {
         ZStack {
@@ -51,19 +52,25 @@ struct ExerciseDetailView: View {
                         instructionsSection
                         
                         // Start button
-                        Button(action: {
-                            startExercise()
-                        }) {
-                            Text("Start Exercise")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(isStartingExercise ? Color.gray : Color.blue)
-                                .cornerRadius(12)
+                        Button(action: startExercise) {
+                            HStack {
+                                if isStartingExercise || !userManager.isDataLoaded {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                } else {
+                                    Image(systemName: "play.circle.fill")
+                                }
+                                Text(isStartingExercise ? "Starting..." : (!userManager.isDataLoaded ? "Loading User Data..." : "Start Exercise"))
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(userManager.isDataLoaded ? Color.blue : Color.gray)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
                         }
-                        .padding(.top, 16)
-                        .disabled(isStartingExercise)
+                        .padding(.horizontal)
+                        .padding(.bottom)
+                        .disabled(isStartingExercise || !userManager.isDataLoaded)
                     }
                     .padding()
                 }
@@ -105,6 +112,10 @@ struct ExerciseDetailView: View {
             // Preload video asset if available
             if let videoURL = exercise.videoURL {
                 preloadVideoAsset(from: videoURL)
+            }
+            
+            if !userManager.isDataLoaded {
+                userManager.loadUserData()
             }
         }
     }
@@ -323,6 +334,11 @@ struct ExerciseDetailView: View {
     }
     
     private func startExercise() {
+        guard userManager.isDataLoaded else {
+            print("⚠️ Attempted to start exercise before user data loaded.")
+            return
+        }
+        
         isStartingExercise = true
         
         // Configure needed resources

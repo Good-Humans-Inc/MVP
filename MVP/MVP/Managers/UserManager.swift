@@ -104,6 +104,11 @@ class UserManager: ObservableObject {
             }
             
             do {
+                // Log raw response before parsing
+                if let jsonString = String(data: data, encoding: .utf8) {
+                    print("☁️ Raw JSON response from /get_user_data: \(jsonString)")
+                }
+
                 // Parse response
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let userData = json["user_data"] as? [String: Any] {

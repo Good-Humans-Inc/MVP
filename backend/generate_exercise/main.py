@@ -322,7 +322,7 @@ def generate_exercise(request):
             api_key = access_secret_version("openai-api-key")
         
         # Get user data
-        user_data = get_user_data(user_id)
+        user_data = get_user_data(request)
         if not user_data:
             logger.warning(f"User not found: {user_id}")
             return (json.dumps({'error': 'User not found'}, cls=DateTimeEncoder), 404, headers)
@@ -387,43 +387,77 @@ def generate_exercise(request):
         logger.error(f"Error generating exercise: {str(e)}", exc_info=True)
         return (json.dumps({'error': f'Error generating exercise: {str(e)}'}, cls=DateTimeEncoder), 500, headers)
 
-def get_user_data(user_id):
+@functions_framework.http
+def get_user_data(request):
     """
     Retrieve user data from Firestore and derive notification_time string.
+    Expects user_id as a query parameter.
     """
-    user_ref = db.collection('users').document(user_id)
-    user_doc = user_ref.get()
-    
-    if not user_doc.exists:
-        print("❌ get_user_data: User not found in Firestore")
-        return None
-    
-    user_data = user_doc.to_dict()
-    print("📋 User data retrieved from Firestore:", user_data)
-    
-    # --- Derive notification_time string --- 
-    notification_time_str = "" # Default to empty string
-    if 'notification_preferences' in user_data and isinstance(user_data['notification_preferences'], dict):
-        prefs = user_data['notification_preferences']
-        hour = prefs.get('hour')
-        minute = prefs.get('minute')
-        # Ensure hour and minute are integers
-        if isinstance(hour, int) and isinstance(minute, int) and 0 <= hour <= 23 and 0 <= minute <= 59:
-            notification_time_str = f"{hour:02d}:{minute:02d}"
-            print(f"✅ Derived notification_time string: {notification_time_str}")
-        else:
-            print(f"⚠️ Found notification_preferences but hour/minute were invalid or missing: hour={hour}, minute={minute}")
+    # Enable CORS for direct testing if needed
+    if request.method == 'OPTIONS':
+        headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        }
+        return ('', 204, headers)
+
+    headers = {'Access-Control-Allow-Origin': '*'}
+
+    # Get user_id from request query parameters
+    user_id = request.args.get('user_id')
+    if not user_id:
+        print("❌ get_user_data: Missing user_id query parameter")
+        return (json.dumps({'error': 'Missing user_id query parameter'}), 400, headers)
+
+    print(f"🔄 get_user_data: Processing request for user_id: {user_id}")
+
+    try: # Add try block for safety
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+
+        if not user_doc.exists:
+            print("❌ get_user_data: User not found in Firestore")
+            return None
+        
+        user_data = user_doc.to_dict()
+        print("📋 User data retrieved from Firestore:", user_data)
+        
+        # --- Derive notification_time string --- 
+        notification_time_str = "" # Default to empty string
+        if 'notification_preferences' in user_data and isinstance(user_data['notification_preferences'], dict):
+            prefs = user_data['notification_preferences']
+            hour = prefs.get('hour')
+            minute = prefs.get('minute')
+            # Ensure hour and minute are integers
+            if isinstance(hour, int) and isinstance(minute, int) and 0 <= hour <= 23 and 0 <= minute <= 59:
+                notification_time_str = f"{hour:02d}:{minute:02d}"
+                print(f"✅ Derived notification_time string: {notification_time_str}")
+            else:
+                print(f"⚠️ Found notification_preferences but hour/minute were invalid or missing: hour={hour}, minute={minute}")
             
-    # Add the derived string to the user_data dictionary (overwrites if already present)
-    user_data['notification_time'] = notification_time_str
-    # --- End derivation --- 
+        # Add the derived string to the user_data dictionary (overwrites if already present)
+        user_data['notification_time'] = notification_time_str
+        # --- End derivation --- 
 
-    # Original debug prints
-    print("📋 injury field:", user_data.get('injury'))
-    print("📋 pain_description field:", user_data.get('pain_description'))
-    print(f"📋 Returning notification_time: '{user_data.get('notification_time')}'") # Verify return value
+        # Original debug prints
+        print("📋 injury field:", user_data.get('injury'))
+        print("📋 pain_description field:", user_data.get('pain_description'))
+        print(f"📋 Returning notification_time: '{user_data.get('notification_time')}'") # Verify return value
 
-    return user_data
+        # Prepare final response structure
+        response_payload = {
+            "success": True,
+            "user_data": user_data
+        }
+        print(f"📋 Returning user_data for {user_id} including notification_time: '{notification_time_str}'")
+        return (json.dumps(response_payload, cls=DateTimeEncoder), 200, headers)
+
+    except Exception as e:
+        print(f"❌ Error processing get_user_data for {user_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return (json.dumps({'error': 'Internal server error during data fetch'}), 500, headers)
 
 def select_exercise_with_claude(user_data, api_key, exercises=None):
     """
