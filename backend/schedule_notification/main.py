@@ -12,7 +12,7 @@ import google.auth
 try:
     app = firebase_admin.get_app()
 except ValueError:
-firebase_admin.initialize_app()
+    firebase_admin.initialize_app()
 
 db = firestore.Client(project='pepmvp', database='pep-mvp')
 
@@ -49,6 +49,7 @@ def schedule_notification(request):
         is_one_time = request_json.get('is_one_time', False)
         custom_title = request_json.get('custom_title', None)
         custom_body = request_json.get('custom_body', None)
+        force_today = request_json.get('force_today', False)
         
         # Validate required parameters
         if not user_id or not scheduled_time_str:
