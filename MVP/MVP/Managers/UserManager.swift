@@ -15,6 +15,11 @@ class UserManager: ObservableObject {
                 UserDefaults.standard.removeObject(forKey: "userId")
                 print("✅ UserManager: Removed userId from UserDefaults")
             }
+            
+            // If we have a user ID, ensure timezone is updated
+            if userId != nil {
+                NotificationCenter.default.post(name: NSNotification.Name("UserIDAvailable"), object: nil)
+            }
         }
     }
     @Published var userName: String = "" {
@@ -66,6 +71,11 @@ class UserManager: ObservableObject {
         
         // Load user data when initialized
         loadUserData()
+        
+        // Schedule timezone check for after user data is likely available
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.checkAndUpdateTimezoneIfNeeded()
+        }
     }
     
     func loadUserData() {
