@@ -28,7 +28,7 @@ struct ContentView: View {
                     .transition(.opacity)
             } else if appState.isOnboardingComplete || appState.hasUserId {
                 // If onboarding is complete or we have a user ID, show loading with exercise fetch
-                ProgressView("Loading your exercise...")
+                ProgressView("Generating your exercise...")
                     .onAppear {
                         if let userId = appState.userId {
                             loadRecommendedExercise(userId: userId)

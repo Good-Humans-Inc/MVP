@@ -190,49 +190,6 @@ KNEE_EXERCISES = [
     }
 ]
 
-# Lower back exercises
-LOWER_BACK_EXERCISES = [
-    {
-        "name": "Bridge Exercise",
-        "description": "Strengthening exercise for lower back and glutes",
-        "target_joints": ["lower_back"],
-        "instructions": [
-            "Lie on back with knees bent",
-            "Lift hips toward ceiling",
-            "Hold for 5 seconds",
-            "Lower slowly",
-            "Repeat 10 times"
-        ],
-        "videoURL": "https://storage.googleapis.com/mvp-vids/bridge_exercise.mp4"
-    },
-    {
-        "name": "Bird Dog",
-        "description": "Balance and stability exercise for core and back",
-        "target_joints": ["lower_back"],
-        "instructions": [
-            "Start on hands and knees",
-            "Extend right arm and left leg",
-            "Hold for 5 seconds",
-            "Return to start and switch sides",
-            "Repeat 10 times per side"
-        ],
-        "videoURL": "https://storage.googleapis.com/mvp-vids/bird_dog.mp4"
-    },
-    {
-        "name": "Knee to Chest Stretch",
-        "description": "Gentle stretch for lower back muscles",
-        "target_joints": ["lower_back"],
-        "instructions": [
-            "Lie on back with knees bent",
-            "Bring one knee toward chest",
-            "Hold for 30 seconds",
-            "Lower and switch legs",
-            "Repeat 3 times per leg"
-        ],
-        "videoURL": "https://storage.googleapis.com/mvp-vids/knee_to_chest_stretch.mp4"
-    }
-]
-
 # Ankle exercises
 ANKLE_EXERCISES = [
     {
@@ -277,7 +234,7 @@ ANKLE_EXERCISES = [
 ]
 
 # Combine all exercises
-ALL_EXERCISES = RSI_EXERCISES + SHOULDER_EXERCISES + KNEE_EXERCISES + LOWER_BACK_EXERCISES + ANKLE_EXERCISES
+ALL_EXERCISES = RSI_EXERCISES + SHOULDER_EXERCISES + KNEE_EXERCISES + ANKLE_EXERCISES
 
 @functions_framework.http
 def generate_exercise(request):
@@ -322,7 +279,7 @@ def generate_exercise(request):
             api_key = access_secret_version("openai-api-key")
         
         # Get user data
-        user_data = get_user_data(request)
+        user_data = get_user_data_helper(user_id)
         if not user_data:
             logger.warning(f"User not found: {user_id}")
             return (json.dumps({'error': 'User not found'}, cls=DateTimeEncoder), 404, headers)
@@ -387,83 +344,29 @@ def generate_exercise(request):
         logger.error(f"Error generating exercise: {str(e)}", exc_info=True)
         return (json.dumps({'error': f'Error generating exercise: {str(e)}'}, cls=DateTimeEncoder), 500, headers)
 
-@functions_framework.http
-def get_user_data(request):
+def get_user_data_helper(user_id):
     """
-    Retrieve user data from Firestore and derive notification_time string.
-    Expects user_id as a query parameter.
+    Retrieve user data from Firestore
     """
-    # Enable CORS for direct testing if needed
-    if request.method == 'OPTIONS':
-        headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET',
-            'Access-Control-Allow-Headers': 'Content-Type'
-        }
-        return ('', 204, headers)
+    user_doc = db.collection('users').document(user_id).get()
+    
+    if not user_doc.exists:
+        print("❌ get_user_data: User not found in Firestore")
+        return None
+    
+    user_data = user_doc.to_dict()
+    print("📋 User data retrieved from Firestore:", user_data)
+    print("📋 injury field:", user_data.get('injury'))
+    print("📋 pain_description field:", user_data.get('pain_description'))
 
-    headers = {'Access-Control-Allow-Origin': '*'}
-
-    # Get user_id from request query parameters
-    user_id = request.args.get('user_id')
-    if not user_id:
-        print("❌ get_user_data: Missing user_id query parameter")
-        return (json.dumps({'error': 'Missing user_id query parameter'}), 400, headers)
-
-    print(f"🔄 get_user_data: Processing request for user_id: {user_id}")
-
-    try: # Add try block for safety
-        user_ref = db.collection('users').document(user_id)
-        user_doc = user_ref.get()
-
-        if not user_doc.exists:
-            print("❌ get_user_data: User not found in Firestore")
-            return None
-        
-        user_data = user_doc.to_dict()
-        print("📋 User data retrieved from Firestore:", user_data)
-        
-        # --- Derive notification_time string --- 
-        notification_time_str = "" # Default to empty string
-        if 'notification_preferences' in user_data and isinstance(user_data['notification_preferences'], dict):
-            prefs = user_data['notification_preferences']
-            hour = prefs.get('hour')
-            minute = prefs.get('minute')
-            # Ensure hour and minute are integers
-            if isinstance(hour, int) and isinstance(minute, int) and 0 <= hour <= 23 and 0 <= minute <= 59:
-                notification_time_str = f"{hour:02d}:{minute:02d}"
-                print(f"✅ Derived notification_time string: {notification_time_str}")
-            else:
-                print(f"⚠️ Found notification_preferences but hour/minute were invalid or missing: hour={hour}, minute={minute}")
-            
-        # Add the derived string to the user_data dictionary (overwrites if already present)
-        user_data['notification_time'] = notification_time_str
-        # --- End derivation --- 
-
-        # Original debug prints
-        print("📋 injury field:", user_data.get('injury'))
-        print("📋 pain_description field:", user_data.get('pain_description'))
-        print(f"📋 Returning notification_time: '{user_data.get('notification_time')}'") # Verify return value
-
-        # Prepare final response structure
-        response_payload = {
-            "success": True,
-            "user_data": user_data
-        }
-        print(f"📋 Returning user_data for {user_id} including notification_time: '{notification_time_str}'")
-        return (json.dumps(response_payload, cls=DateTimeEncoder), 200, headers)
-
-    except Exception as e:
-        print(f"❌ Error processing get_user_data for {user_id}: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return (json.dumps({'error': 'Internal server error during data fetch'}), 500, headers)
+    return user_data
 
 def select_exercise_with_claude(user_data, api_key, exercises=None):
     """
     Use Claude to select the most appropriate exercise from the predefined list
     and generate detailed instructions based on the user's pain description
     """
+    pain_description = ""
     try:
         # Extract user info
         name = user_data.get('name', 'the user')
@@ -623,6 +526,7 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
     Use OpenAI to select the most appropriate exercise from the predefined list
     and generate detailed instructions based on the user's pain description
     """
+    pain_description = ""
     try:
         # Extract user info
         name = user_data.get('name', 'the user')
