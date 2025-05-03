@@ -264,12 +264,12 @@ def send_notification(request):
                 title=notification_title,
                 body=notification_body
             ),
-            data={
-                'notification_id': notification_id,
-                'user_id': user_id,
-                'type': notification_data.get('type', 'exercise_reminder')
-            },
             token=fcm_token,
+            data={
+                "notification_id": notification_id,
+                "user_id": user_id,
+                "type": notification_data.get('type', 'generic')
+            },
             android=messaging.AndroidConfig(
                 priority='high',
                 notification=messaging.AndroidNotification(
