@@ -71,7 +71,10 @@ class UserManager: ObservableObject {
         
 
         // Load user data when initialized
-        loadUserData()
+        Task {
+            print("🚀 UserManager init: Launching Task to load user data")
+            await loadUserData()
+        }
         
         // Schedule timezone check for after user data is likely available
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
