@@ -118,7 +118,7 @@ def send_notification(request):
             return (json.dumps({'error': 'Notification not found'}), 404, headers)
         
         notification_data = notification_doc.to_dict()
-        logger.info(f"Notification data: {json.dumps(notification_data)}")
+        logger.info(f"Notification data: {json.dumps(serialize_firestore_data(notification_data))}")
         
         # Check if notification was already sent or cancelled
         status = notification_data.get('status')
