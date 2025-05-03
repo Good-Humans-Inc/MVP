@@ -1,3 +1,4 @@
+# send_notification/main.py
 import functions_framework
 import firebase_admin
 from firebase_admin import credentials, firestore, messaging
@@ -6,16 +7,50 @@ from datetime import datetime, timezone, timedelta
 import requests
 import logging
 import traceback
+import os
+import sys
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Debug Firebase credentials and initialization
+logger.info("=== FIREBASE INITIALIZATION ===")
+logger.info(f"Python version: {sys.version}")
+logger.info(f"Current working directory: {os.getcwd()}")
+logger.info(f"Environment variables: {dict(os.environ)}")
+
+# Print service account info if available
+service_account_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+if service_account_path:
+    logger.info(f"Using service account from: {service_account_path}")
+    try:
+        with open(service_account_path, 'r') as f:
+            service_account_content = f.read()
+            # Sanitize the output to hide sensitive info
+            logger.info(f"Service account JSON exists and is readable (length: {len(service_account_content)} chars)")
+    except Exception as e:
+        logger.error(f"Error reading service account file: {str(e)}")
+else:
+    logger.warning("GOOGLE_APPLICATION_CREDENTIALS environment variable not set")
+
 # Initialize Firebase Admin if not already initialized
 try:
     app = firebase_admin.get_app()
+    logger.info(f"Firebase app already initialized: {app.name}")
+    logger.info(f"Firebase project ID: {app.project_id}")
+    logger.info(f"Firebase options: {app._options}")
 except ValueError:
-    firebase_admin.initialize_app()
+    try:
+        # Try with default credentials
+        logger.info("Initializing Firebase with default credentials")
+        firebase_admin.initialize_app()
+        app = firebase_admin.get_app()
+        logger.info(f"Firebase initialization succeeded with app name: {app.name}")
+        logger.info(f"Firebase project ID: {app.project_id}")
+    except Exception as e:
+        logger.error(f"Firebase initialization error: {str(e)}")
+        logger.error(traceback.format_exc())
 
 db = firestore.Client(project='pepmvp', database='pep-mvp')
 
@@ -31,8 +66,24 @@ def send_notification(request):
         "user_id": "string"
     }
     """
+    logger.info("=== SEND_NOTIFICATION FUNCTION STARTED ===")
+    # Log the entire raw request for debugging
+    request_method = request.method
+    request_headers = dict(request.headers)
+    request_url = request.url
+    request_args = dict(request.args)
+    
+    # Sanitize headers to remove sensitive information
+    if 'Authorization' in request_headers:
+        request_headers['Authorization'] = f"{request_headers['Authorization'][:15]}...REDACTED..."
+    
+    logger.info(f"Request details - Method: {request_method}, URL: {request_url}")
+    logger.info(f"Request headers: {request_headers}")
+    logger.info(f"Request args: {request_args}")
+    
     # Enable CORS
     if request.method == 'OPTIONS':
+        logger.info("Handling OPTIONS request (CORS)")
         headers = {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'POST',
@@ -45,17 +96,20 @@ def send_notification(request):
     try:
         # Get request data
         request_json = request.get_json()
+        logger.info(f"Request body: {json.dumps(request_json)}")
+        
         notification_id = request_json.get('notification_id')
         user_id = request_json.get('user_id')
         
-        logger.info(f"Received request to send notification {notification_id} for user {user_id}")
+        logger.info(f"Processing notification: {notification_id} for user: {user_id}")
         
         # Validate required parameters
         if not notification_id or not user_id:
-            logger.error("Missing required parameters: notification_id or user_id")
+            logger.error("Missing required parameters")
             return (json.dumps({'error': 'Missing required parameters'}), 400, headers)
         
         # Get notification data
+        logger.info(f"Fetching notification data from Firestore: {notification_id}")
         notification_ref = db.collection('notifications').document(notification_id)
         notification_doc = notification_ref.get()
         
@@ -64,23 +118,25 @@ def send_notification(request):
             return (json.dumps({'error': 'Notification not found'}), 404, headers)
         
         notification_data = notification_doc.to_dict()
+        logger.info(f"Notification data: {json.dumps(notification_data)}")
         
         # Check if notification was already sent or cancelled
         status = notification_data.get('status')
         if status == 'sent':
-            logger.warning(f"Notification {notification_id} was already sent")
+            logger.info(f"Notification {notification_id} was already sent")
             return (json.dumps({
                 'status': 'warning',
                 'message': 'Notification was already sent'
             }), 200, headers)
         elif status == 'cancelled':
-            logger.warning(f"Notification {notification_id} was cancelled")
+            logger.info(f"Notification {notification_id} was cancelled")
             return (json.dumps({
                 'status': 'warning',
                 'message': 'Notification was cancelled'
             }), 200, headers)
         
         # Get user data
+        logger.info(f"Fetching user data from Firestore: {user_id}")
         user_ref = db.collection('users').document(user_id)
         user_doc = user_ref.get()
         
@@ -94,6 +150,11 @@ def send_notification(request):
             return (json.dumps({'error': 'User not found'}), 404, headers)
         
         user_data = user_doc.to_dict()
+        # Log user data but sanitize sensitive information
+        sanitized_user_data = user_data.copy()
+        if 'fcm_token' in sanitized_user_data:
+            sanitized_user_data['fcm_token'] = f"{sanitized_user_data['fcm_token'][:10]}...REDACTED..."
+        logger.info(f"User data: {json.dumps(sanitized_user_data)}")
         
         # Check for FCM token
         fcm_token = user_data.get('fcm_token')
@@ -106,36 +167,42 @@ def send_notification(request):
             })
             return (json.dumps({'error': 'No FCM token for user'}), 400, headers)
         
-        # Log for verification
-        logger.info(f"Found FCM token for user {user_id}: {fcm_token[:10]}...")
+        logger.info(f"FCM token found for user: {fcm_token[:10]}...REDACTED...")
         
         # Get notification content - prioritize next_day_notification content
         username = user_data.get('name', 'User')
         next_day_data = user_data.get('next_day_notification', {})
         stored_content = notification_data.get('content', {})
         
+        logger.info(f"Username: {username}")
+        logger.info(f"Next day notification data available: {bool(next_day_data)}")
+        logger.info(f"Next day data: {json.dumps(next_day_data)}")
+        logger.info(f"Stored notification content: {json.dumps(stored_content)}")
+        
         # Get content from next_day_notification if available
         if next_day_data and 'title' in next_day_data and 'body' in next_day_data:
             notification_title = next_day_data.get('title')
             notification_body = next_day_data.get('body')
-            logger.info(f"Using next_day_notification content for user {user_id}")
+            logger.info("Using next_day_notification content")
         else:
             # Fallback to content saved with the notification
             notification_title = stored_content.get('title', f"Time for Exercise, {username}!")
             notification_body = stored_content.get('body', "It's time for your daily exercise routine. Let's keep that streak going!")
-            logger.info(f"Using stored notification content for user {user_id}")
+            logger.info("Using stored notification content")
         
-        # Log notification content
-        logger.info(f"Notification content: title='{notification_title}', body='{notification_body}'")
+        logger.info(f"Final notification title: {notification_title}")
+        logger.info(f"Final notification body: {notification_body}")
         
         # Get user preferences for iOS configuration
         device_type = user_data.get('device_type', 'unknown')
         bundle_id = user_data.get('app_bundle_id', 'com.pepmvp.app')
         
-        logger.info(f"User {user_id} device type: {device_type}, bundle ID: {bundle_id}")
+        logger.info(f"Device type: {device_type}")
+        logger.info(f"Bundle ID: {bundle_id}")
         
         # APNS configuration for iOS
         if device_type and device_type.lower() == 'ios':
+            logger.info(f"Creating iOS-specific APNS config with bundle ID: {bundle_id}")
             apns_config = messaging.APNSConfig(
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
@@ -156,9 +223,9 @@ def send_notification(request):
                     'apns-topic': bundle_id
                 }
             )
-            logger.info(f"Created iOS APNS config with bundle ID: {bundle_id}")
+            logger.info("iOS APNS config created successfully")
         else:
-            # Default configuration for other devices
+            logger.info("Creating default APNS config for non-iOS device")
             apns_config = messaging.APNSConfig(
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
@@ -168,9 +235,9 @@ def send_notification(request):
                     )
                 )
             )
-            logger.info(f"Created default APNS config for non-iOS device")
         
         # Compose FCM message
+        logger.info("Composing FCM message")
         message = messaging.Message(
             notification=messaging.Notification(
                 title=notification_title,
@@ -192,13 +259,43 @@ def send_notification(request):
             apns=apns_config
         )
         
+        # Log the message structure (sanitized)
+        message_dict = {
+            'notification': {
+                'title': notification_title,
+                'body': notification_body
+            },
+            'data': {
+                'notification_id': notification_id,
+                'user_id': user_id,
+                'type': notification_data.get('type', 'exercise_reminder')
+            },
+            'token': f"{fcm_token[:10]}...REDACTED...",
+            'android': {
+                'priority': 'high',
+                'notification': {
+                    'priority': 'high',
+                    'channel_id': 'exercise_reminders'
+                }
+            },
+            'apns': {
+                'headers': {
+                    'apns-push-type': 'alert' if device_type.lower() == 'ios' else 'None',
+                    'apns-priority': '10' if device_type.lower() == 'ios' else 'None',
+                    'apns-topic': bundle_id if device_type.lower() == 'ios' else 'None'
+                }
+            }
+        }
+        logger.info(f"FCM message structure: {json.dumps(message_dict)}")
+        
         # Send the notification
         try:
-            logger.info(f"Sending FCM notification to user {user_id}")
+            logger.info("Sending FCM notification...")
             response = messaging.send(message)
-            logger.info(f"FCM notification sent successfully: {response}")
+            logger.info(f"FCM notification sent successfully, response: {response}")
             
             # Update notification status
+            logger.info("Updating notification status to 'sent'")
             notification_ref.update({
                 'status': 'sent',
                 'sent_at': firestore.SERVER_TIMESTAMP,
@@ -211,34 +308,35 @@ def send_notification(request):
             
             # If this is a recurring notification, schedule the next one
             is_one_time = notification_data.get('is_one_time', False)
+            logger.info(f"Is one-time notification: {is_one_time}")
+            
             if not is_one_time:
-                logger.info(f"Processing recurring notification for user {user_id}")
+                logger.info("Processing recurring notification scheduling")
                 # Get notification preferences
                 notification_prefs = user_data.get('notification_preferences', {})
+                logger.info(f"Notification preferences: {json.dumps(notification_prefs)}")
+                
                 if notification_prefs.get('is_enabled', False) and notification_prefs.get('frequency') == 'daily':
                     hour = notification_prefs.get('hour')
                     minute = notification_prefs.get('minute')
+                    logger.info(f"Notification time: {hour}:{minute}")
                     
                     if hour is not None and minute is not None:
-                        # Get user's timezone offset using the standardized function
-                        user_timezone_offset = extract_timezone_offset(user_data)
-                        logger.info(f"User {user_id} timezone offset: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}")
+                        # Get user's timezone offset
+                        user_timezone_offset = get_user_timezone_offset(user_data)
+                        logger.info(f"User timezone offset: UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}")
                         
-                        # Calculate next notification time
+                        # Calculate next notification time using the standardized function
                         next_time = calculate_next_notification_time(
                             hour=hour,
                             minute=minute,
                             user_timezone_offset=user_timezone_offset
                         )
                         
-                        logger.info(f"Calculated next notification time (UTC): {next_time.isoformat()}")
-                        
                         # Update user's next notification time
+                        logger.info(f"Updating user's next notification time to {next_time.isoformat()}")
                         user_ref.update({
-                            'next_notification_time': next_time,
-                            'next_notification_time_utc': next_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-                            'next_notification_utc_hour': next_time.hour,
-                            'next_notification_utc_minute': next_time.minute
+                            'next_notification_time': next_time
                         })
                         
                         # Schedule the next notification through a separate HTTP call
@@ -250,28 +348,29 @@ def send_notification(request):
                                 'is_one_time': False
                             }
                             
-                            # URL of the schedule_notification Cloud Function
+                            # URL of this Cloud Function
                             url = f"https://us-central1-pepmvp.cloudfunctions.net/schedule_notification"
                             
-                            # Log the payload
                             logger.info(f"Scheduling next notification with payload: {json.dumps(payload)}")
                             
                             # Make the HTTP request
-                            schedule_response = requests.post(url, json=payload, timeout=30)
+                            logger.info(f"Sending request to {url}")
+                            schedule_response = requests.post(url, json=payload)
+                            
+                            logger.info(f"Schedule request status code: {schedule_response.status_code}")
                             
                             if schedule_response.status_code == 200:
                                 response_data = schedule_response.json()
                                 logger.info(f"Successfully scheduled next notification: {json.dumps(response_data)}")
                             else:
                                 logger.error(f"Failed to schedule next notification: {schedule_response.text}")
-                                logger.error(f"Status code: {schedule_response.status_code}")
                         except Exception as schedule_error:
                             logger.error(f"Error scheduling next notification: {str(schedule_error)}")
                             logger.error(traceback.format_exc())
+                    else:
+                        logger.warning("Missing hour or minute in notification preferences")
                 else:
-                    logger.warning(f"Recurring notification not scheduled: is_enabled={notification_prefs.get('is_enabled')}, frequency={notification_prefs.get('frequency')}")
-            else:
-                logger.info(f"Notification {notification_id} was one-time, not scheduling next one")
+                    logger.info("Recurring notifications not enabled or not set to daily")
             
             return (json.dumps({
                 'status': 'success',
@@ -279,109 +378,116 @@ def send_notification(request):
                 'fcm_message_id': response
             }), 200, headers)
             
-        except (messaging.UnregisteredError, messaging.SenderIdMismatchError) as token_error:
-            # Handle invalid token errors
-            error_msg = str(token_error)
-            logger.error(f"FCM Token error for user {user_id}: {error_msg}")
-            
-            user_ref.update({
-                'fcm_token': firestore.DELETE_FIELD,
-                'notification_status': 'token_expired'
-            })
-            
-            # Update notification record
-            notification_ref.update({
-                'status': 'failed',
-                'error': error_msg,
-                'updated_at': firestore.SERVER_TIMESTAMP
-            })
-            
-            return (json.dumps({
-                'status': 'error',
-                'message': f'FCM Token Error: {error_msg}'
-            }), 500, headers)
-            
-        except firebase_admin._messaging_utils.ThirdPartyAuthError as auth_error:
-            # Handle authentication errors with FCM
-            error_msg = f"Firebase authentication error: {str(auth_error)}"
-            logger.error(error_msg)
-            
-            # Update notification record
-            notification_ref.update({
-                'status': 'failed',
-                'error': error_msg,
-                'updated_at': firestore.SERVER_TIMESTAMP
-            })
-            
-            return (json.dumps({
-                'status': 'error',
-                'message': error_msg
-            }), 500, headers)
-            
         except Exception as fcm_error:
-            # Handle all other FCM errors
             error_msg = str(fcm_error)
-            logger.error(f"FCM general error: {error_msg}")
-            logger.error(traceback.format_exc())
+            error_type = type(fcm_error).__name__
+            
+            logger.error(f"FCM error type: {error_type}")
+            logger.error(f"FCM error message: {error_msg}")
+            logger.error(f"FCM error traceback: {traceback.format_exc()}")
+            
+            # Try to extract more detailed error information if possible
+            if hasattr(fcm_error, 'cause'):
+                logger.error(f"FCM error cause: {fcm_error.cause}")
+            
+            if hasattr(fcm_error, 'detail'):
+                logger.error(f"FCM error details: {fcm_error.detail}")
+                
+            if hasattr(fcm_error, 'code'):
+                logger.error(f"FCM error code: {fcm_error.code}")
+            
+            if hasattr(fcm_error, 'message'):
+                logger.error(f"FCM error message (from attribute): {fcm_error.message}")
+            
+            # Handle invalid token
+            if 'registration-token-not-registered' in error_msg.lower():
+                logger.info(f"Deleting invalid FCM token for user {user_id}")
+                user_ref.update({
+                    'fcm_token': firestore.DELETE_FIELD,
+                    'notification_status': 'token_expired'
+                })
             
             # Update notification record
+            logger.info("Updating notification status to 'failed'")
             notification_ref.update({
                 'status': 'failed',
                 'error': error_msg,
+                'error_type': error_type,
                 'updated_at': firestore.SERVER_TIMESTAMP
             })
             
             return (json.dumps({
                 'status': 'error',
-                'message': f'Notification Error: {error_msg}'
+                'message': f'FCM API Error: {error_msg}',
+                'error_type': error_type
             }), 500, headers)
             
     except Exception as e:
         error_details = traceback.format_exc()
-        logger.error(f"Error sending notification: {str(e)}\n{error_details}")
-        return (json.dumps({'error': str(e)}), 500, headers)
+        logger.error(f"Unhandled error in send_notification: {str(e)}")
+        logger.error(error_details)
+        return (json.dumps({
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'stack_trace': error_details
+        }), 500, headers)
+    
+    
 
-def extract_timezone_offset(user_data):
-    """Extract timezone offset from user data consistently."""
-    # First, check for the explicit timezone field (which appears in your user document)
-    print("🕒 extract_timezone_offset: Checking for timezone field")
-    print(f"User data: {user_data}")
+# Helper function to serialize Firestore data for JSON
+def serialize_firestore_data(data):
+    """Helper function to serialize Firestore data for JSON."""
+    if isinstance(data, dict):
+        return {k: serialize_firestore_data(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [serialize_firestore_data(item) for item in data]
+    elif hasattr(data, 'datetime'):  # Handle Firestore Timestamp
+        return data.datetime.isoformat()
+    else:
+        return data
+
+# Helper function to determine user timezone
+def get_user_timezone_offset(user_data):
+    """Extract timezone offset from user data timestamps."""
+    # First check if timezone field exists directly
     if 'timezone' in user_data:
         try:
             timezone_value = user_data.get('timezone')
             if isinstance(timezone_value, str):
-                # Remove quotes if present
                 timezone_value = timezone_value.strip('"\'')
             timezone_offset = float(timezone_value)
-            logger.info(f"Extracted timezone offset {timezone_offset} from timezone field")
+            logger.info(f"Found user timezone offset directly: {timezone_offset}")
             return timezone_offset
         except (ValueError, TypeError) as e:
             logger.warning(f"Could not convert timezone value '{user_data.get('timezone')}' to float: {str(e)}")
     
-    # Next, try to get from notification_preferences
+    # Check the notification_preferences
     notification_prefs = user_data.get('notification_preferences', {})
     timezone_offset = notification_prefs.get('timezone_offset')
     if timezone_offset is not None:
+        logger.info(f"Found timezone offset in notification_preferences: {timezone_offset}")
         return timezone_offset
     
     # If not there, try notification_timezone_offset
     timezone_offset = user_data.get('notification_timezone_offset')
     if timezone_offset is not None:
+        logger.info(f"Found timezone offset in notification_timezone_offset: {timezone_offset}")
         return timezone_offset
     
-    # If still not found, try to extract from timestamps
-    if timezone_offset is None:
-        timezone_indicators = ['last_updated', 'last_token_update', 'updated_at', 'next_notification_time']
-        for field in timezone_indicators:
-            if field in user_data and user_data[field]:
-                timestamp_value = user_data[field]
-                # Check if the timestamp has timezone information
-                if hasattr(timestamp_value, 'tzinfo') and timestamp_value.tzinfo:
-                    timezone_offset = timestamp_value.utcoffset().total_seconds() / 3600
-                    logger.info(f"Extracted timezone offset {timezone_offset} from {field}")
-                    break
+    # Try to extract from timestamps
+    timezone_offset = None
+    timezone_indicators = ['last_updated', 'last_token_update', 'updated_at', 'next_notification_time']
     
-    # Default to UTC if still not found
+    for field in timezone_indicators:
+        if field in user_data and user_data[field]:
+            timestamp_value = user_data[field]
+            # Check if the timestamp has timezone information
+            if hasattr(timestamp_value, 'tzinfo') and timestamp_value.tzinfo:
+                timezone_offset = timestamp_value.utcoffset().total_seconds() / 3600
+                logger.info(f"Found user timezone offset from {field}: UTC{'+' if timezone_offset >= 0 else ''}{timezone_offset}")
+                break
+    
+    # Default to UTC if we couldn't determine timezone
     if timezone_offset is None:
         logger.warning("Could not determine user timezone, defaulting to UTC")
         timezone_offset = 0
@@ -409,8 +515,11 @@ def calculate_next_notification_time(hour, minute, user_timezone_offset, current
     user_local_time = now.astimezone(timezone(timedelta(hours=user_timezone_offset)))
     logger.info(f"Current time in user's timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}): {user_local_time.isoformat()}")
     
-    # Create a target time in user's local timezone for today
-    user_target_time = user_local_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    # Create a base date in the user's timezone (today at midnight)
+    user_base_date = user_local_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Create the target time in user's local timezone
+    user_target_time = user_base_date.replace(hour=hour, minute=minute)
     logger.info(f"Target time in user's timezone: {user_target_time.isoformat()}")
     
     # If target time has passed in user's timezone, add a day
@@ -423,15 +532,3 @@ def calculate_next_notification_time(hour, minute, user_timezone_offset, current
     logger.info(f"Final notification time (UTC): {target_time_utc.isoformat()}")
     
     return target_time_utc
-
-# Helper function to serialize Firestore data for JSON
-def serialize_firestore_data(data):
-    """Helper function to serialize Firestore data for JSON."""
-    if isinstance(data, dict):
-        return {k: serialize_firestore_data(v) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [serialize_firestore_data(item) for item in data]
-    elif hasattr(data, 'datetime'):  # Handle Firestore Timestamp
-        return data.datetime.isoformat()
-    else:
-        return data
