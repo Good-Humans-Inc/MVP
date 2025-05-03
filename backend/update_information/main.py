@@ -502,6 +502,9 @@ def serialize_firestore_data(data):
     elif isinstance(data, datetime):
         # Convert datetime objects to ISO 8601 string format
         return data.isoformat()
+    elif hasattr(data, '__class__') and data.__class__.__name__ == 'DatetimeWithNanoseconds':
+        # Explicitly handle DatetimeWithNanoseconds
+        return data.isoformat()
     elif hasattr(data, 'datetime') and isinstance(getattr(data, 'datetime', None), datetime):
          # Handle Firestore Timestamp objects
          return data.datetime.isoformat()
