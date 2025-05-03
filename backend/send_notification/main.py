@@ -2,6 +2,7 @@
 import functions_framework
 import firebase_admin
 from firebase_admin import credentials, firestore, messaging
+from google.cloud import secretmanager
 import json
 from datetime import datetime, timezone, timedelta
 import requests
@@ -13,6 +14,26 @@ import sys
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def get_firebase_credentials():
+    from google.cloud import secretmanager
+    import json
+
+    client = secretmanager.SecretManagerServiceClient()
+    name = f"projects/pepmvp/secrets/firebase-admin-sdk/versions/latest"
+    response = client.access_secret_version(name=name)
+    return json.loads(response.payload.data.decode("UTF-8"))
+
+# Initialize Firebase Admin
+try:
+    app = firebase_admin.get_app()
+    logging.info(f"✅ Firebase already initialized: {app.name}")
+except ValueError:
+    cred_dict = get_firebase_credentials()
+    cred = credentials.Certificate(cred_dict)
+    app = firebase_admin.initialize_app(cred)
+    logging.info("✅ Firebase initialized with service account from Secret Manager")
+
 
 # Debug Firebase credentials and initialization
 logger.info("=== FIREBASE INITIALIZATION ===")
