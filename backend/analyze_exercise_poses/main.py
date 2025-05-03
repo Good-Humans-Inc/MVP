@@ -6,13 +6,12 @@ import os
 from google.cloud import storage
 from google.cloud import secretmanager
 import base64
-from datetime import datetime, timezone
+from datetime import datetime
 from openai import OpenAI
 import logging
 
 # --- Constants ---
-# Replace with your actual Google Cloud Storage bucket name
-GCS_BUCKET_NAME = "your-gcs-bucket-name" 
+GCS_BUCKET_NAME = "mvp-exercise-snapshots" 
 # ---
 
 # Set up logging
@@ -104,12 +103,13 @@ def upload_image_to_gcs(image_bytes, destination_blob_name):
         logger.info(f"☁️ Uploading image to gs://{GCS_BUCKET_NAME}/{destination_blob_name}...")
         blob.upload_from_string(image_bytes, content_type=content_type)
         
-        # Make the blob publicly viewable (optional, adjust permissions as needed)
-        # Consider using signed URLs for more controlled access
-        blob.make_public() 
+        # Removed blob.make_public() because the bucket uses Uniform Bucket-Level Access
+        # blob.make_public() 
         
-        public_url = blob.public_url
-        logger.info(f"✅ Image uploaded successfully. Public URL: {public_url}")
+        # Note: blob.public_url might not be accessible if the object isn't public.
+        # Consider using signed URLs (blob.generate_signed_url) for controlled access.
+        public_url = blob.public_url 
+        logger.info(f"✅ Image uploaded successfully. URL (access depends on bucket permissions): {public_url}")
         return public_url
     except Exception as e:
         logger.error(f"❌ Failed to upload image to GCS: {str(e)}")
@@ -117,9 +117,9 @@ def upload_image_to_gcs(image_bytes, destination_blob_name):
         return None # Return None to indicate failure
 
 
-def call_LLM(images_base64, prompt): # Renamed 'images' -> 'images_base64' for clarity
+def call_LLM(images_base64, prompt, max_tokens=300): # Renamed 'images' -> 'images_base64' for clarity
     """Call GPT-4 Vision API with images and prompt."""
-
+    
     # Convert base64 images to URLs or direct base64
     image_contents = []
     for idx, image_base64 in enumerate(images_base64, start=1): # Use the renamed parameter
@@ -135,7 +135,7 @@ def call_LLM(images_base64, prompt): # Renamed 'images' -> 'images_base64' for c
                 #"sequence": idx # Sequence might not be supported or necessary
             }
         })
-
+    
     if not image_contents:
         logger.error("❌ No valid images provided to LLM.")
         raise ValueError("No valid image data found for LLM processing.")
@@ -143,13 +143,13 @@ def call_LLM(images_base64, prompt): # Renamed 'images' -> 'images_base64' for c
     try:
         logger.info(f"🤖 Calling LLM with {len(image_contents)} images...")
         # logger.debug(f"📝 Prompt: {prompt}") # Log prompt only in debug if needed
-
+        
         response = openai_client.chat.completions.create( # Use renamed openai_client
             model="gpt-4o-mini", # Specify the exact model
             messages=[
                 {
                     "role": "system", # Add a system message for context
-                    "content": "You are a helpful physical therapy assistant providing exercise feedback."
+                    "content": "You are a helpful physical therapy assistant providing concise exercise feedback." # Added 'concise' here
                 },
                 {
                     "role": "user",
@@ -159,9 +159,9 @@ def call_LLM(images_base64, prompt): # Renamed 'images' -> 'images_base64' for c
                     ]
                 }
             ],
-            max_tokens=300 # Limit response length
+            max_tokens=max_tokens # Reduced max_tokens significantly
         )
-
+        
         # Extract the response content
         if response.choices and response.choices[0].message:
             analysis_text = response.choices[0].message.content
@@ -175,7 +175,7 @@ def call_LLM(images_base64, prompt): # Renamed 'images' -> 'images_base64' for c
             return {
                  'raw_response': "Error: Failed to get feedback from analysis model."
             }
-
+        
     except Exception as e:
         logger.error(f"❌ Error calling LLM: {str(e)}")
         raise # Re-raise to be caught by the main handler
@@ -269,22 +269,8 @@ def analyze_exercise_poses(request):
 
         logger.info(f"🚀 Received analysis request for User: {user_id}, Exercise: {exercise_id} ({exercise_name}) with {len(images_base64)} images.")
 
-        # --- Record Request Timestamp ---
-        request_received_time = datetime.now(timezone.utc)
-        status_doc_ref = db.collection('user_analysis_status').document(user_id)
-        try:
-            # Overwrite the timestamp for this user
-            status_doc_ref.set({
-                'last_request_timestamp': request_received_time,
-                'status': 'processing' # Optional: add status
-            }, merge=True) # Use merge=True if adding optional fields later
-            logger.info(f"⏱️ Recorded request timestamp for user {user_id} at {request_received_time.isoformat()}")
-        except Exception as e_status:
-            # Log error but proceed with analysis if status write fails
-            logger.error(f"⚠️ Failed to write request timestamp status for user {user_id}: {e_status}")
-
-
         # --- Generate Analysis ID ---
+        # Create the Firestore document reference first to get the ID
         analysis_ref = db.collection('exercises').document(exercise_id) \
                          .collection('analyses').document()
         analysis_id = analysis_ref.id
@@ -325,36 +311,31 @@ def analyze_exercise_poses(request):
 
 
         # --- Call LLM for Analysis ---
+        # Updated prompt with stronger constraints
         prompt = f"""Analyze the user performing: {exercise_name}
 Instructions: {exercise_instructions}
 
-Sequence of {len(images_base64)} images provided. Assess correctness based on the sequence.
-Focus on: Major issues, how to fix them. What's done well.
-Output: Be concise (2-3 sentences max). Format with clear "Issues" and "Suggestions" sections using bullet points if applicable. Acknowledge the limitations of snapshots vs full video.
+Sequence of {len(images_base64)} snapshots provided. Infer full motion and assess correctness.
+Focus ONLY on major issues OR what's done well. Avoid minor details.
+YOUR RESPONSE MUST BE 2 SENTENCES MAXIMUM AND UNDER 30 WORDS.
 """
-        analysis_result = call_LLM(images_base64, prompt) # Pass original base64 images
+        analysis_result = call_LLM(images_base64, prompt, max_tokens=60) # Pass original base64 images
 
 
         # --- Store Analysis in Firestore ---
         store_analysis(
             user_id=user_id,
             exercise_id=exercise_id,
-            analysis_id=analysis_id,
+            analysis_id=analysis_id, # Pass the generated ID
             analysis_data=analysis_result,
-            image_urls=uploaded_image_urls
+            image_urls=uploaded_image_urls # Pass the list of URLs
         )
-        # Optional: Update status document to 'complete'
-        try:
-             status_doc_ref.set({'status': 'complete'}, merge=True)
-        except Exception as e_status_complete:
-             logger.warning(f"⚠️ Failed to update status to complete for user {user_id}: {e_status_complete}")
-
 
         logger.info(f"✅ Successfully processed analysis request {analysis_id}.")
         return {
             'success': True,
             'message': 'Analysis complete, images uploaded, and results stored.',
-            'analysisId': analysis_id
+            'analysisId': analysis_id # Return the analysis ID
         }, 200, headers
 
     except Exception as e:
@@ -362,12 +343,6 @@ Output: Be concise (2-3 sentences max). Format with clear "Issues" and "Suggesti
         # import traceback
         # logger.error(f"Unhandled exception: {traceback.format_exc()}")
         logger.error(f"❌ Critical error in analyze_exercise_poses: {str(e)}")
-        # Optional: Update status document to 'failed' on critical error
-        if 'user_id' in locals() and user_id: # Check if user_id was extracted
-             try:
-                  db.collection('user_analysis_status').document(user_id).set({'status': 'failed'}, merge=True)
-             except Exception as e_status_fail:
-                  logger.error(f"⚠️ Failed to update status to failed for user {user_id}: {e_status_fail}")
         return {
             'success': False, # Indicate failure clearly
             'error': 'Internal server error occurred.',
@@ -376,4 +351,3 @@ Output: Be concise (2-3 sentences max). Format with clear "Issues" and "Suggesti
 
 # Note: main.py might need further adjustments for specific error handling,
 # security (e.g., using signed URLs instead of public URLs), and configuration.
-# Remember to replace "your-gcs-bucket-name" with your actual bucket name.

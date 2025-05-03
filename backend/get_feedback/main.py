@@ -13,12 +13,10 @@ except ValueError:
 @functions_framework.http
 def get_latest_feedback(request):
     """
-    HTTP Cloud Function to get the latest feedback created after a specific time.
+    HTTP Cloud Function to get the latest feedback relevant to the most recent analysis request.
     Expects a GET request with query parameters:
     - user_id: string
     - exercise_id: string
-    - since_timestamp: string (Optional, ISO 8601 format UTC e.g., 2023-10-27T10:00:00Z)
-                       If provided, only returns analyses created after this time.
     """
     # Enable CORS
     if request.method == 'OPTIONS':
@@ -38,46 +36,47 @@ def get_latest_feedback(request):
         # Get parameters from query string
         user_id = request.args.get('user_id')
         exercise_id = request.args.get('exercise_id')
-        since_timestamp_str = request.args.get('since_timestamp') # Optional timestamp
 
         # Validate required parameters
         if not user_id or not exercise_id:
-            return {
-                'error': 'Missing required parameters: user_id and exercise_id'
-            }, 400, headers
-
-        # Parse the optional timestamp string
-        since_dt = None
-        if since_timestamp_str:
-            try:
-                # Attempt to parse various ISO 8601 formats, assuming UTC if no offset
-                if since_timestamp_str.endswith('Z'):
-                    since_dt = datetime.fromisoformat(since_timestamp_str.replace('Z', '+00:00'))
-                else:
-                    # Try parsing directly, might need adjustment based on exact format sent
-                    since_dt = datetime.fromisoformat(since_timestamp_str)
-                    # Ensure it's timezone-aware (assume UTC if naive)
-                    if since_dt.tzinfo is None:
-                         since_dt = since_dt.replace(tzinfo=timezone.utc)
-                print(f"Parsed since_timestamp: {since_dt.isoformat()}")
-            except ValueError:
-                return {
-                    'error': f'Invalid since_timestamp format. Use ISO 8601 UTC (e.g., 2023-10-27T10:00:00Z). Received: {since_timestamp_str}'
-                }, 400, headers
+            return {'error': 'Missing required parameters: user_id and exercise_id'}, 400, headers
 
         # Initialize Firestore DB
         db = firestore.Client(project='pepmvp', database='pep-mvp')
 
-        # Base query
+        # --- Get the timestamp of the last analysis request ---
+        since_dt = None
+        try:
+            status_doc_ref = db.collection('user_analysis_status').document(user_id)
+            status_doc = status_doc_ref.get()
+            if status_doc.exists:
+                status_data = status_doc.to_dict()
+                since_dt = status_data.get('last_request_timestamp')
+                if since_dt:
+                     # Firestore timestamp objects are already timezone-aware (UTC)
+                     print(f"Retrieved last_request_timestamp for user {user_id}: {since_dt.isoformat()}")
+                else:
+                     print(f"⚠️ last_request_timestamp field not found in status doc for user {user_id}.")
+            else:
+                print(f"ℹ️ No analysis status document found for user {user_id}. Will fetch latest overall.")
+        except Exception as e_status_read:
+            print(f"⚠️ Error reading status doc for user {user_id}: {e_status_read}. Will fetch latest overall.")
+
+
+        # --- Query for analyses ---
         analyses_query = (db
             .collection('exercises')
             .document(exercise_id)
             .collection('analyses')
             .where('user_id', '==', user_id))
 
-        # Add timestamp filter if provided
+        # Add timestamp filter *only if* we successfully retrieved a timestamp
         if since_dt:
             analyses_query = analyses_query.where('timestamp', '>', since_dt)
+        else:
+             # If no timestamp, we log it but still proceed to get the absolute latest
+             print(f"Proceeding without time filter for user {user_id}, exercise {exercise_id}.")
+
 
         # Order by timestamp descending and limit to 1
         analyses_query = analyses_query.order_by('timestamp', direction=firestore.Query.DESCENDING).limit(1)
@@ -88,11 +87,10 @@ def get_latest_feedback(request):
 
         # Check if any document matched the criteria
         if not doc_list:
-            message = f"No analysis found for user {user_id}, exercise {exercise_id}"
-            if since_timestamp_str:
-                message += f" since {since_timestamp_str}."
-            else:
-                message += "."
+            message = "Feedback not ready yet. Try calling this tool again later."
+            # Adjusted message formatting
+            if since_dt:
+                message += f" Feedback should be since ({since_dt.isoformat()})."
             print(f"ℹ️ {message}")
             return {
                 'success': True,
