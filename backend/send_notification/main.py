@@ -154,7 +154,7 @@ def send_notification(request):
         sanitized_user_data = user_data.copy()
         if 'fcm_token' in sanitized_user_data:
             sanitized_user_data['fcm_token'] = f"{sanitized_user_data['fcm_token'][:10]}...REDACTED..."
-        logger.info(f"User data: {json.dumps(sanitized_user_data)}")
+        logger.info(f"User data: {json.dumps(serialize_firestore_data(sanitized_user_data))}")
         
         # Check for FCM token
         fcm_token = user_data.get('fcm_token')
@@ -176,8 +176,8 @@ def send_notification(request):
         
         logger.info(f"Username: {username}")
         logger.info(f"Next day notification data available: {bool(next_day_data)}")
-        logger.info(f"Next day data: {json.dumps(next_day_data)}")
-        logger.info(f"Stored notification content: {json.dumps(stored_content)}")
+        logger.info(f"Next day data: {json.dumps(serialize_firestore_data(next_day_data))}")
+        logger.info(f"Stored notification content: {json.dumps(serialize_firestore_data(stored_content))}")
         
         # Get content from next_day_notification if available
         if next_day_data and 'title' in next_day_data and 'body' in next_day_data:
@@ -314,7 +314,7 @@ def send_notification(request):
                 logger.info("Processing recurring notification scheduling")
                 # Get notification preferences
                 notification_prefs = user_data.get('notification_preferences', {})
-                logger.info(f"Notification preferences: {json.dumps(notification_prefs)}")
+                logger.info(f"Notification preferences: {json.dumps(serialize_firestore_data(notification_prefs))}")
                 
                 if notification_prefs.get('is_enabled', False) and notification_prefs.get('frequency') == 'daily':
                     hour = notification_prefs.get('hour')
