@@ -12,6 +12,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
     // Track if this is first launch of the app
     @AppStorage("isFirstAppLaunch") private var isFirstAppLaunch = true
     
+    // Flag to track if we've set the APNs token
+    private var apnsTokenRegistered = false
+    
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         print("📱 Application launching (first launch: \(isFirstAppLaunch))")
         
@@ -34,8 +37,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
         print("🔐 App Check configured for development")
         #endif
         
-        // Configure Firebase
+        // Configure Firebase FIRST before anything else
         FirebaseApp.configure()
+        print("🔥 Firebase configured with options: \(String(describing: FirebaseApp.app()?.options))")
         
         // Configure Firestore settings
         let settings = FirestoreSettings()
@@ -48,30 +52,30 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
         // Use the specific database
         let firestoreDB = try! FirebaseFirestore.Firestore.firestore(database: "pep-mvp")
         
-        print("🔥 Firebase configured with options: \(String(describing: FirebaseApp.app()?.options))")
-        
-        // Configure notification center delegate
+        // CRITICAL: Set notification delegates BEFORE requesting permissions
         UNUserNotificationCenter.current().delegate = self
-        
-        // Configure FCM
         Messaging.messaging().delegate = self
-        print("📨 Firebase Messaging delegate set")
+        print("📨 Firebase Messaging and notification delegates set")
         
-        // Request notification permissions with all options
-        let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
-        UNUserNotificationCenter.current().requestAuthorization(
-            options: authOptions) { granted, error in
-                if granted {
-                    print("✅ Notification permission granted")
+        // IMPORTANT: Force registration to always happen on main thread
+        DispatchQueue.main.async {
+            // Request notification permissions with all options
+            let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
+            UNUserNotificationCenter.current().requestAuthorization(
+                options: authOptions) { granted, error in
                     DispatchQueue.main.async {
-                        application.registerForRemoteNotifications()
+                        if granted {
+                            print("✅ Notification permission granted")
+                            // CRUCIAL: Always register for remote notifications on the main thread
+                            application.registerForRemoteNotifications()
+                        } else if let error = error {
+                            print("❌ Notification permission error: \(error.localizedDescription)")
+                        } else {
+                            print("❌ Notification permission denied")
+                        }
                     }
-                } else if let error = error {
-                    print("❌ Notification permission error: \(error.localizedDescription)")
-                } else {
-                    print("❌ Notification permission denied")
                 }
-            }
+        }
         
         // Only mark first launch as complete after setup is done
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
@@ -222,21 +226,63 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
         }.resume()
     }
     
-    // MARK: - Push Notification Handling
+    // MARK: - Remote Notification Handling
     
+    // CRITICAL: This method must be present, even if empty
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         // Convert token to string for logging
         let tokenParts = deviceToken.map { data in String(format: "%02.2hhx", data) }
         let token = tokenParts.joined()
-        print("📱 APNs Device Token: \(token)")
+        print("📱 APNs device token received: \(token)")
         
-        // Set the APNs token in Firebase Messaging
+        // Save the APNs token locally
+        UserDefaults.standard.set(token, forKey: "APNsToken")
+        
+        // Set the APNs token in Firebase using both available methods
         Messaging.messaging().apnsToken = deviceToken
-        print("🔥 APNs token set in Firebase Messaging")
+        Messaging.messaging().setAPNSToken(deviceToken, type: .prod) // or .sandbox for development
+        
+        print("🔄 APNs token explicitly set in Firebase Messaging")
+        
+        // Set the flag indicating we have the APNs token
+        apnsTokenRegistered = true
+        
+        // Manually request FCM token now that we have APNs token
+        refreshFCMToken()
     }
     
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         print("❌ Failed to register for remote notifications: \(error.localizedDescription)")
+        
+        // Try to register again after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            print("🔄 Retrying remote notification registration")
+            application.registerForRemoteNotifications()
+        }
+    }
+    
+    // Force a refresh of the FCM token
+    private func refreshFCMToken() {
+        print("🔄 Manually refreshing FCM token after APNs token set")
+        
+        Messaging.messaging().token { token, error in
+            if let error = error {
+                print("❌ Error retrieving FCM token: \(error.localizedDescription)")
+                
+                // Retry after delay if this fails
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.refreshFCMToken()
+                }
+                return
+            }
+            
+            if let token = token {
+                print("✅ FCM token retrieved after APNs registration: \(token)")
+                UserDefaults.standard.set(token, forKey: "FCMToken")
+            } else {
+                print("⚠️ FCM token is nil after refresh attempt")
+            }
+        }
     }
     
     // MARK: - MessagingDelegate Methods
@@ -249,8 +295,16 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
             UserDefaults.standard.set(token, forKey: "FCMToken")
             print("✅ FCM Token saved to UserDefaults")
             
-            // Register device with backend
-            registerDeviceWithBackend(token: token)
+            if apnsTokenRegistered {
+                print("✅ Both tokens are now registered and linked!")
+            } else {
+                print("⚠️ FCM token received but waiting for APNs token - this may cause notification issues")
+                
+                // Try to re-register for remote notifications if we don't have an APNs token yet
+                DispatchQueue.main.async {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            }
         }
     }
     
@@ -279,60 +333,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate, UNUserNot
         }
         
         completionHandler()
-    }
-    
-    // MARK: - Backend Integration
-    
-    private func registerDeviceWithBackend(token: String) {
-        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/register_device") else {
-            print("❌ Invalid device registration URL")
-            return
-        }
-        
-        // Get user ID from UserDefaults
-        guard let userId = UserDefaults.standard.string(forKey: "UserId") else {
-            print("❌ No user ID available for device registration")
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let body: [String: Any] = [
-            "user_id": userId,
-            "device_token": token,
-            "platform": "ios"
-        ]
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        } catch {
-            print("❌ Failed to serialize device registration request: \(error)")
-            return
-        }
-        
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                print("❌ Device registration error: \(error)")
-                return
-            }
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                print("📊 Device registration HTTP status: \(httpResponse.statusCode)")
-                
-                if httpResponse.statusCode == 200 {
-                    print("✅ Device successfully registered with backend")
-                } else {
-                    print("❌ Device registration failed with status: \(httpResponse.statusCode)")
-                }
-            }
-            
-            if let data = data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                print("📊 Device registration response: \(json)")
-            }
-        }.resume()
     }
     
     // Handle incoming remote notifications when app is in foreground
