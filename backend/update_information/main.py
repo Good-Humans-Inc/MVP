@@ -36,6 +36,7 @@ def update_information(request):
         "force_today": boolean (optional)
     }
     """
+
     # Enable CORS
     if request.method == 'OPTIONS':
         headers = {
@@ -246,6 +247,7 @@ def update_information(request):
                 'notification_timezone_offset': user_timezone_offset_hours
             })
             
+
             # Cancel any existing scheduled notifications
             try:
                 logger.info(f"Cancelling existing scheduled notifications for user {user_id}")
@@ -253,6 +255,7 @@ def update_information(request):
             except Exception as e:
                 logger.error(f"Error cancelling existing notifications: {str(e)}")
                 logger.error(traceback.format_exc())
+
             
             # Schedule the next notification
             try:
@@ -303,6 +306,7 @@ def update_information(request):
             'status': 'success',
             'message': 'User information updated successfully',
             'updated_values': serialize_firestore_data(update_data)
+
         }
         
         if scheduled_task_id:

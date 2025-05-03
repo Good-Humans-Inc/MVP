@@ -499,6 +499,7 @@ def process_user_notification_update(user_id):
         import traceback
         print(f"📋 Error traceback: {traceback.format_exc()}", file=sys.stderr)
 
+
 def cancel_user_notifications(user_id):
     """Cancel all scheduled notifications for a user."""
     # Get notifications with status 'scheduled'
@@ -538,43 +539,33 @@ def schedule_notification(user_id, scheduled_time, is_one_time=False, custom_tit
     # Ensure scheduled_time is a string in ISO format
     if isinstance(scheduled_time, datetime):
         scheduled_time = scheduled_time.isoformat()
-    
+
     payload = {
         'user_id': user_id,
         'scheduled_time': scheduled_time,
         'is_one_time': is_one_time
     }
-    
+
     # Add notification_id if provided
     if notification_id:
         payload['notification_id'] = notification_id
-        
-    # Add content if provided
-    if title:
-        payload['custom_title'] = title
-        
-    if body:
-        payload['custom_body'] = body
-        
+
+    # Add content if provided (Handle potential conflicts between title/custom_title)
+    payload['custom_title'] = custom_title if custom_title else title
+    payload['custom_body'] = custom_body if custom_body else body
+
     if data:
         payload['data'] = data
-    
-    # Add custom content if provided
-    if custom_title:
-        payload['custom_title'] = custom_title
-    
-    if custom_body:
-        payload['custom_body'] = custom_body
-    
+
     # URL of the schedule_notification Cloud Function
     url = f"https://us-central1-pepmvp.cloudfunctions.net/schedule_notification"
-    
-    print(f"🔄 Calling schedule_notification with payload: {json.dumps(payload)}", file=sys.stderr)
-    
+
+    print(f"🔄 Calling schedule_notification HTTP endpoint with payload: {json.dumps(payload)}", file=sys.stderr)
+
     try:
         # Make the HTTP request with a timeout
         response = requests.post(url, json=payload, timeout=30)
-        
+       
         # Process the response
         print(f"📡 Schedule API response status: {response.status_code}", file=sys.stderr)
         
@@ -582,6 +573,7 @@ def schedule_notification(user_id, scheduled_time, is_one_time=False, custom_tit
             try:
                 response_data = response.json()
                 print(f"✅ Schedule API success: {json.dumps(response_data)}", file=sys.stderr)
+                # Return the task_name if present in the response
                 return response_data.get('task_name') if isinstance(response_data, dict) else None
             except json.JSONDecodeError:
                 print(f"⚠️ Could not parse response as JSON: {response.text}", file=sys.stderr)
@@ -591,14 +583,23 @@ def schedule_notification(user_id, scheduled_time, is_one_time=False, custom_tit
             print(f"❌ {error_message}", file=sys.stderr)
             
             # Try to parse the error response
+
             try:
+                # Try to get more detail from the JSON error response
                 error_json = response.json()
+                error_detail = error_json.get('error', response.text)
+                error_message += f": {error_detail}"
                 print(f"❌ Error details: {json.dumps(error_json)}", file=sys.stderr)
-            except:
-                print(f"❌ Could not parse error response as JSON", file=sys.stderr)
-                
-            raise Exception(error_message)
+            except json.JSONDecodeError:
+                # If response is not JSON, use the raw text
+                error_message += f": {response.text}"
+                print(f"❌ Could not parse error response as JSON: {response.text}", file=sys.stderr)
+
+            print(f"❌ {error_message}", file=sys.stderr)
+            raise Exception(error_message) # Re-raise the exception with details
+
     except requests.exceptions.RequestException as req_error:
-        error_message = f"Request error when calling schedule_notification: {str(req_error)}"
+        # Handle errors during the HTTP request itself (e.g., timeout, connection error)
+        error_message = f"Request error when calling schedule_notification endpoint: {str(req_error)}"
         print(f"❌ {error_message}", file=sys.stderr)
-        raise Exception(error_message)
+        raise Exception(error_message) # Re-raise the exception

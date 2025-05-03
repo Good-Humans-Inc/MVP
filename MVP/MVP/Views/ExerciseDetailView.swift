@@ -20,6 +20,7 @@ struct ExerciseDetailView: View {
     @EnvironmentObject private var cameraManager: CameraManager
     @EnvironmentObject private var visionManager: VisionManager
     @EnvironmentObject private var notificationManager: NotificationManager
+    @EnvironmentObject private var userManager: UserManager
     
     var body: some View {
         ZStack {
@@ -51,19 +52,29 @@ struct ExerciseDetailView: View {
                         instructionsSection
                         
                         // Start button
-                        Button(action: {
-                            startExercise()
-                        }) {
-                            Text("Start Exercise")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(isStartingExercise ? Color.gray : Color.blue)
-                                .cornerRadius(12)
+                        Button {
+                            Task {
+                                await startExercise()
+                            }
+                        } label: {
+                            HStack {
+                                if isStartingExercise {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                } else {
+                                    Image(systemName: "play.circle.fill")
+                                }
+                                Text(isStartingExercise ? "Starting..." : "Start Exercise")
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity)
+                            .background(userManager.isDataLoaded ? Color.blue : Color.gray)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
                         }
-                        .padding(.top, 16)
-                        .disabled(isStartingExercise)
+                        .padding(.horizontal)
+                        .padding(.bottom)
+                        .disabled(isStartingExercise || !userManager.isDataLoaded)
                     }
                     .padding()
                 }
@@ -105,6 +116,14 @@ struct ExerciseDetailView: View {
             // Preload video asset if available
             if let videoURL = exercise.videoURL {
                 preloadVideoAsset(from: videoURL)
+            }
+            
+            // Trigger initial data load if needed (fire and forget)
+            if !userManager.isDataLoaded {
+                 Task { 
+                     print("🔄 ExerciseDetailView.onAppear: Triggering initial user data load.")
+                     await userManager.loadUserData()
+                 }
             }
         }
     }
@@ -249,7 +268,7 @@ struct ExerciseDetailView: View {
                         .foregroundColor(.white)
                         .rotationEffect(.degrees(90))
                     
-                    Text("Place your device 5-6 feet away")
+                    Text("Make sure Pep can see targeted body part!")
                         .foregroundColor(.white)
                         .padding(.top, 8)
                 }
@@ -302,7 +321,7 @@ struct ExerciseDetailView: View {
         appState.userId = nil
         appState.isOnboardingComplete = false
         appState.currentAgentType = nil
-
+        
         print("📊 DEBUG: ExerciseDetailView - Post-reset state:")
         print("- appState.hasUserId: \(appState.hasUserId)")
         print("- appState.isOnboardingComplete: \(appState.isOnboardingComplete)")
@@ -322,39 +341,67 @@ struct ExerciseDetailView: View {
         }
     }
     
-    private func startExercise() {
+    private func startExercise() async {
+        // Indicate loading/refreshing immediately
         isStartingExercise = true
         
+        // --- Explicitly refresh user data and wait --- 
+        print("🔄 ExerciseDetailView.startExercise: Refreshing user data...")
+        let refreshSuccess = await userManager.loadUserData()
+        
+        guard refreshSuccess else {
+            print("❌ ExerciseDetailView.startExercise: Failed to refresh user data.")
+            // Handle refresh failure
+            isStartingExercise = false
+            mediaLoadError = NSError(domain: "ExerciseDetailView", 
+                                   code: 2, 
+                                   userInfo: [NSLocalizedDescriptionKey: "Failed to refresh user data before starting exercise."])
+            showErrorAlert = true
+            return // Stop execution
+        }
+        print("✅ ExerciseDetailView.startExercise: User data refreshed successfully.")
+        // --- End data refresh --- 
+        
+        // Data is now fresh, proceed with resource configuration
         // Configure needed resources
+        // Note: resourceCoordinator.startExerciseSession might need to be async or run on background thread
         resourceCoordinator.startExerciseSession { success in
-            if success {
-                // Start camera session
-                cameraManager.startSession(withNotification: true) {
-                    // Start vision processing
-                    visionManager.startProcessing(cameraManager.videoOutput)
+            guard success else {
+                // Handle resource initialization failure
+                print("❌ ExerciseDetailView.startExercise: Failed to initialize exercise resources.")
+                DispatchQueue.main.async { // Ensure UI updates are on main thread
+                    self.isStartingExercise = false
+                    self.mediaLoadError = NSError(domain: "ExerciseDetailView", 
+                                           code: 1, 
+                                           userInfo: [NSLocalizedDescriptionKey: "Failed to initialize exercise resources"])
+                    self.showErrorAlert = true
+                }
+                return
+            }
+            
+            // Start camera session (already seems to handle async completion)
+            cameraManager.startSession(withNotification: true) {
+                // Start vision processing
+                visionManager.startProcessing(cameraManager.videoOutput)
+                
+                // Start the unified ElevenLabs exercise coach agent
+                print("▶️ Starting exercise coach agent")
+                voiceManager.startElevenLabsSession(agentType: .exerciseCoach) { 
+                    print("✅ Exercise coach agent session started completion handler")
                     
-                    // Start the unified ElevenLabs exercise coach agent
-                    print("▶️ Starting exercise coach agent")
-                    voiceManager.startElevenLabsSession(agentType: .exerciseCoach) {
-                        print("✅ Exercise coach agent session started completion handler")
-                        // Set current exercise ID after session starts
-                        // Ensure exercise.id is the correct string representation needed
-                        self.voiceManager.setCurrentExercise(id: self.exercise.id.uuidString.lowercased())
+                    // Set current exercise ID after session starts
+                    let exerciseId = self.exercise.firestoreId ?? self.exercise.id.uuidString
+                    self.voiceManager.setCurrentExercise(id: exerciseId.lowercased())
                         
-                        // Show the exercise view
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self.isStartingExercise = false
-                            self.showingExerciseView = true
-                        }
+                    // Show the exercise view
+                    // Use MainActor.run for UI updates from background completion handlers
+                    Task { @MainActor in
+                        // Add a small delay if needed, though maybe not necessary now
+                        // try? await Task.sleep(nanoseconds: 500_000_000) 
+                        self.isStartingExercise = false
+                        self.showingExerciseView = true
                     }
                 }
-            } else {
-                // Handle resource initialization failure
-                isStartingExercise = false
-                mediaLoadError = NSError(domain: "ExerciseDetailView", 
-                                       code: 1, 
-                                       userInfo: [NSLocalizedDescriptionKey: "Failed to initialize exercise resources"])
-                showErrorAlert = true
             }
         }
     }

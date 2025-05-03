@@ -85,25 +85,6 @@ struct ExerciseView: View {
                 presentationMode.wrappedValue.dismiss()
             }
         }
-        .alert(isPresented: $showErrorAlert) {
-            Alert(
-                title: Text("Exercise Error"),
-                message: Text(errorMessage ?? "An error occurred during the exercise"),
-                dismissButton: .default(Text("OK")) {
-                    stopExercise()
-                }
-            )
-        }
-        .alert(item: Binding(
-            get: { poseAnalysisManager.error.map { PoseAnalysisError(message: $0) } },
-            set: { _ in poseAnalysisManager.error = nil }
-        )) { error in
-            Alert(
-                title: Text("Pose Analysis Error"),
-                message: Text(error.message),
-                dismissButton: .default(Text("OK"))
-            )
-        }
     }
     
     // MARK: - UI Components

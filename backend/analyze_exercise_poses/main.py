@@ -10,6 +10,10 @@ from datetime import datetime
 from openai import OpenAI
 import logging
 
+# --- Constants ---
+GCS_BUCKET_NAME = "mvp-exercise-snapshots" 
+# ---
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,20 +21,37 @@ logger = logging.getLogger(__name__)
 # Initialize Firebase Admin
 try:
     initialize_app()
+    logger.info("Firebase Admin SDK initialized successfully.")
 except ValueError:
-    # App already initialized
+    logger.warning("Firebase Admin SDK already initialized.")
     pass
 
+# Initialize Cloud Storage client
+try:
+    storage_client = storage.Client()
+    logger.info("Google Cloud Storage client initialized successfully.")
+except Exception as e:
+    logger.error(f"Error initializing Google Cloud Storage client: {str(e)}")
+    raise
+
+# Initialize Firestore DB Client (reuse if already initialized by firebase_admin)
+try:
+    db = firestore.Client(project='pepmvp', database='pep-mvp')
+    logger.info("Firestore client initialized successfully.")
+except Exception as e:
+    logger.error(f"Error initializing Firestore client: {str(e)}")
+    # Decide if we should raise here or rely on firebase_admin's initialization
+    pass 
 
 
 # Debug: Print environment variables
-print("Environment variables:")
-for key, value in os.environ.items():
-    if 'key' in key.lower():
-        # Print masked version of sensitive values
-        print(f"{key}: {'*' * 8}")
-    else:
-        print(f"{key}: {value}")
+# print("Environment variables:")
+# for key, value in os.environ.items():
+#     if 'key' in key.lower():
+#         # Print masked version of sensitive values
+#         print(f"{key}: {'*' * 8}")
+#     else:
+#         print(f"{key}: {value}")
 
 def access_secret_version(secret_id, version_id="latest"):
     """
@@ -38,7 +59,7 @@ def access_secret_version(secret_id, version_id="latest"):
     """
     try:
         client = secretmanager.SecretManagerServiceClient()
-        project_id = "pepmvp"  # Replace with your actual project ID
+        project_id = os.getenv("GCP_PROJECT", "pepmvp") # Get project ID from env or default
         name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
         response = client.access_secret_version(request={"name": name})
         # Strip whitespace and newlines to avoid issues with API keys
@@ -51,45 +72,85 @@ def access_secret_version(secret_id, version_id="latest"):
 try:
     logger.info("Fetching OpenAI API key from Secret Manager...")
     openai_api_key = access_secret_version("openai-api-key")
-    logger.info("Successfully retrieved OpenAI API key from Secret Manager")
+    logger.info("Successfully retrieved OpenAI API key.") # Removed "from Secret Manager" for brevity
 except Exception as e:
     logger.error(f"Failed to retrieve OpenAI API key: {str(e)}")
-    raise
+    # Decide if function should continue without OpenAI key or raise
+    raise # Raising ensures the function fails if key is unavailable
 
 # Initialize OpenAI client
 try:
     logger.info("Initializing OpenAI client...")
-    client = OpenAI(
+    openai_client = OpenAI( # Renamed client to avoid conflict with storage_client etc.
         api_key=openai_api_key,
-        timeout=60.0
+        timeout=60.0 # Consider making timeout configurable
     )
-    logger.info("OpenAI client initialized successfully")
+    logger.info("OpenAI client initialized successfully.")
 except Exception as e:
     logger.error(f"Error initializing OpenAI client: {str(e)}")
     raise
 
-def call_LLM(images, prompt):
+
+def upload_image_to_gcs(image_bytes, destination_blob_name):
+    """Uploads image bytes to the specified GCS bucket."""
+    try:
+        bucket = storage_client.bucket(GCS_BUCKET_NAME)
+        blob = bucket.blob(destination_blob_name)
+        
+        # Determine content type (assuming JPEG)
+        content_type = 'image/jpeg' 
+        
+        logger.info(f"☁️ Uploading image to gs://{GCS_BUCKET_NAME}/{destination_blob_name}...")
+        blob.upload_from_string(image_bytes, content_type=content_type)
+        
+        # Removed blob.make_public() because the bucket uses Uniform Bucket-Level Access
+        # blob.make_public() 
+        
+        # Note: blob.public_url might not be accessible if the object isn't public.
+        # Consider using signed URLs (blob.generate_signed_url) for controlled access.
+        public_url = blob.public_url 
+        logger.info(f"✅ Image uploaded successfully. URL (access depends on bucket permissions): {public_url}")
+        return public_url
+    except Exception as e:
+        logger.error(f"❌ Failed to upload image to GCS: {str(e)}")
+        # Decide on error handling: return None, raise, etc.
+        return None # Return None to indicate failure
+
+
+def call_LLM(images_base64, prompt, max_tokens=300): # Renamed 'images' -> 'images_base64' for clarity
     """Call GPT-4 Vision API with images and prompt."""
     
     # Convert base64 images to URLs or direct base64
     image_contents = []
-    for idx, image_base64 in enumerate(images, start=1):
+    for idx, image_base64 in enumerate(images_base64, start=1): # Use the renamed parameter
+        # Basic validation: check if it looks like base64
+        if not isinstance(image_base64, str) or len(image_base64) < 10:
+             logger.warning(f"⚠️ Skipping invalid image data at index {idx}.")
+             continue
         image_contents.append({
             "type": "image_url",
             "image_url": {
                 "url": f"data:image/jpeg;base64,{image_base64}",
                 "detail": "low", # Use low detail to reduce tokens
-                "sequence": idx  # Add sequence number to each image
+                #"sequence": idx # Sequence might not be supported or necessary
             }
         })
     
+    if not image_contents:
+        logger.error("❌ No valid images provided to LLM.")
+        raise ValueError("No valid image data found for LLM processing.")
+
     try:
-        print(f"🤖 Calling LLM with {len(images)} images...")
-        print(f"📝 Prompt: {prompt}")
+        logger.info(f"🤖 Calling LLM with {len(image_contents)} images...")
+        # logger.debug(f"📝 Prompt: {prompt}") # Log prompt only in debug if needed
         
-        response = client.chat.completions.create(
-            model="o4-mini",
+        response = openai_client.chat.completions.create( # Use renamed openai_client
+            model="gpt-4o-mini", # Specify the exact model
             messages=[
+                {
+                    "role": "system", # Add a system message for context
+                    "content": "You are a helpful physical therapy assistant providing concise exercise feedback." # Added 'concise' here
+                },
                 {
                     "role": "user",
                     "content": [
@@ -97,144 +158,196 @@ def call_LLM(images, prompt):
                         *image_contents
                     ]
                 }
-            ]
+            ],
+            max_tokens=max_tokens # Reduced max_tokens significantly
         )
         
         # Extract the response content
-        analysis_text = response.choices[0].message.content
-        print("\n🔍 Raw LLM Response:")
-        print("------------------------")
-        print(analysis_text)
-        print("------------------------\n")
-        
-        return {
-            'raw_response': analysis_text
-        }
+        if response.choices and response.choices[0].message:
+            analysis_text = response.choices[0].message.content
+            logger.info("🔍 Raw LLM Response received.")
+            # logger.debug(f"LLM Response:\n{analysis_text}") # Log full response only if needed
+            return {
+                'raw_response': analysis_text.strip() if analysis_text else "No feedback provided."
+            }
+        else:
+            logger.error("❌ LLM response was empty or invalid.")
+            return {
+                 'raw_response': "Error: Failed to get feedback from analysis model."
+            }
         
     except Exception as e:
-        print(f"❌ Error calling LLM: {str(e)}")
-        raise
+        logger.error(f"❌ Error calling LLM: {str(e)}")
+        raise # Re-raise to be caught by the main handler
 
-def store_analysis(user_id, exercise_id, analysis):
-    """Store the analysis results in Firestore."""
+
+def store_analysis(user_id, exercise_id, analysis_id, analysis_data, image_urls): # Added analysis_id and image_urls
+    """Store the analysis results (including image URLs) in Firestore."""
     try:
-        # Initialize Firestore DB
-        db = firestore.Client(project='pepmvp', database='pep-mvp')
-        
-        # Create a new analysis document in the exercises collection
-        exercise_ref = db.collection('exercises').document(exercise_id)
-        
-        # Add analyses as a subcollection
-        analysis_ref = exercise_ref.collection('analyses').document()
-        
-        # Create the analysis data for Firestore
-        analysis_data = {
+        # Use the global db client initialized earlier
+        # db = firestore.Client(project='pepmvp', database='pep-mvp') # No need to re-initialize
+
+        # Reference the specific document using the pre-generated ID
+        analysis_ref = db.collection('exercises').document(exercise_id) \
+                         .collection('analyses').document(analysis_id)
+
+        # Combine LLM analysis with other data
+        firestore_data = {
             'timestamp': firestore.SERVER_TIMESTAMP,
             'user_id': user_id,
-            'raw_response': analysis['raw_response']
+            'raw_response': analysis_data['raw_response'],
+            'image_urls': image_urls # Add the list of image URLs
         }
-        
-        # Create a separate dict for logging (without the SERVER_TIMESTAMP sentinel)
-        log_data = {
-            'user_id': user_id,
-            'raw_response': analysis['raw_response']
-        }
-        
-        print("\n💾 Storing Analysis Data:")
-        print("------------------------")
-        print(f"Exercise ID: {exercise_id}")
-        print(f"User ID: {user_id}")
-        print(f"Analysis Data: {json.dumps(log_data, indent=2)}")
-        print("------------------------\n")
-        
-        # Store in Firestore
-        analysis_ref.set(analysis_data)
-        
-        print(f"✅ Analysis stored successfully for exercise {exercise_id}")
-        return True
+
+        logger.info(f"💾 Storing analysis data to Firestore document: {analysis_ref.path}")
+        # logger.debug(f"Firestore Data: {firestore_data}") # Log data only if needed
+
+        # Set the data in Firestore
+        analysis_ref.set(firestore_data)
+
+        logger.info(f"✅ Analysis stored successfully in Firestore: {analysis_ref.path}")
+        # No need to return analysis_id, it was generated earlier
+
     except Exception as e:
-        print(f"❌ Error storing analysis: {str(e)}")
-        raise
+        logger.error(f"❌ Error storing analysis to Firestore: {str(e)}")
+        raise # Re-raise the exception
+
 
 @functions_framework.http
 def analyze_exercise_poses(request):
     """
-    HTTP Cloud Function to analyze exercise poses.
-    Expects a POST request with JSON body containing:
-    {
-        "images": [base64_string, ...],
-        "exerciseInfo": {
-            "userId": string,
-            "exerciseId": string,
-            "name": string,
-            "instructions": string
-        }
-    }
+    HTTP Cloud Function to analyze exercise poses, upload images to GCS,
+    and store analysis results (including image URLs) in Firestore.
+    Returns success status and the ID of the created analysis document.
     """
     # Enable CORS
     if request.method == 'OPTIONS':
         headers = {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS', # Allow POST and OPTIONS
             'Access-Control-Allow-Headers': 'Content-Type',
             'Access-Control-Max-Age': '3600'
         }
         return ('', 204, headers)
 
+    # Default headers for actual response
     headers = {
         'Access-Control-Allow-Origin': '*'
     }
-    
+
     try:
-        request_json = request.get_json()
-        
+        request_json = request.get_json(silent=True) # Use silent=True for better error handling
+
         if not request_json:
+            logger.error("Request processing failed: No JSON data provided.")
             return {'error': 'No JSON data provided'}, 400, headers
-        
-        # Validate required fields
-        images = request_json.get('images', [])
-        exercise_info = request_json.get('exerciseInfo', {})
-        
+
+        # --- Validate Input ---
+        images_base64 = request_json.get('images')
+        exercise_info = request_json.get('exerciseInfo')
+
+        if not isinstance(images_base64, list) or not images_base64:
+             logger.error("Request processing failed: 'images' field is missing or not a non-empty list.")
+             return {'error': "'images' must be a non-empty list"}, 400, headers
+
+        if not isinstance(exercise_info, dict):
+             logger.error("Request processing failed: 'exerciseInfo' field is missing or not an object.")
+             return {'error': "'exerciseInfo' must be an object"}, 400, headers
+
         required_fields = ['userId', 'exerciseId', 'name', 'instructions']
-        missing_fields = [field for field in required_fields if field not in exercise_info]
-        
+        missing_fields = [field for field in required_fields if field not in exercise_info or not exercise_info[field]]
+
         if missing_fields:
-            return {
-                'error': f'Missing required fields: {", ".join(missing_fields)}'
-            }, 400, headers
-            
-        if not images:
-            return {
-                'error': 'At least one image is required'
-            }, 400, headers
-        
-        # Call GPT-4 Vision API
-        analysis = call_LLM(images, f"""You are a professional physical therapist.
-The user is performing: {exercise_info['name']}
-Instructions they should follow: {exercise_info['instructions']}
+            error_msg = f'Missing or empty required fields in exerciseInfo: {", ".join(missing_fields)}'
+            logger.error(f"Request processing failed: {error_msg}")
+            return {'error': error_msg}, 400, headers
 
-Analyze these {len(images)} sequential images of the exercise in order (1 through {len(images)}) and provide:
-1. List of specific issues observed in the sequence
-2. Specific suggestions for improvement
+        user_id = exercise_info['userId']
+        exercise_id = exercise_info['exerciseId']
+        exercise_name = exercise_info['name']
+        exercise_instructions = exercise_info['instructions']
 
-Pay special attention to the progression of the exercise through the sequence of images.
-Format your response with clear sections for Issues and Suggestions, using bullet points.""")
-        
-        # Store the analysis
+        logger.info(f"🚀 Received analysis request for User: {user_id}, Exercise: {exercise_id} ({exercise_name}) with {len(images_base64)} images.")
+
+        # --- Generate Analysis ID ---
+        # Create the Firestore document reference first to get the ID
+        analysis_ref = db.collection('exercises').document(exercise_id) \
+                         .collection('analyses').document()
+        analysis_id = analysis_ref.id
+        logger.info(f"🔑 Generated Analysis ID: {analysis_id}")
+
+
+        # --- Upload Images to GCS ---
+        uploaded_image_urls = []
+        for i, img_b64 in enumerate(images_base64):
+            try:
+                # Decode Base64 image
+                image_bytes = base64.b64decode(img_b64)
+                
+                # Define destination path in GCS
+                blob_name = f"users/{user_id}/exercises/{exercise_id}/analyses/{analysis_id}/frame_{i+1}.jpg"
+                
+                # Upload and get URL
+                public_url = upload_image_to_gcs(image_bytes, blob_name)
+                if public_url:
+                    uploaded_image_urls.append(public_url)
+                else:
+                    # Handle upload failure for a single image - decide whether to continue or fail all
+                    logger.warning(f"⚠️ Failed to upload image {i+1} for analysis {analysis_id}. Skipping this image.")
+                    # Optionally: return error immediately
+                    # return {'error': f'Failed to upload image {i+1}'}, 500, headers
+
+            except (base64.binascii.Error, TypeError) as decode_error:
+                logger.warning(f"⚠️ Failed to decode base64 image at index {i} for analysis {analysis_id}: {decode_error}. Skipping.")
+                # Continue processing other images or fail the request
+            except Exception as upload_error: # Catch broader exceptions during upload
+                 logger.error(f"❌ Unexpected error uploading image {i+1}: {upload_error}")
+                 # Optionally fail the entire request here
+
+        # Check if any images were successfully uploaded
+        if not uploaded_image_urls and images_base64: # If input had images but none were uploaded
+             logger.error("❌ No images were successfully uploaded to GCS.")
+             return {'error': 'Failed to process and upload images.'}, 500, headers
+
+
+        # --- Call LLM for Analysis ---
+        # Updated prompt with stronger constraints
+        prompt = f"""Analyze the user performing: {exercise_name}
+Instructions: {exercise_instructions}
+
+Sequence of {len(images_base64)} snapshots provided. Infer full motion and assess correctness.
+Focus ONLY on major issues OR what's done well. Avoid minor details.
+YOUR RESPONSE MUST BE 2 SENTENCES MAXIMUM AND UNDER 30 WORDS.
+"""
+        analysis_result = call_LLM(images_base64, prompt, max_tokens=60) # Pass original base64 images
+
+
+        # --- Store Analysis in Firestore ---
         store_analysis(
-            exercise_info['userId'],
-            exercise_info['exerciseId'],
-            analysis
+            user_id=user_id,
+            exercise_id=exercise_id,
+            analysis_id=analysis_id, # Pass the generated ID
+            analysis_data=analysis_result,
+            image_urls=uploaded_image_urls # Pass the list of URLs
         )
-        
+
+        logger.info(f"✅ Successfully processed analysis request {analysis_id}.")
         return {
             'success': True,
-            'message': 'Analysis completed and stored successfully'
+            'message': 'Analysis complete, images uploaded, and results stored.',
+            'analysisId': analysis_id # Return the analysis ID
         }, 200, headers
-        
+
     except Exception as e:
-        print(f"Error in analyze_exercise_poses: {str(e)}")
+        # Log the exception traceback for detailed debugging if needed
+        # import traceback
+        # logger.error(f"Unhandled exception: {traceback.format_exc()}")
+        logger.error(f"❌ Critical error in analyze_exercise_poses: {str(e)}")
         return {
-            'error': 'Internal server error',
-            'message': str(e)
+            'success': False, # Indicate failure clearly
+            'error': 'Internal server error occurred.',
+            'message': str(e) # Provide error details (consider security implications)
         }, 500, headers
+
+# Note: main.py might need further adjustments for specific error handling,
+# security (e.g., using signed URLs instead of public URLs), and configuration.
