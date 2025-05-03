@@ -605,8 +605,10 @@ class VoiceManager: NSObject, ObservableObject {
                 return "Unable to start pose analysis due to internal error."
             }
 
-            // Ensure UserManager is loaded (might be redundant if already loaded elsewhere)
-            UserManager.shared.loadUserData()
+            // Ensure UserManager is loaded - wrap async call in Task
+            Task { 
+                _ = await UserManager.shared.loadUserData()
+            }
             guard let userId = UserManager.shared.userId else {
                 print("❌ startPoseAnalysis: User ID is missing")
                 return "Can't start pose analysis because userId is missing."
