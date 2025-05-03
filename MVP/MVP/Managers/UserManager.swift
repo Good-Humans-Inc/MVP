@@ -15,6 +15,11 @@ class UserManager: ObservableObject {
                 UserDefaults.standard.removeObject(forKey: "userId")
                 print("✅ UserManager: Removed userId from UserDefaults")
             }
+            
+            // If we have a user ID, ensure timezone is updated
+            if userId != nil {
+                NotificationCenter.default.post(name: NSNotification.Name("UserIDAvailable"), object: nil)
+            }
         }
     }
     @Published var userName: String = "" {
@@ -64,13 +69,89 @@ class UserManager: ObservableObject {
             print("⚠️ UserManager init: No userId found in UserDefaults")
         }
         
-        // Print initial state of isDataLoaded
-        print("🔄 UserManager init: isDataLoaded initial value: \(self.isDataLoaded)")
+
+        // Load user data when initialized
+        loadUserData()
         
-        // Load user data when initialized (fire and forget initially)
-        Task {
-            _ = await loadUserData()
+        // Schedule timezone check for after user data is likely available
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.checkAndUpdateTimezoneIfNeeded()
         }
+    }
+    
+    func checkAndUpdateTimezoneIfNeeded() {
+        // Get current timezone offset
+        let currentOffset = TimeZone.current.secondsFromGMT() / 3600
+        let currentOffsetString = String(currentOffset)
+        
+        // Get last known timezone offset
+        let timezoneCacheKey = "lastKnownTimezone"
+        let defaults = UserDefaults.standard
+        let lastKnownOffset = defaults.string(forKey: timezoneCacheKey)
+        
+        print("📱 UserManager: Current timezone offset: \(currentOffsetString), Last known: \(lastKnownOffset ?? "none")")
+        
+        // Check if timezone has changed
+        if lastKnownOffset != currentOffsetString {
+            print("🕒 UserManager: Timezone has changed from \(lastKnownOffset ?? "unknown") to \(currentOffsetString)")
+            
+            // Update server when user ID is available
+            if let userId = self.userId {
+                print("🕒 UserManager: Found user ID for timezone update: \(userId)")
+                updateTimezoneOnServer(userId: userId, timezone: currentOffsetString)
+                
+                // Cache the new timezone
+                defaults.set(currentOffsetString, forKey: timezoneCacheKey)
+            } else {
+                print("❌ UserManager: No user ID available for timezone update")
+            }
+        }
+    }
+
+    func updateTimezoneOnServer(userId: String, timezone: String) {
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_timezone") else {
+            print("❌ UserManager: Invalid URL for timezone update")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: String] = [
+            "user_id": userId,
+            "timezone": timezone
+        ]
+        
+        print("🕒 UserManager: Updating timezone on server: \(body)")
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            print("❌ UserManager: Failed to serialize timezone update request")
+            return
+        }
+        
+        request.httpBody = jsonData
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ UserManager: Error updating timezone: \(error.localizedDescription)")
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🕒 UserManager: Timezone update response status: \(httpResponse.statusCode)")
+                
+                if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                    print("🕒 UserManager: Timezone update response: \(responseString)")
+                }
+                
+                if httpResponse.statusCode == 200 {
+                    print("✅ UserManager: Timezone updated successfully")
+                } else {
+                    print("❌ UserManager: Timezone update failed with status: \(httpResponse.statusCode)")
+                }
+            }
+        }.resume()
     }
     
     // Make loadUserData async and return success status
@@ -168,3 +249,4 @@ extension URL {
         return components.url!
     }
 } 
+
