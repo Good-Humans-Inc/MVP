@@ -216,7 +216,7 @@ def send_notification(request):
         
         # Get user preferences for iOS configuration
         device_type = user_data.get('device_type', 'unknown')
-        bundle_id = user_data.get('app_bundle_id', 'com.pepmvp.app')
+        bundle_id = 'yanffyy.xyz.MVP'
         
         logger.info(f"Device type: {device_type}")
         logger.info(f"Bundle ID: {bundle_id}")
