@@ -1,11 +1,16 @@
-# update_information/main.py
 import functions_framework
 import firebase_admin
 from firebase_admin import credentials, firestore
-from datetime import datetime, timedelta, timezone, time
+from datetime import datetime, timedelta, timezone
 import json
 import uuid
 import requests
+import logging
+import traceback
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize Firebase Admin if not already initialized
 try:
@@ -17,10 +22,21 @@ db = firestore.Client(project='pepmvp', database='pep-mvp')
 
 @functions_framework.http
 def update_information(request):
-    print("--- update_information function entered ---")
-    print(f"Received request: Method={request.method}, URL={request.url}")
-    print(f"Incoming Request Headers: {request.headers}")
+    """
+    Update user information and notification preferences.
     
+    Expected request format:
+    {
+        "user_id": "string",
+        "notification_time": "HH:MM", (optional)
+        "next_notification_time": "HH:MM", (optional)
+        "user_goals": "string", (optional)
+        "exercise_routine": "string", (optional)
+        "timezone": float or string, (optional)
+        "force_today": boolean (optional)
+    }
+    """
+
     # Enable CORS
     if request.method == 'OPTIONS':
         headers = {
@@ -37,7 +53,10 @@ def update_information(request):
         request_json = request.get_json()
         user_id = request_json.get('user_id')
         
+        logger.info(f"Received update_information request for user {user_id}")
+        
         if not user_id:
+            logger.error("Missing user_id in request")
             return (json.dumps({'error': 'Missing user_id'}), 400, headers)
         
         # Check if user exists
@@ -45,6 +64,7 @@ def update_information(request):
         user_doc = user_ref.get()
         
         if not user_doc.exists:
+            logger.error(f"User {user_id} not found")
             return (json.dumps({'error': 'User not found'}), 404, headers)
         
         # Get user data for timezone information
@@ -56,38 +76,29 @@ def update_information(request):
         user_goals = request_json.get('user_goals')
         exercise_routine = request_json.get('exercise_routine')
         user_timezone_input = request_json.get('timezone')
-        force_today = request_json.get('force_today', False)  # New flag to force notification for today
+        force_today = request_json.get('force_today', False)
         
         # Prepare update data
         update_data = {}
         notification_updated = False
         
-        # Determine user timezone from existing timestamps or from request
+        # Determine user timezone from input or existing data
         user_timezone_offset_hours = None
-        if user_timezone_input:
+        if user_timezone_input is not None:
             try:
                 # Client provided timezone as hours offset (e.g., -7 for UTC-7)
                 user_timezone_offset_hours = float(user_timezone_input)
-                print(f"Using client-provided timezone: UTC{'+' if user_timezone_offset_hours >= 0 else ''}{user_timezone_offset_hours}")
+                logger.info(f"Using client-provided timezone: UTC{'+' if user_timezone_offset_hours >= 0 else ''}{user_timezone_offset_hours}")
+                
+                # Store timezone offset in user data
+                update_data['notification_timezone_offset'] = user_timezone_offset_hours
             except (ValueError, TypeError):
-                print(f"Invalid timezone format provided: {user_timezone_input}")
+                logger.error(f"Invalid timezone format provided: {user_timezone_input}")
         
-        # Try to get timezone from existing timestamps if not provided
+        # If timezone not provided, extract from existing data
         if user_timezone_offset_hours is None:
-            timezone_indicators = ['last_updated', 'last_token_update', 'updated_at', 'next_notification_time']
-            for field in timezone_indicators:
-                if field in user_data and user_data[field]:
-                    timestamp_value = user_data[field]
-                    # Check if the timestamp has timezone information
-                    if hasattr(timestamp_value, 'tzinfo') and timestamp_value.tzinfo:
-                        user_timezone_offset_hours = timestamp_value.utcoffset().total_seconds() / 3600
-                        print(f"Found user timezone offset from {field}: UTC{'+' if user_timezone_offset_hours >= 0 else ''}{user_timezone_offset_hours}")
-                        break
-        
-        # Default to UTC if we still couldn't determine timezone
-        if user_timezone_offset_hours is None:
-            print("Could not determine user timezone, defaulting to UTC")
-            user_timezone_offset_hours = 0
+            user_timezone_offset_hours = extract_timezone_offset(user_data)
+            logger.info(f"Extracted timezone offset: UTC{'+' if user_timezone_offset_hours >= 0 else ''}{user_timezone_offset_hours}")
         
         # Create the timezone object
         user_tz = timezone(timedelta(hours=user_timezone_offset_hours))
@@ -98,22 +109,24 @@ def update_information(request):
                 # Parse notification time (expected format: "HH:MM")
                 hour, minute = map(int, notification_time.split(':'))
                 if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    logger.info(f"Setting notification preferences to {hour:02d}:{minute:02d} in user's local timezone")
+                    
                     update_data['notification_preferences'] = {
                         'is_enabled': True,
                         'frequency': 'daily',  # Default to daily
-                        'hour': hour,
-                        'minute': minute,
+                        'hour': hour,          # Local hour (what user sees)
+                        'minute': minute,      # Local minute
+                        'timezone_offset': user_timezone_offset_hours,
                         'updated_at': firestore.SERVER_TIMESTAMP,
                         'updated_by': 'elevenlabs_agent',
                         'last_scheduled_utc': None
                     }
                     notification_updated = True
-                    print(f"Prepared update for notification_preferences: HH:MM {hour:02d}:{minute:02d}")
                 else:
-                    print(f"Invalid hour/minute range in notification_time: {notification_time}")
+                    logger.error(f"Invalid hour/minute range in notification_time: {notification_time}")
                     return (json.dumps({'error': 'Invalid notification time format (range)'}), 400, headers)
             except (ValueError, AttributeError):
-                print(f"Failed to parse notification_time: {notification_time}")
+                logger.error(f"Failed to parse notification_time: {notification_time}")
                 return (json.dumps({'error': 'Invalid notification time format (parsing)'}), 400, headers)
         
         # Update next notification time if provided
@@ -121,59 +134,51 @@ def update_information(request):
             try:
                 hour, minute = map(int, next_notification_time_input.split(':'))
                 if 0 <= hour <= 23 and 0 <= minute <= 59:
+                    logger.info(f"Processing one-time notification request for {hour:02d}:{minute:02d} in user's local timezone")
+                    
                     # Get current time IN USER'S TIMEZONE
                     now_user_tz = datetime.now(user_tz)
+                    logger.info(f"Current time in user timezone: {now_user_tz.isoformat()}")
 
                     # Create target time for TODAY in user's timezone
                     target_time_today = now_user_tz.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                    logger.info(f"Target time today in user timezone: {target_time_today.isoformat()}")
 
-                    # If the target time has already passed today, schedule for tomorrow
-                    # unless force_today is True
+                    # If the target time has already passed today and force_today is False, schedule for tomorrow
                     if target_time_today <= now_user_tz and not force_today:
                         target_datetime = target_time_today + timedelta(days=1)
-                        print(f"Target time {hour:02d}:{minute:02d} already passed today in user TZ. Scheduling for tomorrow.")
+                        logger.info(f"Target time already passed today in user TZ. Scheduling for tomorrow.")
                     else:
                         target_datetime = target_time_today
                         if target_time_today <= now_user_tz and force_today:
-                            print(f"Target time {hour:02d}:{minute:02d} already passed today, but force_today=True. Scheduling for today anyway.")
+                            logger.info(f"Target time already passed today, but force_today=True. Scheduling for today anyway.")
                         else:
-                            print(f"Target time {hour:02d}:{minute:02d} is later today in user TZ. Scheduling for today.")
+                            logger.info(f"Target time is later today in user TZ. Scheduling for today.")
 
                     # Convert to UTC for storage
                     target_time_utc = target_datetime.astimezone(timezone.utc)
+                    logger.info(f"Converted target time to UTC: {target_time_utc.isoformat()}")
                     
-                    # Store without timezone info
-                    utc_datetime_no_tzinfo = datetime(
-                        target_time_utc.year, 
-                        target_time_utc.month,
-                        target_time_utc.day,
-                        target_time_utc.hour,
-                        target_time_utc.minute,
-                        target_time_utc.second
-                    )
+                    # Store time as UTC in database
+                    update_data['next_notification_time'] = target_time_utc
+                    update_data['next_notification_time_utc'] = target_time_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                    update_data['next_notification_utc_hour'] = target_time_utc.hour
+                    update_data['next_notification_utc_minute'] = target_time_utc.minute
+                    update_data['next_notification_local_hour'] = hour
+                    update_data['next_notification_local_minute'] = minute
+                    update_data['notification_timezone_offset'] = user_timezone_offset_hours
+                    update_data['next_notification_time_manual_override'] = True
                     
-                    # Set the one-time flag
-                    is_one_time = True
-                    
-                    # Store both the time and the one-time flag
-                    update_data['next_notification_time'] = utc_datetime_no_tzinfo
-                    update_data['next_notification_time_utc'] = utc_datetime_no_tzinfo.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-                    update_data['next_notification_utc_hour'] = utc_datetime_no_tzinfo.hour
-                    update_data['next_notification_utc_minute'] = utc_datetime_no_tzinfo.minute
-                    update_data['is_one_time_notification'] = is_one_time
                     # Track if this was forced to be today
                     if force_today:
                         update_data['force_today'] = True
-                    
-                    local_hour = hour 
-                    local_minute = minute
-                    print(f"✅ This will be {local_hour:02d}:{local_minute:02d} in the user's local timezone")
+                        logger.info("Setting force_today flag for this notification")
 
                 else:
-                    print(f"Invalid hour/minute range in next_notification_time: {next_notification_time_input}")
+                    logger.error(f"Invalid hour/minute range in next_notification_time: {next_notification_time_input}")
                     return (json.dumps({'error': 'Invalid next notification time format (range)'}), 400, headers)
             except (ValueError, AttributeError):
-                print(f"Failed to parse next_notification_time: {next_notification_time_input}")
+                logger.error(f"Failed to parse next_notification_time: {next_notification_time_input}")
                 return (json.dumps({'error': 'Invalid next notification time format (parsing)'}), 400, headers)
         
         # Update user goals if provided
@@ -181,24 +186,28 @@ def update_information(request):
             update_data['user_goals'] = user_goals
             update_data['goal_updated_at'] = firestore.SERVER_TIMESTAMP
             update_data['goal_updated_by'] = 'elevenlabs_agent'
+            logger.info(f"Updating user goals for user {user_id}")
         
         # Update exercise routine if provided
         if exercise_routine:
             # Validate exercise routine format - should be a string
             if not isinstance(exercise_routine, str):
+                logger.error("Exercise routine must be a string")
                 return (json.dumps({'error': 'Exercise routine must be a string describing your regular physical activities'}), 400, headers)
             
             # Update the exercise routine
             update_data['exercise_routine'] = exercise_routine
             update_data['routine_updated_at'] = firestore.SERVER_TIMESTAMP
             update_data['routine_updated_by'] = 'elevenlabs_agent'
+            logger.info(f"Updating exercise routine for user {user_id}")
         
         # If no updates provided
         if not update_data:
-            return (json.dumps({'success': True, 'message': 'No valid update data provided in the request'}), 200, headers)
+            logger.warning("No update data provided")
+            return (json.dumps({'error': 'No update data provided'}), 400, headers)
         
         # Update user document
-        print(f"Updating Firestore for user {user_id} with data: {update_data}")
+        logger.info(f"Updating Firestore for user {user_id} with data: {update_data}")
         user_ref.update(update_data)
         
         # Create an activity log entry
@@ -213,51 +222,45 @@ def update_information(request):
         }
         
         db.collection('activities').document(activity_id).set(activity_data)
+        logger.info(f"Created activity log entry {activity_id} for user {user_id}")
         
         # If notification time was updated, schedule a notification
         scheduled_task_id = None
         
         if notification_updated:
-            try:
-                # Use the standardized function to calculate next notification time
-                next_time = calculate_next_notification_time(
-                    hour=update_data['notification_preferences']['hour'],
-                    minute=update_data['notification_preferences']['minute'],
-                    user_timezone_offset=user_timezone_offset_hours
-                )
-                
-                # Update the user's next_notification_time in Firestore again
-                print(f"Updating next_notification_time based on recurring pref change to: {next_time.isoformat()}")
-                user_ref.update({
-                    'next_notification_time': next_time,
+            logger.info("Notification preferences were updated, scheduling next notification")
+            # Use the standardized function to calculate next notification time
+            next_time = calculate_next_notification_time(
+                hour=update_data['notification_preferences']['hour'],
+                minute=update_data['notification_preferences']['minute'],
+                user_timezone_offset=user_timezone_offset_hours
+            )
+            
+            logger.info(f"Calculated next notification time (UTC): {next_time.isoformat()}")
+            
+            # Update the user's next_notification_time
+            user_ref.update({
+                'next_notification_time': next_time,
                 'next_notification_time_utc': next_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
                 'next_notification_utc_hour': next_time.hour,
-                'next_notification_utc_minute': next_time.minute
-                })
-                # Reflect this update in the response (using the serialized version)
-                response_updated_values = {}
-                for key, value in update_data.items():
-                    if isinstance(value, datetime):
-                        response_updated_values[key] = value.isoformat()
-                    elif isinstance(value, type(firestore.SERVER_TIMESTAMP)):
-                        response_updated_values[key] = None
-                    else:
-                        response_updated_values[key] = value
-                response_updated_values['next_notification_time'] = next_time.isoformat()
-            except Exception as e:
-                print(f"❌ Error calculating or updating next_notification_time for recurring: {str(e)}")
-                # Decide if this is fatal or just log and continue
+                'next_notification_utc_minute': next_time.minute,
+                'notification_timezone_offset': user_timezone_offset_hours
+            })
+            
 
             # Cancel any existing scheduled notifications
             try:
+                logger.info(f"Cancelling existing scheduled notifications for user {user_id}")
                 cancel_existing_scheduled_notifications(user_id)
             except Exception as e:
-                print(f"❌ Error cancelling existing notifications: {str(e)}")
-                # Log but likely continue
+                logger.error(f"Error cancelling existing notifications: {str(e)}")
+                logger.error(traceback.format_exc())
+
             
             # Schedule the next notification
             try:
                 is_one_time = True if next_notification_time_input else False
+                logger.info(f"Scheduling new notification for user {user_id}: is_one_time={is_one_time}, force_today={force_today}")
                 task_response = schedule_notification_task(
                     user_id,
                     next_time.isoformat(),
@@ -266,48 +269,114 @@ def update_information(request):
                 )
                 if task_response and 'notification_id' in task_response:
                     scheduled_task_id = task_response['notification_id']
-                    response_updated_values['scheduled_notification_id'] = scheduled_task_id
+                    logger.info(f"Scheduled notification with ID: {scheduled_task_id}")
             except Exception as e:
-                print(f"❌ Error scheduling new notification via task: {str(e)}")
-                # Log but likely continue, response won't include scheduled_notification_id
-        
-        elif 'next_notification_time' in update_data:
-            # Logic for specifically setting a one-off next notification time
-            # This might also involve calling schedule_notification_task with is_one_time=True
-            # For now, just log.
-            print(f"Specific next notification time was set to {response_updated_values.get('next_notification_time')}. Ensure scheduler handles this.")
+                logger.error(f"Error scheduling new notification: {str(e)}")
+                logger.error(traceback.format_exc())
+        elif next_notification_time_input:
+            logger.info("One-time notification time was set, scheduling notification")
+            # Extract the one-time notification time from update_data
+            next_time = update_data.get('next_notification_time')
+            
+            # Cancel any existing scheduled notifications
+            try:
+                logger.info(f"Cancelling existing scheduled notifications for user {user_id}")
+                cancel_existing_scheduled_notifications(user_id)
+            except Exception as e:
+                logger.error(f"Error cancelling existing notifications: {str(e)}")
+                logger.error(traceback.format_exc())
+            
+            # Schedule the one-time notification
+            try:
+                logger.info(f"Scheduling one-time notification for user {user_id}")
+                task_response = schedule_notification_task(
+                    user_id,
+                    next_time.isoformat(),
+                    is_one_time=True,
+                    force_today=force_today
+                )
+                if task_response and 'notification_id' in task_response:
+                    scheduled_task_id = task_response['notification_id']
+                    logger.info(f"Scheduled one-time notification with ID: {scheduled_task_id}")
+            except Exception as e:
+                logger.error(f"Error scheduling one-time notification: {str(e)}")
+                logger.error(traceback.format_exc())
         
         response_data = {
             'status': 'success',
             'message': 'User information updated successfully',
-            'updated_values': response_updated_values
+            'updated_values': serialize_firestore_data(update_data)
+
         }
         
         if scheduled_task_id:
             response_data['scheduled_notification_id'] = scheduled_task_id
             
-        if notification_updated:
-            print("Recurring notification preferences updated. Consider triggering schedule update.")
-            if 'next_notification_time' in response_data['updated_values']:
-                print(f"Specific next notification time set to {response_data['updated_values']['next_notification_time']}. Ensure scheduler handles this.")
-            
-        print(f"Sending successful response: {json.dumps(serialize_firestore_data(response_data))}")
-        return (json.dumps(serialize_firestore_data(response_data)), 200, headers)
+        return (json.dumps(response_data), 200, headers)
             
     except Exception as e:
-        import traceback
         error_details = traceback.format_exc()
-        print(f"Error updating user information: {str(e)}\n{error_details}")
+        logger.error(f"Error updating user information: {str(e)}\n{error_details}")
         return (json.dumps({'error': str(e)}), 500, headers)
+
+def extract_timezone_offset(user_data):
+    """Extract timezone offset from user data consistently."""
+    # First, check for the explicit timezone field (which appears in your user document)
+    print("🕒 extract_timezone_offset: Checking for timezone field")
+    print(f"User data: {user_data}")
+    if 'timezone' in user_data:
+        try:
+            timezone_value = user_data.get('timezone')
+            if isinstance(timezone_value, str):
+                # Remove quotes if present
+                timezone_value = timezone_value.strip('"\'')
+            timezone_offset = float(timezone_value)
+            logger.info(f"Extracted timezone offset {timezone_offset} from timezone field")
+            return timezone_offset
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Could not convert timezone value '{user_data.get('timezone')}' to float: {str(e)}")
+    
+    # Next, try to get from notification_preferences
+    notification_prefs = user_data.get('notification_preferences', {})
+    timezone_offset = notification_prefs.get('timezone_offset')
+    if timezone_offset is not None:
+        return timezone_offset
+    
+    # If not there, try notification_timezone_offset
+    timezone_offset = user_data.get('notification_timezone_offset')
+    if timezone_offset is not None:
+        return timezone_offset
+    
+    # If still not found, try to extract from timestamps
+    if timezone_offset is None:
+        timezone_indicators = ['last_updated', 'last_token_update', 'updated_at', 'next_notification_time']
+        for field in timezone_indicators:
+            if field in user_data and user_data[field]:
+                timestamp_value = user_data[field]
+                # Check if the timestamp has timezone information
+                if hasattr(timestamp_value, 'tzinfo') and timestamp_value.tzinfo:
+                    timezone_offset = timestamp_value.utcoffset().total_seconds() / 3600
+                    logger.info(f"Extracted timezone offset {timezone_offset} from {field}")
+                    break
+    
+    # Default to UTC if still not found
+    if timezone_offset is None:
+        logger.warning("Could not determine user timezone, defaulting to UTC")
+        timezone_offset = 0
+        
+    return timezone_offset
 
 def cancel_existing_scheduled_notifications(user_id):
     """Cancel any existing scheduled notifications for the user."""
+    logger.info(f"Cancelling existing scheduled notifications for user {user_id}")
+    
     # Get notifications with status 'scheduled'
     notifications = db.collection('notifications') \
         .where('user_id', '==', user_id) \
         .where('status', '==', 'scheduled') \
         .stream()
     
+    cancelled_count = 0
     for notif in notifications:
         notif_data = notif.to_dict()
         task_name = notif_data.get('task_name')
@@ -318,6 +387,7 @@ def cancel_existing_scheduled_notifications(user_id):
             'updated_at': firestore.SERVER_TIMESTAMP,
             'cancelled_reason': 'User updated notification preferences'
         })
+        logger.info(f"Cancelled notification {notif.id}")
         
         # If we have task_name, try to delete the Cloud Task
         if task_name:
@@ -326,12 +396,20 @@ def cancel_existing_scheduled_notifications(user_id):
                 from google.cloud import tasks_v2
                 client = tasks_v2.CloudTasksClient()
                 client.delete_task(name=task_name)
-                print(f"Deleted Cloud Task: {task_name}")
+                logger.info(f"Deleted Cloud Task: {task_name}")
             except Exception as e:
-                print(f"Error deleting Cloud Task {task_name}: {str(e)}")
+                logger.error(f"Error deleting Cloud Task {task_name}: {str(e)}")
+                logger.error(traceback.format_exc())
+        
+        cancelled_count += 1
+    
+    logger.info(f"Cancelled {cancelled_count} notifications for user {user_id}")
+    return cancelled_count
 
 def schedule_notification_task(user_id, scheduled_time, is_one_time=False, custom_title=None, custom_body=None, force_today=False):
     """Call the schedule_notification Cloud Function."""
+    logger.info(f"Scheduling notification for user {user_id}: is_one_time={is_one_time}, force_today={force_today}")
+    
     # Get the GCP project ID
     project_id = 'pepmvp'  # Your GCP project ID
     
@@ -353,31 +431,31 @@ def schedule_notification_task(user_id, scheduled_time, is_one_time=False, custo
     url = f"https://us-central1-{project_id}.cloudfunctions.net/schedule_notification"
     
     # Log the payload for debugging
-    print(f"Sending notification schedule request with payload: {json.dumps(payload)}")
+    logger.info(f"Sending notification schedule request with payload: {json.dumps(payload)}")
     
-    # Make the HTTP request
-    response = requests.post(url, json=payload)
+    # Make the HTTP request with a timeout
+    response = requests.post(url, json=payload, timeout=30)
     
     # Process the response
-    print(f"Schedule API response status: {response.status_code}")
+    logger.info(f"Schedule API response status: {response.status_code}")
     
     if response.status_code == 200:
         try:
             response_data = response.json()
-            print(f"Schedule API success: {json.dumps(response_data)}")
+            logger.info(f"Schedule API success: {json.dumps(response_data)}")
             return response_data
         except json.JSONDecodeError:
             error_message = f"Failed to parse API response as JSON: {response.text}"
-            print(error_message)
+            logger.error(error_message)
             raise Exception(error_message)
     else:
         error_message = f"Failed to schedule notification: HTTP {response.status_code}: {response.text}"
-        print(error_message)
+        logger.error(error_message)
         try:
             error_json = response.json()
-            print(f"Error details: {json.dumps(error_json)}")
+            logger.error(f"Error details: {json.dumps(error_json)}")
         except:
-            print(f"Could not parse error response as JSON")
+            logger.error(f"Could not parse error response as JSON")
         raise Exception(error_message)
 
 def calculate_next_notification_time(hour, minute, user_timezone_offset, current_time=None):
@@ -395,50 +473,26 @@ def calculate_next_notification_time(hour, minute, user_timezone_offset, current
     """
     # Use provided time or current UTC time
     now = current_time or datetime.now(timezone.utc)
-    print(f"Current time (UTC): {now.isoformat()}")
+    logger.info(f"Current time (UTC): {now.isoformat()}")
     
     # First, convert the current UTC time to the user's local time
     user_local_time = now.astimezone(timezone(timedelta(hours=user_timezone_offset)))
-    print(f"Current time in user's timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}): {user_local_time.isoformat()}")
+    logger.info(f"Current time in user's timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset}): {user_local_time.isoformat()}")
     
-    # Create a base date in the user's timezone (today at midnight)
-    user_base_date = user_local_time.replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    # Create the target time in user's local timezone
-    user_target_time = user_base_date.replace(hour=hour, minute=minute)
-    print(f"Target time in user's timezone: {user_target_time.isoformat()}")
+    # Create target time in user's local timezone for today
+    user_target_time = user_local_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    logger.info(f"Target time in user's timezone: {user_target_time.isoformat()}")
     
     # If target time has passed in user's timezone, add a day
     if user_target_time <= user_local_time:
         user_target_time += timedelta(days=1)
-        print(f"Target time already passed in user's timezone, scheduling for tomorrow: {user_target_time.isoformat()}")
+        logger.info(f"Target time already passed in user's timezone, scheduling for tomorrow: {user_target_time.isoformat()}")
         
     # Convert the final time back to UTC for storage and scheduling
     target_time_utc = user_target_time.astimezone(timezone.utc)
-    print(f"Final notification time (UTC): {target_time_utc.isoformat()}")
+    logger.info(f"Final notification time (UTC): {target_time_utc.isoformat()}")
     
-    # *** FIX: Store as a native datetime without timezone info for Firestore ***
-    # Firestore can handle timezone-aware datetimes properly, but let's explicitly create a
-    # UTC datetime without timezone info to guarantee consistent behavior across different clients
-    utc_datetime_no_tzinfo = datetime(
-        target_time_utc.year,
-        target_time_utc.month,
-        target_time_utc.day,
-        target_time_utc.hour,
-        target_time_utc.minute,
-        target_time_utc.second,
-        target_time_utc.microsecond
-    )
-    
-    # Create explicit UTC string representation
-    utc_time_str = utc_datetime_no_tzinfo.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-    
-    print(f"Converted to UTC datetime without timezone info: {utc_datetime_no_tzinfo.isoformat()}Z")
-    print(f"UTC string representation: {utc_time_str}")
-    print(f"This will be {hour:02d}:{minute:02d} in the user's local timezone (UTC{'+' if user_timezone_offset >= 0 else ''}{user_timezone_offset})")
-    
-    # Return the UTC datetime without timezone info
-    return utc_datetime_no_tzinfo
+    return target_time_utc
 
 # Helper function to serialize Firestore data for JSON
 def serialize_firestore_data(data):
@@ -453,11 +507,11 @@ def serialize_firestore_data(data):
         # Convert datetime objects to ISO 8601 string format
         return data.isoformat()
     elif hasattr(data, 'datetime') and isinstance(getattr(data, 'datetime', None), datetime):
-         # Handle Firestore Timestamp objects if they appear (though update_data shouldn't have them yet)
+         # Handle Firestore Timestamp objects
          return data.datetime.isoformat()
-    # Skip Firestore SERVER_TIMESTAMP placeholder or other non-serializable types if necessary
+    # Skip Firestore SERVER_TIMESTAMP placeholder or other non-serializable types
     elif isinstance(data, type(firestore.SERVER_TIMESTAMP)):
-         return None # Or return a placeholder string like "SERVER_TIMESTAMP"
+         return None
     else:
         # Return other basic types as is
         return data
