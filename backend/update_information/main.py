@@ -23,7 +23,7 @@ db = firestore.Client(project='pepmvp', database='pep-mvp')
 @functions_framework.http
 def update_information(request):
     """
-    Update user information and notification preferences.
+    Update user information, notification preferences, or analysis timestamp.
     
     Expected request format:
     {
@@ -34,6 +34,7 @@ def update_information(request):
         "exercise_routine": "string", (optional)
         "timezone": float or string, (optional)
         "force_today": boolean (optional)
+        "set_last_analysis_timestamp": boolean (optional, default false)
     }
     """
 
@@ -77,6 +78,7 @@ def update_information(request):
         exercise_routine = request_json.get('exercise_routine')
         user_timezone_input = request_json.get('timezone')
         force_today = request_json.get('force_today', False)
+        set_last_analysis_timestamp = request_json.get('set_last_analysis_timestamp', False)
         
         # Prepare update data
         update_data = {}
@@ -201,29 +203,44 @@ def update_information(request):
             update_data['routine_updated_by'] = 'elevenlabs_agent'
             logger.info(f"Updating exercise routine for user {user_id}")
         
-        # If no updates provided
+        # ---- Add logic for analysis timestamp ----
+        if set_last_analysis_timestamp:
+            update_data['last_analysis_request_timestamp'] = firestore.SERVER_TIMESTAMP
+            logger.info(f"Setting last_analysis_request_timestamp for user {user_id}")
+        # -----------------------------------------
+        
+        # If no updates provided (check *after* potentially adding the timestamp)
         if not update_data:
-            logger.warning("No update data provided")
-            return (json.dumps({'error': 'No update data provided'}), 400, headers)
-        
-        # Update user document
-        logger.info(f"Updating Firestore for user {user_id} with data: {update_data}")
-        user_ref.update(update_data)
-        
-        # Create an activity log entry
-        activity_id = str(uuid.uuid4())
-        activity_data = {
-            'id': activity_id,
-            'user_id': user_id,
-            'type': 'profile_update',
-            'updated_fields': list(update_data.keys()),
-            'updated_at': firestore.SERVER_TIMESTAMP,
-            'updated_by': 'elevenlabs_agent'
-        }
-        
-        db.collection('activities').document(activity_id).set(activity_data)
-        logger.info(f"Created activity log entry {activity_id} for user {user_id}")
-        
+            # It's okay if *only* the timestamp was requested, so remove the old error check
+            # logger.warning("No update data provided")
+            # return (json.dumps({'error': 'No update data provided'}), 400, headers)
+             logger.info(f"No profile fields provided to update for user {user_id}, potentially only timestamp requested.")
+             # Allow proceeding if only the timestamp was set
+
+        # Update user document only if there's something to update
+        if update_data:
+            logger.info(f"Updating Firestore for user {user_id} with data: {update_data}")
+            user_ref.update(update_data) # Use update instead of set with merge if we know doc exists
+        else:
+             logger.info(f"No data to update for user {user_id}.")
+             # If only the timestamp was requested and set, it would have been in update_data
+             # This path might be hit if the request was empty or only had set_last_analysis_timestamp: false
+             return (json.dumps({'status': 'no_op', 'message': 'No information provided to update'}), 200, headers)
+
+        # Create an activity log entry (consider if timestamp-only updates need logging)
+        if update_data and any(k != 'last_analysis_request_timestamp' for k in update_data): # Log if more than just timestamp changed
+             activity_id = str(uuid.uuid4())
+             activity_data = {
+                 'id': activity_id,
+                 'user_id': user_id,
+                 'type': 'profile_update',
+                 'updated_fields': list(update_data.keys()),
+                 'updated_at': firestore.SERVER_TIMESTAMP,
+                 'updated_by': 'elevenlabs_agent' # Or identify source if needed
+             }
+             db.collection('activities').document(activity_id).set(activity_data)
+             logger.info(f"Created activity log entry {activity_id} for user {user_id}")
+
         # If notification time was updated, schedule a notification
         scheduled_task_id = None
         
@@ -305,8 +322,8 @@ def update_information(request):
         response_data = {
             'status': 'success',
             'message': 'User information updated successfully',
-            'updated_values': serialize_firestore_data(update_data)
-
+            # Only include updated_values if actual profile fields were updated
+            'updated_values': serialize_firestore_data({k:v for k,v in update_data.items() if k != 'last_analysis_request_timestamp'}) if any(k != 'last_analysis_request_timestamp' for k in update_data) else {}
         }
         
         if scheduled_task_id:

@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import AVFoundation
 import Combine
+// import FirebaseFirestore // <-- No longer needed for direct write
 
 class PoseAnalysisManager: ObservableObject {
     // Published properties for UI updates
@@ -25,8 +26,9 @@ class PoseAnalysisManager: ObservableObject {
     private weak var cameraManager: CameraManager?
     private let processingQueue = DispatchQueue(label: "com.app.poseAnalysis", qos: .userInitiated)
     
-    // Cloud Function URL
-    private let cloudFunctionURL = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/analyze_exercise_poses")!
+    // Cloud Function URLs
+    private let analyzePosesURL = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/analyze_exercise_poses")!
+    private let updateInfoURL = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_information")! // <-- Add URL for update_information
     
     // Cancellables
     private var cancellables = Set<AnyCancellable>()
@@ -41,18 +43,121 @@ class PoseAnalysisManager: ObservableObject {
     
     func startAnalysis(for exercise: Exercise) {
         guard !isCapturing else { return }
-        
+        guard let userId = UserDefaults.standard.string(forKey: "userId") else {
+             handleError("User ID not found, cannot start analysis.")
+             return
+        }
+
         isCapturing = true
         screenshotCount = 0
         screenshots.removeAll()
         captureProgress = 0
-        
-        // Wait for setup delay before starting capture
-        print("🎥 Waiting \(setupDelay) seconds for camera setup...")
-        DispatchQueue.main.asyncAfter(deadline: .now() + setupDelay) { [weak self] in
-            self?.startScreenshotCapture(for: exercise)
+
+        // --- Call update_information to set timestamp via HTTP --- // <-- Changed section
+        setAnalysisStartTimestamp(userId: userId) { [weak self] success in
+            guard let self = self else { return }
+            if success {
+                print("✅ Successfully requested timestamp update via HTTP.")
+                // Proceed with camera setup only after successful request (or handle failure)
+                print("🎥 Waiting \(self.setupDelay) seconds for camera setup...")
+                DispatchQueue.main.asyncAfter(deadline: .now() + self.setupDelay) {
+                    self.startScreenshotCapture(for: exercise)
+                }
+            } else {
+                // Handle failure to set timestamp - maybe stop analysis?
+                print("❌ Failed to request timestamp update via HTTP. Analysis may not get latest feedback.")
+                self.handleError("Failed to signal analysis start time.")
+                // Decide if you want to proceed anyway or stop here.
+                // If proceeding: uncomment the following block
+                /*
+                print("🎥 Waiting \(self.setupDelay) seconds for camera setup despite timestamp failure...")
+                DispatchQueue.main.asyncAfter(deadline: .now() + self.setupDelay) {
+                    self.startScreenshotCapture(for: exercise)
+                }
+                */
+            }
         }
+        // --- End HTTP Timestamp Update Call ---
     }
+    
+    // --- New function to call update_information --- // <-- New helper function
+    private func setAnalysisStartTimestamp(userId: String, completion: @escaping (Bool) -> Void) {
+        print("➡️ Entered setAnalysisStartTimestamp function.")
+
+        // Verify the URL - Removed guard let as updateInfoURL is non-optional due to force unwrap (!)
+        // guard let validURL = updateInfoURL else {
+        //     print("❌ ERROR: updateInfoURL is nil!")
+        //     completion(false)
+        //     return
+        // }
+        // Use updateInfoURL directly
+        print("  ✅ updateInfoURL is valid (force unwrapped): \(updateInfoURL.absoluteString)")
+
+        var request = URLRequest(url: updateInfoURL) // <-- Use directly
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        print("  ✅ URLRequest created.")
+
+        // Verify userId
+        print("  ℹ️ userId for request: \(userId)")
+        if userId.isEmpty {
+            print("❌ ERROR: userId passed to setAnalysisStartTimestamp is empty!")
+            // Decide how to handle - maybe still proceed but log heavily?
+            // completion(false) // Or maybe fail here?
+            // return
+        }
+
+        let body: [String: Any] = [
+            "user_id": userId,
+            "set_last_analysis_timestamp": true
+        ]
+        print("  ✅ Request body dictionary created.")
+
+        do {
+            print("   Pushing into do-catch block for serialization...") // <-- Add log here
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            print("⏳ Sending request to update_information endpoint...")
+        } catch {
+            print("❌ Failed to serialize update_information request body: \(error)")
+            completion(false)
+            return
+        }
+
+        print("   Pushing to URLSession dataTask...") // <-- Add log here
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            // Handle network error
+            if let error = error {
+                print("❌ Network error calling update_information: \(error.localizedDescription)")
+                DispatchQueue.main.async { completion(false) }
+                return
+            }
+
+            // Check HTTP response
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ Invalid response from update_information endpoint.")
+                DispatchQueue.main.async { completion(false) }
+                return
+            }
+
+            print("📊 update_information response status code: \(httpResponse.statusCode)")
+
+            // Check for successful status code (e.g., 200 OK)
+            if (200...299).contains(httpResponse.statusCode) {
+                // You can optionally decode the response if needed, but for just setting
+                // a timestamp, checking the status code might be enough.
+                 print("  ✅ Received success status code from update_information.") // <-- Add log here
+                DispatchQueue.main.async { completion(true) }
+            } else {
+                // Log error details if available
+                 print("  ❌ Received non-success status code from update_information: \(httpResponse.statusCode)") // <-- Add log here
+                if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                     print("❌ update_information error response body: \(responseString)")
+                }
+                DispatchQueue.main.async { completion(false) }
+            }
+        }.resume()
+    }
+    // --- End new function ---
     
     private func startScreenshotCapture(for exercise: Exercise) {
         print("📸 Starting screenshot capture...")
@@ -235,7 +340,7 @@ class PoseAnalysisManager: ObservableObject {
         print("- Exercise Name: \(exercise.name)")
         
         // Create the request
-        var request = URLRequest(url: cloudFunctionURL)
+        var request = URLRequest(url: self.analyzePosesURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
