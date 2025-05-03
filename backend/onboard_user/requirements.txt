@@ -1,4 +1,5 @@
 functions-framework==3.4.0
-google-cloud-firestore==2.13.1
+google-cloud-firestore==2.11.1
 google-cloud-secret-manager==2.16.4
-requests==2.31.0 
+requests
+uuid # Technically uuid is built-in, but keeping it for clarity if it was intended
