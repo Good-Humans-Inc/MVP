@@ -10,22 +10,19 @@ from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# Import utility functions and classes
-from backend.utils.user_data import fetch_user_data_from_db, DateTimeEncoder
-
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize Firestore DB
-db = firestore.Client(project='pepmvp', database='pep-mvp')
+db = db = firestore.Client(project='pepmvp', database='pep-mvp')
 
-# Custom JSON encoder moved to backend/utils/user_data.py
-# class DateTimeEncoder(json.JSONEncoder):
-#     def default(self, obj):
-#         if isinstance(obj, datetime):
-#             return obj.isoformat()
-#         return super(DateTimeEncoder, self).default(obj)
+# Custom JSON encoder to handle datetime objects
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super(DateTimeEncoder, self).default(obj)
 
 # Secret Manager setup
 def access_secret_version(secret_id, version_id="latest"):
@@ -193,49 +190,6 @@ KNEE_EXERCISES = [
     }
 ]
 
-# Lower back exercises
-LOWER_BACK_EXERCISES = [
-    {
-        "name": "Bridge Exercise",
-        "description": "Strengthening exercise for lower back and glutes",
-        "target_joints": ["lower_back"],
-        "instructions": [
-            "Lie on back with knees bent",
-            "Lift hips toward ceiling",
-            "Hold for 5 seconds",
-            "Lower slowly",
-            "Repeat 10 times"
-        ],
-        "videoURL": "https://storage.googleapis.com/mvp-vids/bridge_exercise.mp4"
-    },
-    {
-        "name": "Bird Dog",
-        "description": "Balance and stability exercise for core and back",
-        "target_joints": ["lower_back"],
-        "instructions": [
-            "Start on hands and knees",
-            "Extend right arm and left leg",
-            "Hold for 5 seconds",
-            "Return to start and switch sides",
-            "Repeat 10 times per side"
-        ],
-        "videoURL": "https://storage.googleapis.com/mvp-vids/bird_dog.mp4"
-    },
-    {
-        "name": "Knee to Chest Stretch",
-        "description": "Gentle stretch for lower back muscles",
-        "target_joints": ["lower_back"],
-        "instructions": [
-            "Lie on back with knees bent",
-            "Bring one knee toward chest",
-            "Hold for 30 seconds",
-            "Lower and switch legs",
-            "Repeat 3 times per leg"
-        ],
-        "videoURL": "https://storage.googleapis.com/mvp-vids/knee_to_chest_stretch.mp4"
-    }
-]
-
 # Ankle exercises
 ANKLE_EXERCISES = [
     {
@@ -280,7 +234,7 @@ ANKLE_EXERCISES = [
 ]
 
 # Combine all exercises
-ALL_EXERCISES = RSI_EXERCISES + SHOULDER_EXERCISES + KNEE_EXERCISES + LOWER_BACK_EXERCISES + ANKLE_EXERCISES
+ALL_EXERCISES = RSI_EXERCISES + SHOULDER_EXERCISES + KNEE_EXERCISES + ANKLE_EXERCISES
 
 @functions_framework.http
 def generate_exercise(request):
@@ -324,12 +278,11 @@ def generate_exercise(request):
         else:
             api_key = access_secret_version("openai-api-key")
         
-        # Get user data using the internal helper function
-        user_data = _fetch_user_data_from_db(user_id, db) # Pass user_id and db client
+        # Get user data
+        user_data = get_user_data_helper(user_id)
         if not user_data:
-            logger.warning(f"User not found or error fetching data for: {user_id}")
-            # Return 404 whether user not found or DB error during fetch
-            return (json.dumps({'error': 'User not found or error retrieving data'}, cls=DateTimeEncoder), 404, headers)
+            logger.warning(f"User not found: {user_id}")
+            return (json.dumps({'error': 'User not found'}, cls=DateTimeEncoder), 404, headers)
         
         # Determine target joint from injury if not explicitly provided
         if not target_joint and 'injury' in user_data:
@@ -391,11 +344,29 @@ def generate_exercise(request):
         logger.error(f"Error generating exercise: {str(e)}", exc_info=True)
         return (json.dumps({'error': f'Error generating exercise: {str(e)}'}, cls=DateTimeEncoder), 500, headers)
 
+def get_user_data_helper(user_id):
+    """
+    Retrieve user data from Firestore
+    """
+    user_doc = db.collection('users').document(user_id).get()
+    
+    if not user_doc.exists:
+        print("❌ get_user_data: User not found in Firestore")
+        return None
+    
+    user_data = user_doc.to_dict()
+    print("📋 User data retrieved from Firestore:", user_data)
+    print("📋 injury field:", user_data.get('injury'))
+    print("📋 pain_description field:", user_data.get('pain_description'))
+
+    return user_data
+
 def select_exercise_with_claude(user_data, api_key, exercises=None):
     """
     Use Claude to select the most appropriate exercise from the predefined list
     and generate detailed instructions based on the user's pain description
     """
+    pain_description = ""
     try:
         # Extract user info
         name = user_data.get('name', 'the user')
@@ -555,6 +526,7 @@ def select_exercise_with_openai(user_data, api_key, exercises=None):
     Use OpenAI to select the most appropriate exercise from the predefined list
     and generate detailed instructions based on the user's pain description
     """
+    pain_description = ""
     try:
         # Extract user info
         name = user_data.get('name', 'the user')
