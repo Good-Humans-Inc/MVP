@@ -96,15 +96,18 @@ class UserManager: ObservableObject {
             
             // Update server when user ID is available
             if let userId = self.userId {
+                print("🕒 UserManager: Found user ID for timezone update: \(userId)")
                 updateTimezoneOnServer(userId: userId, timezone: currentOffsetString)
                 
                 // Cache the new timezone
                 defaults.set(currentOffsetString, forKey: timezoneCacheKey)
+            } else {
+                print("❌ UserManager: No user ID available for timezone update")
             }
         }
     }
 
-    private func updateTimezoneOnServer(userId: String, timezone: String) {
+    func updateTimezoneOnServer(userId: String, timezone: String) {
         guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/update_timezone") else {
             print("❌ UserManager: Invalid URL for timezone update")
             return
@@ -135,6 +138,12 @@ class UserManager: ObservableObject {
             }
             
             if let httpResponse = response as? HTTPURLResponse {
+                print("🕒 UserManager: Timezone update response status: \(httpResponse.statusCode)")
+                
+                if let data = data, let responseString = String(data: data, encoding: .utf8) {
+                    print("🕒 UserManager: Timezone update response: \(responseString)")
+                }
+                
                 if httpResponse.statusCode == 200 {
                     print("✅ UserManager: Timezone updated successfully")
                 } else {

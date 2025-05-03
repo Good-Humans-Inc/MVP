@@ -252,13 +252,31 @@ def process_user_notification_update(user_id):
 
 def extract_timezone_offset(user_data):
     """Extract timezone offset from user data consistently."""
-    # First, try to get from notification_preferences
+    # First, check for the explicit timezone field (which appears in your user document)
+    print("🕒 extract_timezone_offset: Checking for timezone field")
+    print(f"User data: {user_data}")
+    if 'timezone' in user_data:
+        try:
+            timezone_value = user_data.get('timezone')
+            if isinstance(timezone_value, str):
+                # Remove quotes if present
+                timezone_value = timezone_value.strip('"\'')
+            timezone_offset = float(timezone_value)
+            logger.info(f"Extracted timezone offset {timezone_offset} from timezone field")
+            return timezone_offset
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Could not convert timezone value '{user_data.get('timezone')}' to float: {str(e)}")
+    
+    # Next, try to get from notification_preferences
     notification_prefs = user_data.get('notification_preferences', {})
     timezone_offset = notification_prefs.get('timezone_offset')
+    if timezone_offset is not None:
+        return timezone_offset
     
     # If not there, try notification_timezone_offset
-    if timezone_offset is None:
-        timezone_offset = user_data.get('notification_timezone_offset')
+    timezone_offset = user_data.get('notification_timezone_offset')
+    if timezone_offset is not None:
+        return timezone_offset
     
     # If still not found, try to extract from timestamps
     if timezone_offset is None:

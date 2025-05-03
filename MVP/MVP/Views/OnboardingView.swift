@@ -167,6 +167,19 @@ struct OnboardingView: View {
                 animationState = .thinking
                 addMessage(text: "Thanks for sharing that information. I'm generating personalized exercises for you now...", isUser: false)
                 
+                // Update timezone information first
+                print("🕒 OnboardingView: Checking and updating timezone information")
+                let userManager = UserManager.shared
+                print("🕒 OnboardingView: User ID for timezone update: \(userId)")
+                userManager.checkAndUpdateTimezoneIfNeeded()
+                
+                // Force an immediate timezone update regardless of cache
+                let currentOffset = TimeZone.current.secondsFromGMT() / 3600
+                let currentOffsetString = String(currentOffset)
+                print("🕒 OnboardingView: Forcing timezone update with offset: \(currentOffsetString)")
+                // Call the public method directly now
+                userManager.updateTimezoneOnServer(userId: userId, timezone: currentOffsetString)
+                
                 // Update FCM token with the new user ID
                 notificationManager.getFCMToken { token in
                     if let token = token {
