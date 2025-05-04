@@ -7,6 +7,11 @@ from datetime import datetime, timezone, timedelta
 import requests
 import logging
 
+# Initialize Firebase Admin if not already initialized
+try:
+    app = firebase_admin.get_app()
+except ValueError:
+    firebase_admin.initialize_app()
 
 @https_fn.on_call()
 def send_test_notification(req: https_fn.CallableRequest) -> dict:
