@@ -163,20 +163,20 @@ extension Exercise {
     static var fallbackExercise: Exercise {
         return Exercise(
             id: UUID(),
-            name: "Finger Bends",
-            description: "Individual finger exercises to improve mobility",
+            name: "Wrist Rotation",
+            description: "Gentle wrist rotations to improve flexibility and mobility",
             imageURLString: nil,
             imageURLString1: nil,
             duration: 180,
             targetJoints: [.leftWrist,.rightWrist],
             instructions: [
-                "Start with hand open",
-                "Bend each finger toward the palm individually",
-                "Keep other fingers straight",
-                "Hold for 2 seconds per finger",
-                "Return to starting position and repeat"
+                "Start with your arm extended forward",
+                "Rotate your wrist clockwise slowly 5 times",
+                "Then rotate counterclockwise 5 times",
+                "Keep movements smooth and controlled",
+                "Repeat with the other wrist"
             ],
-            videoURL: URL(string: "https://storage.googleapis.com/mvp-vids/finger_bend.mp4")
+            videoURL: URL(string: "https://storage.googleapis.com/mvp-vids/wrist_rotation.mp4")
         )
     }
-}
+} 
