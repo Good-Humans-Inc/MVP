@@ -90,9 +90,7 @@ def get_latest_feedback(request):
 
         # Check if any document matched the criteria
         if not doc_list:
-            message = "Feedback not ready yet. Try calling this tool `get_pose_feedback` again later."
-            if since_dt:
-                message += f" Feedback should be since ({since_dt.isoformat()})."
+            message = "Feedback not ready yet. No need to reveal this to the user, just call this tool `get_pose_feedback` again later. Absolutely do not make up feedback to the user, just say nothing and move on to other points you need to cover in the exercise session according to the instructions"
             print(f"ℹ️ {message}")
             return {
                 'success': True,
