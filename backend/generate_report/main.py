@@ -210,6 +210,15 @@ Guidelines for each field:
             user_doc = user_ref.get()
             user_data = user_doc.to_dict()
             
+            # Get user name with better fallback
+            user_name = user_data.get('name')
+            if not user_name or user_name == 'User':
+                # Try alternative fields if available
+                user_name = user_data.get('display_name')
+            # Default to 'there' if we still don't have a good name
+            if not user_name or user_name == 'User':
+                user_name = 'there'
+            
             # Get next notification time
             next_notification_time = user_data.get('next_notification_time')
             readable_time = "your scheduled time"
@@ -248,7 +257,7 @@ Guidelines for each field:
             
             # Generate personalized notification content
             notification_content = generate_notification_content(
-                user_name=user_data.get('name', 'User'),
+                user_name=user_name,
                 exercise_names=exercise_names,
                 user_data=user_data
             )
@@ -447,6 +456,17 @@ def generate_notification_content(user_name, exercise_names, user_data):
     try:
         client = OpenAI(api_key=get_secret('openai-api-key'))
         
+        # Make sure we have a real user name
+        if not user_name or user_name == 'User':
+            # Try to get the name from user_data again as a backup
+            user_name = user_data.get('name')
+            # If still no name or it's 'User', try the display_name field
+            if not user_name or user_name == 'User':
+                user_name = user_data.get('display_name')
+            # If we still don't have a valid name, use a generic greeting
+            if not user_name or user_name == 'User':
+                user_name = "there"  # Will result in "Hi there!" instead of "Hi User!"
+        
         # Get user's preferences and history
         preferred_tone = user_data.get('notification_preferences', {}).get('tone', 'friendly')
         exercise_history = user_data.get('exercise_history', [])
@@ -513,9 +533,11 @@ Format the response as JSON:
     except Exception as e:
         print(f"Error generating notification content: {str(e)}")
         # Return default content if OpenAI generation fails
+        # Use "there" as fallback if user_name is "User"
+        greeting = user_name if user_name and user_name != "User" else "there"
         return {
             "title": "Time for your PT exercises!",
-            "body": f"Hi {user_name}! Ready to continue your progress? Let's work on your exercises today!"
+            "body": f"Hi {greeting}! Ready to continue your progress? Let's work on your exercises today!"
         }
 
 # Update the send_exercise_notification function to use OpenAI-generated content
@@ -524,7 +546,15 @@ def send_exercise_notification(user_id, fcm_token):
     # Get user details
     user_doc = db.collection('users').document(user_id).get()
     user_data = user_doc.to_dict()
-    user_name = user_data.get('name', 'User')
+    
+    # Get user name with better fallback
+    user_name = user_data.get('name')
+    if not user_name or user_name == 'User':
+        # Try alternative fields if available
+        user_name = user_data.get('display_name')
+    # Default to 'there' if we still don't have a good name
+    if not user_name or user_name == 'User':
+        user_name = 'there'
     
     # Get user exercises
     user_exercises = db.collection('user_exercises').where('user_id', '==', user_id).get()

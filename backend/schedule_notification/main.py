@@ -103,7 +103,9 @@ def schedule_notification(request):
             logger.info(f"Using custom notification content for user {user_id}")
         else:
             # Default notification content
-            notification_title = f"Time for Exercise, {username}!"
+            # Use a more general greeting if username is "User"
+            greeting = username if username != "User" else "there"
+            notification_title = f"Time for Exercise, {greeting}!"
             notification_body = "It's time for your daily exercise routine. Let's keep that streak going!"
             logger.info(f"Using default notification content for user {user_id}")
         
