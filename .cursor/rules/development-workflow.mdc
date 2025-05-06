@@ -1,0 +1,32 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Development Workflow
+
+## Backend Development
+
+Backend services follow a serverless architecture pattern:
+1. Each function is organized in its own directory
+2. Functions should use the shared utilities in [backend/utils](mdc:backend/utils) 
+3. Logging is set up using 
+4. Snake case, always
+
+## iOS App Development  
+
+The iOS application development follows standard iOS/Swift practices:
+1. Use Swift UI for interface components
+2. Follow the MVVM (Model-View-ViewModel) pattern
+3. Entry point is [MVPApp.swift](mdc:MVPApp.swift)
+4. Camel case, always
+
+## Testing
+
+Backend services can be tested using the test directory:
+- [test_notification](mdc:backend/test_notification) contains test scripts for notification functionality
+
+## Monitoring
+
+The backend includes monitoring for:
+- [monitor_user_preferences](mdc:backend/monitor_user_preferences) - Monitors changes to user preferences on notification, using GCP eventarc
