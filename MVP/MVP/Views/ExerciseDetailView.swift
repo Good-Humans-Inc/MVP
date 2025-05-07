@@ -107,6 +107,7 @@ struct ExerciseDetailView: View {
                 .environmentObject(resourceCoordinator)
                 .environmentObject(cameraManager)
                 .environmentObject(visionManager)
+                .environmentObject(userManager)
         }
         .onAppear {
             // Reset camera manager to ensure clean state
@@ -335,6 +336,7 @@ struct ExerciseDetailView: View {
                 .environmentObject(cameraManager)
                 .environmentObject(visionManager)
                 .environmentObject(notificationManager)
+                .environmentObject(userManager)
                 
             window.rootViewController = UIHostingController(rootView: onboardingView)
             print("✅ Created new root view controller with all environment objects")
