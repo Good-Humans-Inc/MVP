@@ -15,6 +15,7 @@ struct OnboardingView: View {
     @EnvironmentObject private var cameraManager: CameraManager
     @EnvironmentObject private var visionManager: VisionManager
     @EnvironmentObject private var notificationManager: NotificationManager
+    @EnvironmentObject private var userManager: UserManager
     
     enum AnimationState {
         case idle, listening, speaking, thinking
@@ -290,6 +291,7 @@ struct OnboardingView: View {
                                     .environmentObject(self.resourceCoordinator)
                                     .environmentObject(self.cameraManager)
                                     .environmentObject(self.visionManager)
+                                    .environmentObject(self.userManager)
                             )
                         }
                     } else {

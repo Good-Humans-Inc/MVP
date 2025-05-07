@@ -9,6 +9,7 @@ struct ContentView: View {
     @EnvironmentObject private var resourceCoordinator: ResourceCoordinator
     @EnvironmentObject private var visionManager: VisionManager
     @EnvironmentObject private var notificationManager: NotificationManager
+    @EnvironmentObject private var userManager: UserManager
     
     // Add state to track changes
     @State private var shouldShowExerciseDetail: Bool = false
@@ -25,6 +26,7 @@ struct ContentView: View {
                     .environmentObject(resourceCoordinator)
                     .environmentObject(visionManager)
                     .environmentObject(notificationManager)
+                    .environmentObject(userManager)
                     .transition(.opacity)
             } else if appState.isOnboardingComplete || appState.hasUserId {
                 // If onboarding is complete or we have a user ID, show loading with exercise fetch
