@@ -25,26 +25,19 @@ class AppState: ObservableObject {
     @Published var isOnboardingComplete: Bool = false {
         didSet {
             print("🔄 DEBUG: AppState - isOnboardingComplete changed to: \(isOnboardingComplete)")
-            if isOnboardingComplete {
-                // When onboarding completes, ensure we load the exercise
-                DispatchQueue.main.async { [weak self] in
-                    if let userId = self?.userId {
-                        print("🔄 DEBUG: AppState - Triggering exercise load after onboarding completion")
-                        APIService.getRecommendedExercise(userId: userId) { result in
-                            DispatchQueue.main.async {
-                                switch result {
-                                case .success(let exercise):
-                                    print("✅ DEBUG: AppState - Successfully loaded exercise after onboarding")
-                                    self?.currentExercise = exercise
-                                case .failure(let error):
-                                    print("⚠️ DEBUG: AppState - Failed to load exercise after onboarding: \(error)")
-                                    self?.currentExercise = Exercise.fallbackExercise
-                                }
-                            }
-                        }
-                    }
-                }
+            // If isOnboardingComplete is true, we now assume that the component
+            // that set this flag (e.g., OnboardingView) has already ensured
+            // that appState.currentExercise is populated with the correct exercise
+            // and that it has been saved to UserDefaults.
+
+            // Therefore, the automatic fetch previously here is removed to avoid
+            // potential race conditions or overwriting the correctly set exercise.
+
+            // We can add a check here for debugging purposes:
+            if isOnboardingComplete && self.currentExercise == nil {
+                print("⚠️ DEBUG: AppState - isOnboardingComplete is true, but currentExercise is nil. This might indicate an issue in the onboarding flow where the exercise was not set before completing onboarding.")
             }
+            // printStateFlags() // Optionally log state flags here if needed
         }
     }
     

@@ -158,27 +158,4 @@ class APIService {
         let error = NSError(domain: "APIService", code: 1001, userInfo: [NSLocalizedDescriptionKey: "No exercise data found"])
         completion(.failure(error))
     }
-}
-
-// Add fallback exercise to Exercise model
-extension Exercise {
-    static var fallbackExercise: Exercise {
-        return Exercise(
-            id: UUID(),
-            name: "Wrist Rotation",
-            description: "Gentle wrist rotations to improve flexibility and mobility",
-            imageURLString: nil,
-            imageURLString1: nil,
-            duration: 180,
-            targetJoints: [.leftWrist,.rightWrist],
-            instructions: [
-                "Start with your arm extended forward",
-                "Rotate your wrist clockwise slowly 5 times",
-                "Then rotate counterclockwise 5 times",
-                "Keep movements smooth and controlled",
-                "Repeat with the other wrist"
-            ],
-            videoURL: URL(string: "https://storage.googleapis.com/mvp-vids/wrist_rotation.mp4")
-        )
-    }
 } 
