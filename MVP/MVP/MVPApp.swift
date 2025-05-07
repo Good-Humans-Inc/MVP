@@ -5,6 +5,7 @@ import FirebaseFirestore
 import FirebaseAppCheck
 import UserNotifications
 import FirebaseMessaging
+import FirebaseCore
 
 typealias Joint = BodyJointType
 // App Delegate to handle Firebase
