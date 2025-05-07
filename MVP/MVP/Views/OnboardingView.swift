@@ -35,21 +35,21 @@ struct OnboardingView: View {
             
             VStack(spacing: 20) {
                 // Debug info for NotificationManager
-                Text("NotificationManager Status: \(notificationManager.isAuthorized ? "Available" : "Not Available")")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.top)
-                
-                // Reset button
-                HStack {
-                    Spacer()
-                    Button(action: resetOnboarding) {
-                        Image(systemName: "arrow.counterclockwise.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.blue)
-                    }
-                    .padding(.trailing)
-                }
+//                Text("NotificationManager Status: \(notificationManager.isAuthorized ? "Available" : "Not Available")")
+//                    .font(.caption)
+//                    .foregroundColor(.secondary)
+//                    .padding(.top)
+//                
+//                // Reset button
+//                HStack {
+//                    Spacer()
+//                    Button(action: resetOnboarding) {
+//                        Image(systemName: "arrow.counterclockwise.circle.fill")
+//                            .font(.title2)
+//                            .foregroundColor(.blue)
+//                    }
+//                    .padding(.trailing)
+//                }
                 
                 // Pep animation (renamed from Dog animation)
                 PepAnimation(state: $animationState)
