@@ -319,8 +319,38 @@ def generate_exercise(request):
                 exercises_to_consider = [ex for ex in ALL_EXERCISES if target_joint in ex.get('target_joints', [])]
             
             if not exercises_to_consider:
-                logger.warning(f"No exercises found for target joint: {target_joint}")
-                return (json.dumps({'error': f'No exercises found for target joint: {target_joint}'}, cls=DateTimeEncoder), 404, headers)
+                logger.warning(f"No predefined exercises found for target joint: {target_joint}, will generate custom exercise")
+                # Instead of returning an error, we'll create a custom exercise using the LLM
+                try:
+                    if llm_provider == 'claude':
+                        custom_exercise = generate_custom_exercise_with_claude(user_data, api_key, target_joint)
+                    else:
+                        custom_exercise = generate_custom_exercise_with_openai(user_data, api_key, target_joint)
+                    
+                    logger.info(f"Generated custom exercise for {target_joint}: {custom_exercise['name']}")
+                    
+                    # Save the custom exercise to Firestore
+                    saved_exercise = save_exercise(custom_exercise, user_id)
+                    
+                    # Return success
+                    return (json.dumps({
+                        'status': 'success',
+                        'exercise': saved_exercise,
+                        'source': 'llm-generated'
+                    }, cls=DateTimeEncoder), 200, headers)
+                except Exception as e:
+                    logger.error(f"Failed to generate custom exercise: {str(e)}", exc_info=True)
+                    logger.info("Falling back to default wrist rotation exercise")
+                    # If custom generation fails, fall back to the wrist rotation exercise
+                    fallback_exercise = get_fallback_exercise_for_pain("wrist pain", RSI_EXERCISES)
+                    saved_exercise = save_exercise(fallback_exercise, user_id)
+                    
+                    return (json.dumps({
+                        'status': 'success',
+                        'exercise': saved_exercise,
+                        'source': 'default-fallback',
+                        'note': 'Using default exercise as fallback'
+                    }, cls=DateTimeEncoder), 200, headers)
         
         # Use LLM to select the most appropriate exercise and generate detailed instructions
         if llm_provider == 'claude':
@@ -784,3 +814,224 @@ def get_fallback_exercise_for_pain(pain_description, exercises=None):
         ],
         "videoURL": "https://storage.googleapis.com/mvp-vids/wrist_rotation.mp4"
     }
+
+def generate_custom_exercise_with_claude(user_data, api_key, target_joint):
+    """
+    Use Claude to generate a custom exercise for a specific target joint
+    that we don't have predefined exercises for
+    """
+    try:
+        # Extract user info
+        name = user_data.get('name', 'the user')
+        
+        # Check both pain_description and injury fields
+        pain_description = user_data.get('pain_description', '') or user_data.get('injury', '')
+        pain_level = user_data.get('pain_level', '')
+        
+        # Add pain level to description if available
+        if pain_level:
+            pain_description = f"{pain_description} (Pain level: {pain_level})"
+            
+        print(f"📋 Using pain description for Claude custom exercise generation: '{pain_description}'")
+        
+        # Construct prompt for Claude
+        prompt = f"""
+        I need you to create a gentle and appropriate physical therapy exercise for a user with the following profile:
+        
+        Name: {name}
+        Target joint: {target_joint}
+        Pain description: {pain_description}
+        
+        Since we don't have predefined exercises for this specific joint or body part, please create a custom and safe exercise that would be appropriate.
+        
+        The exercise should be:
+        1. Safe and gentle for someone experiencing pain
+        2. Appropriate for self-guided physical therapy
+        3. Clear enough for someone without medical training to follow
+        4. Focused on mobility and pain reduction, not strength building
+        
+        Format your response as JSON:
+        {{
+          "name": "Exercise Name",
+          "description": "Detailed description of the exercise and its benefits for this specific user",
+          "target_joints": ["{target_joint}"],
+          "instructions": [
+            "Step 1: Detailed instruction",
+            "Step 2: Detailed instruction",
+            "Step 3: Detailed instruction",
+            ...
+          ],
+          "variations": [
+            "Variation 1: Description",
+            "Variation 2: Description"
+          ]
+        }}
+        
+        Respond ONLY with the JSON object and nothing else.
+        """
+        
+        logger.info("Calling Claude API to generate custom exercise")
+        
+        # Call Claude API
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-3-opus-20240229",
+                "max_tokens": 800,
+                "temperature": 0.2,
+                "system": "You are a senior physical therapist specializing in rehabilitation. Create a safe, gentle exercise appropriate for a patient with the specified condition. Respond with only a JSON object.",
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ]
+            }
+        )
+        
+        # Parse response
+        if response.status_code != 200:
+            logger.error(f"Claude API error: {response.text}")
+            raise Exception(f"Claude API error: {response.text}")
+        
+        result = response.json()
+        content = result.get('content', [{}])[0].get('text', '{}')
+        
+        # Extract JSON from the response
+        json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
+        
+        if json_match:
+            exercise_json = json_match.group(1)
+        else:
+            exercise_json = content  # Assume the content is just JSON
+        
+        try:
+            custom_exercise = json.loads(exercise_json)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error: {str(e)}")
+            logger.error(f"Failed content: {content}")
+            raise
+        
+        # Ensure all required fields are present
+        if not all(key in custom_exercise for key in ['name', 'description', 'target_joints', 'instructions']):
+            logger.warning("Missing required fields in LLM response")
+            raise ValueError("Generated exercise is missing required fields")
+        
+        return custom_exercise
+    
+    except Exception as e:
+        logger.error(f"Error in generate_custom_exercise_with_claude: {str(e)}", exc_info=True)
+        raise
+
+def generate_custom_exercise_with_openai(user_data, api_key, target_joint):
+    """
+    Use OpenAI to generate a custom exercise for a specific target joint
+    that we don't have predefined exercises for
+    """
+    try:
+        # Extract user info
+        name = user_data.get('name', 'the user')
+        
+        # Check both pain_description and injury fields
+        pain_description = user_data.get('pain_description', '') or user_data.get('injury', '')
+        pain_level = user_data.get('pain_level', '')
+        
+        # Add pain level to description if available
+        if pain_level:
+            pain_description = f"{pain_description} (Pain level: {pain_level})"
+            
+        print(f"📋 Using pain description for OpenAI custom exercise generation: '{pain_description}'")
+        
+        # Construct prompt for OpenAI
+        prompt = f"""
+        I need you to create a gentle and appropriate physical therapy exercise for a user with the following profile:
+        
+        Name: {name}
+        Target joint: {target_joint}
+        Pain description: {pain_description}
+        
+        Since we don't have predefined exercises for this specific joint or body part, please create a custom and safe exercise that would be appropriate.
+        
+        The exercise should be:
+        1. Safe and gentle for someone experiencing pain
+        2. Appropriate for self-guided physical therapy
+        3. Clear enough for someone without medical training to follow
+        4. Focused on mobility and pain reduction, not strength building
+        
+        Format your response as JSON:
+        {{
+          "name": "Exercise Name",
+          "description": "Detailed description of the exercise and its benefits for this specific user",
+          "target_joints": ["{target_joint}"],
+          "instructions": [
+            "Step 1: Detailed instruction",
+            "Step 2: Detailed instruction",
+            "Step 3: Detailed instruction",
+            ...
+          ],
+          "variations": [
+            "Variation 1: Description",
+            "Variation 2: Description"
+          ]
+        }}
+        
+        Respond ONLY with the JSON object and nothing else.
+        """
+        
+        logger.info("Calling OpenAI API to generate custom exercise")
+        
+        # Call OpenAI API
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "gpt-4",
+                "messages": [
+                    {"role": "system", "content": "You are a senior physical therapist specializing in rehabilitation. Create a safe, gentle exercise appropriate for a patient with the specified condition. Respond with only a JSON object."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.2,
+                "max_tokens": 800,
+                "response_format": {"type": "json_object"}
+            }
+        )
+        
+        # Parse response
+        if response.status_code != 200:
+            logger.error(f"OpenAI API error: {response.text}")
+            raise Exception(f"OpenAI API error: {response.text}")
+        
+        result = response.json()
+        logger.info(f"OpenAI API response received")  
+        
+        content = result.get('choices', [{}])[0].get('message', {}).get('content', '{}')
+        
+        # Try to clean the content if it contains markdown
+        if '```json' in content:
+            logger.info("Content contains markdown, cleaning...")
+            json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
+            if json_match:
+                content = json_match.group(1)
+        
+        try:
+            custom_exercise = json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error: {str(e)}")
+            logger.error(f"Failed content: {content}")
+            raise
+        
+        # Ensure all required fields are present
+        if not all(key in custom_exercise for key in ['name', 'description', 'target_joints', 'instructions']):
+            logger.warning("Missing required fields in LLM response")
+            raise ValueError("Generated exercise is missing required fields")
+        
+        return custom_exercise
+    
+    except Exception as e:
+        logger.error(f"Error in generate_custom_exercise_with_openai: {str(e)}", exc_info=True)
+        raise

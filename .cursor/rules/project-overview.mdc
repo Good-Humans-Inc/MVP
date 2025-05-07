@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# MVP Project Overview
+
+This is a fitness app with a mobile frontend and serverless backend architecture.
+
+## Key Components
+
+- **Mobile App**: iOS application built with Swift
+- **Backend**: Serverless functions organized by feature
+- **Utils**: Shared utilities for backend services
+
+The project is split into two main directories:
+- `MVP/` - Contains the iOS app codebase
+- `backend/` - Contains serverless functions and utilities
