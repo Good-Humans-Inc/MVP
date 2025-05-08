@@ -699,10 +699,11 @@ class VoiceManager: NSObject, ObservableObject {
                         
                         DispatchQueue.main.async {
                             // Post notification that exercises are ready
+                            print("‼️ VOICEMANAGER: Attempting to POST exercisesGeneratedNotification. exerciseJson prepared: \(exerciseJson != nil)") // Debug print
                             NotificationCenter.default.post(
                                 name: VoiceManager.exercisesGeneratedNotification,
                                 object: nil,
-                                userInfo: ["exercises_count": 1]
+                                userInfo: ["exerciseJson": exerciseJson] // CORRECTED: Pass the actual exercise JSON
                             )
                             
                             // Schedule notification for the exercise

@@ -287,6 +287,17 @@ struct ExerciseDetailView: View {
         
         Task {
             do {
+                // Configure audio for speaker output before loading asset
+                do {
+                    let audioSession = AVAudioSession.sharedInstance()
+                    try audioSession.setCategory(.playback, mode: .moviePlayback)
+                    try audioSession.setActive(true)
+                    try audioSession.overrideOutputAudioPort(.speaker)
+                    print("✅ ExerciseDetailView: Configured audio for video preloading")
+                } catch {
+                    print("⚠️ ExerciseDetailView: Audio configuration failed: \(error)")
+                }
+                
                 // Load essential properties asynchronously
                 try await asset.load(.duration, .tracks)
                 
@@ -452,6 +463,13 @@ struct VideoPlayerView: View {
         let playerItem = AVPlayerItem(asset: asset)
         self.player = AVPlayer(playerItem: playerItem)
         
+        // Re-enable external playback (or use default by removing the line that sets it to false)
+        // self.player?.allowsExternalPlayback = false // This line will be removed or commented out
+        // By default, allowsExternalPlayback is true. 
+        // We can explicitly set it to true if we want to be certain, or remove the line entirely.
+        // Let's remove it to rely on the default, which is true.
+        print("▶️ VideoPlayerView: player.allowsExternalPlayback is now default (true).")
+        
         // Configure audio session for video playback
         configureAudioSession()
         
@@ -478,50 +496,42 @@ struct VideoPlayerView: View {
     }
     
     private func startPlayback() {
-        // Ensure audio session is properly configured before playing
-        configureAudioSession()
+        // Ensure audio session is properly configured for speaker output immediately before playing
+        print("🔊 VideoPlayerView.startPlayback: Re-configuring audio session before play command.")
+        configureAudioSession() 
         
-        isPlaying = true
-        player?.play()
+        // Add a small delay to ensure audio session changes take effect
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
+            // Force audio to speaker one more time right before playing
+            do {
+                try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
+                print("✅ VideoPlayerView.startPlayback: Final speaker override applied")
+            } catch {
+                print("⚠️ VideoPlayerView.startPlayback: Final speaker override failed: \(error)")
+            }
+            
+            self.isPlaying = true
+            self.player?.play()
+        }
     }
     
     private func configureAudioSession() {
+        let audioSession = AVAudioSession.sharedInstance()
+        print("🔊 VideoPlayerView: Configuring audio session for speaker output")
+
         do {
-            let audioSession = AVAudioSession.sharedInstance()
+            // Attempt to deactivate the session first to reset any prior state
+            try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
             
-            // Check if we're using Bluetooth
-            let currentRoute = audioSession.currentRoute
-            let isBluetoothConnected = currentRoute.outputs.contains { 
-                [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE].contains($0.portType)
-            }
+            // Simple, direct configuration for playing video with speaker output
+            try audioSession.setCategory(.playback, mode: .moviePlayback)
+            try audioSession.setActive(true)
             
-            if isBluetoothConnected {
-                // For Bluetooth, use playAndRecord category
-                try audioSession.setCategory(
-                    .playAndRecord,
-                    mode: .moviePlayback,
-                    options: [.allowBluetooth, .defaultToSpeaker]
-                )
-            } else {
-                // For built-in speaker, just use playback category
-                try audioSession.setCategory(
-                    .playback,
-                    mode: .moviePlayback,
-                    options: [.mixWithOthers]  // Allow mixing with other audio
-                )
-                
-                // Manually route to speaker if needed
-                try audioSession.overrideOutputAudioPort(.speaker)
-            }
-            
-            // Activate audio session
-            if !audioSession.isOtherAudioPlaying {
-                try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-                print("✅ Audio session configured for video playback")
-            }
+            // Force audio to speaker
+            try audioSession.overrideOutputAudioPort(.speaker)
+            print("✅ VideoPlayerView: Audio configured for speaker output")
         } catch {
-            // Only log the error but don't treat it as critical
-            print("ℹ️ Audio session configuration note: \(error.localizedDescription)")
+            print("⚠️ VideoPlayerView: Audio session configuration error: \(error.localizedDescription)")
         }
     }
     
