@@ -51,11 +51,10 @@ def onboard_user(request):
         # Extract fields
         user_name = request_json.get('user_name')
         pain_description = request_json.get('pain_description')
-        pain_level = request_json.get('pain_level')
         notification_time = request_json.get('notification_time')
         # Check for missing required fields
-        if not user_name or not pain_description or not pain_level or not notification_time:
-            error_msg = "Missing required fields: user_name, pain_description, notification_time and pain_level are required"
+        if not user_name or not pain_description or not notification_time:
+            error_msg = "Missing required fields: user_name, pain_description, and notification_time are required"
             logger.error(error_msg)
             return (json.dumps({'error': error_msg}), 400, headers)
         
@@ -68,7 +67,6 @@ def onboard_user(request):
             'id': user_id,
             'user_name': user_name,
             'pain_description': pain_description,
-            'pain_level': pain_level,
             'created_at': created_at,
             'updated_at': created_at
         }
