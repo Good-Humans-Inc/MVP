@@ -15,6 +15,7 @@ struct OnboardingView: View {
     @EnvironmentObject private var cameraManager: CameraManager
     @EnvironmentObject private var visionManager: VisionManager
     @EnvironmentObject private var notificationManager: NotificationManager
+    @EnvironmentObject private var userManager: UserManager
     
     enum AnimationState {
         case idle, listening, speaking, thinking
@@ -35,21 +36,21 @@ struct OnboardingView: View {
             
             VStack(spacing: 20) {
                 // Debug info for NotificationManager
-                Text("NotificationManager Status: \(notificationManager.isAuthorized ? "Available" : "Not Available")")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.top)
-                
-                // Reset button
-                HStack {
-                    Spacer()
-                    Button(action: resetOnboarding) {
-                        Image(systemName: "arrow.counterclockwise.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.blue)
-                    }
-                    .padding(.trailing)
-                }
+//                Text("NotificationManager Status: \(notificationManager.isAuthorized ? "Available" : "Not Available")")
+//                    .font(.caption)
+//                    .foregroundColor(.secondary)
+//                    .padding(.top)
+//                
+//                // Reset button
+//                HStack {
+//                    Spacer()
+//                    Button(action: resetOnboarding) {
+//                        Image(systemName: "arrow.counterclockwise.circle.fill")
+//                            .font(.title2)
+//                            .foregroundColor(.blue)
+//                    }
+//                    .padding(.trailing)
+//                }
                 
                 // Pep animation (renamed from Dog animation)
                 PepAnimation(state: $animationState)
@@ -145,12 +146,6 @@ struct OnboardingView: View {
                 addMessage(text: newText, isUser: true)
             }
         }
-        // Handle voiceManager.hasCompletedOnboarding changes
-        .onChange(of: voiceManager.hasCompletedOnboarding) { completed in
-            if completed && !appState.isOnboardingComplete {
-                handleOnboardingComplete()
-            }
-        }
     }
     
     // MARK: - Helper Methods
@@ -164,45 +159,77 @@ struct OnboardingView: View {
         ) { notification in
             if let userId = notification.userInfo?["user_id"] as? String {
                 self.appState.updateUserId(userId)
-                animationState = .thinking
-                addMessage(text: "Thanks for sharing that information. I'm generating personalized exercises for you now...", isUser: false)
-                
+                self.animationState = .thinking
+
                 // Update timezone information first
-                print("🕒 OnboardingView: Checking and updating timezone information")
-                let userManager = UserManager.shared
-                print("🕒 OnboardingView: User ID for timezone update: \(userId)")
-                userManager.checkAndUpdateTimezoneIfNeeded()
+                print("🕒 OnboardingView: Checking and updating timezone information for userId: \(userId)")
+                self.userManager.checkAndUpdateTimezoneIfNeeded()
                 
                 // Force an immediate timezone update regardless of cache
                 let currentOffset = TimeZone.current.secondsFromGMT() / 3600
                 let currentOffsetString = String(currentOffset)
                 print("🕒 OnboardingView: Forcing timezone update with offset: \(currentOffsetString)")
-                // Call the public method directly now
-                userManager.updateTimezoneOnServer(userId: userId, timezone: currentOffsetString)
+                self.userManager.updateTimezoneOnServer(userId: userId, timezone: currentOffsetString)
                 
                 // Update FCM token with the new user ID
-                notificationManager.getFCMToken { token in
+                self.notificationManager.getFCMToken { token in
                     if let token = token {
                         print("✅ Re-syncing FCM token after user ID received: \(token)")
-                        notificationManager.updateFCMTokenInBackend(token: token)
+                        self.notificationManager.updateFCMTokenInBackend(token: token)
                     }
                 }
+
+                // --- Generate Exercise directly ---
+                print("🚀 OnboardingView: Attempting to generate exercise directly for userId: \(userId)")
+                self.isLoading = true
+                self.userManager.generateExercise(userId: userId) { result in
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        switch result {
+                        case .success(let exerciseJson):
+                            print("✅ OnboardingView: Successfully generated exercise directly.")
+                            self.processGeneratedExercise(exerciseJson: exerciseJson)
+                        case .failure(let error):
+                            print("⚠️ OnboardingView: Failed to generate exercise directly: \(error.localizedDescription). Will rely on agent fallback if available.")
+                        }
+                    }
+                }
+                // --- End Generate Exercise ---
             }
         }
         
-        // Listen for when exercises are generated
+        // Listen for when exercises are generated (potentially as a fallback from the agent)
         NotificationCenter.default.addObserver(
             forName: VoiceManager.exercisesGeneratedNotification,
             object: nil,
             queue: .main
         ) { notification in
-            handleExercisesGenerated()
+            print("🎯 DEBUG: OnboardingView - exercisesGeneratedNotification received (potentially as fallback)")
+            
+            guard let exerciseJson = notification.userInfo?["exerciseJson"] as? [String: Any] else {
+                print("⚠️ DEBUG: OnboardingView - exercisesGeneratedNotification did not contain valid exerciseJson.")
+                self.isLoading = false
+                self.addMessage(text: "Sorry, I couldn't prepare your exercise. Please try restarting.", isUser: false)
+                return
+            }
+            self.processGeneratedExercise(exerciseJson: exerciseJson)
+        }
+        
+        // Listen for when the end call flag is received from VoiceManager
+        NotificationCenter.default.addObserver(
+            forName: VoiceManager.endCallFlagReceivedNotification,
+            object: nil,
+            queue: .main
+        ) { _ in // No need for [weak self] if only calling a method on self
+            print("🔔 OnboardingView: Received EndCallFlagReceivedNotification")
+            self.handleOnboardingComplete() // Attempt to complete onboarding
         }
     }
     
     private func removeNotificationObservers() {
         NotificationCenter.default.removeObserver(self, name: VoiceManager.userIdReceivedNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: VoiceManager.exercisesGeneratedNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: VoiceManager.endCallFlagReceivedNotification, object: nil) // Remove new observer
     }
     
     private func configureAudioSession() {
@@ -234,19 +261,91 @@ struct OnboardingView: View {
         }
     }
     
+    private func processGeneratedExercise(exerciseJson: [String: Any]) {
+        // Guard against processing if onboarding is already considered complete by AppState
+        // or if we are already past the point where an exercise should have been set.
+        guard !appState.isOnboardingComplete && appState.currentExercise == nil else {
+            print("⚠️ DEBUG: OnboardingView.processGeneratedExercise - Onboarding already complete or exercise already set. Skipping processing. (isOnboardingComplete: \(appState.isOnboardingComplete), currentExercise: \(appState.currentExercise?.name ?? "nil"))")
+            if appState.isOnboardingComplete && isLoading { // If we were loading for the direct call, hide it.
+                isLoading = false
+            }
+            return
+        }
+        
+        print("⚙️ DEBUG: OnboardingView.processGeneratedExercise - Processing exerciseJson: \(exerciseJson)")
+        self.isLoading = true // Ensure loading indicator is shown during processing
+
+        // 1. Convert exerciseJson to an Exercise object
+        let newExercise = Exercise(
+            id: UUID(uuidString: exerciseJson["id"] as? String ?? UUID().uuidString) ?? UUID(),
+            name: exerciseJson["name"] as? String ?? "Unknown Exercise",
+            description: exerciseJson["description"] as? String ?? "No description available",
+            imageURLString: exerciseJson["imageURL"] as? String,
+            imageURLString1: exerciseJson["imageURL1"] as? String,
+            duration: TimeInterval(exerciseJson["duration"] as? Int ?? 180),
+            targetJoints: (exerciseJson["target_joints"] as? [String])?.compactMap { BodyJointType(rawValue: $0) } ?? // Use target_joints
+                          (exerciseJson["targetJoints"] as? [String])?.compactMap { BodyJointType(rawValue: $0) } ?? [], // Fallback for targetJoints
+            instructions: exerciseJson["instructions"] as? [String] ?? [],
+            firestoreId: exerciseJson["firestoreId"] as? String ?? exerciseJson["id"] as? String,
+            videoURL: (exerciseJson["videoURL"] as? String).flatMap { URL(string: $0) }
+        )
+
+        print("✅ DEBUG: OnboardingView - Successfully parsed new exercise: \(newExercise.name)")
+
+        // 2. Set this new exercise in AppState
+        self.appState.setCurrentExercise(newExercise)
+
+        // 3. Save this new exercise (original JSON) to UserDefaults
+        let exercisesArrayToSave = [exerciseJson]
+        if let dataToSave = try? JSONSerialization.data(withJSONObject: exercisesArrayToSave) {
+            UserDefaults.standard.set(dataToSave, forKey: "UserExercises")
+            print("✅ DEBUG: OnboardingView - New exercise (JSON) saved to UserDefaults for APIService compatibility.")
+        } else {
+            print("⚠️ DEBUG: OnboardingView - Failed to serialize new exercise JSON for UserDefaults.")
+        }
+
+        // 4. Now call your existing handleExercisesGenerated()
+        self.handleExercisesGenerated()
+    }
+    
     private func handleExercisesGenerated() {
         print("🎯 DEBUG: OnboardingView - Exercises generated notification received")
         isLoading = false
-        addMessage(text: "Your personalized exercise is ready! Let's get started with your recovery journey.", isUser: false)
-        
+
         // Wait a moment to show the message before proceeding
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            handleOnboardingComplete()
+            // self.handleOnboardingComplete() // Original call location
+            // Now, instead of directly calling handleOnboardingComplete, let it be triggered by either exercise generation or end_call flag
+            // However, we still need to check if conditions are met if exercises were generated.
+            print("💡 OnboardingView: Exercises generated, attempting to complete onboarding.")
+            self.handleOnboardingComplete() // Attempt to complete, conditions will be checked within
         }
     }
     
     private func handleOnboardingComplete() {
-        print("🎯 DEBUG: OnboardingView - Handling onboarding completion")
+        print("⚙️ OnboardingView: handleOnboardingComplete() called. Checking conditions...")
+        print("- appState.currentExercise is set: \(appState.currentExercise != nil)")
+        print("- voiceManager.hasReceivedEndCallFlag: \(voiceManager.hasReceivedEndCallFlag)")
+        
+        // Guard: Only proceed if exercise is ready AND end call flag is received
+        guard appState.currentExercise != nil, voiceManager.hasReceivedEndCallFlag else {
+            print("⚠️ OnboardingView: Conditions not yet met for onboarding completion.")
+            if appState.currentExercise == nil {
+                print("  - Waiting for exercise generation...")
+            }
+            if !voiceManager.hasReceivedEndCallFlag {
+                print("  - Waiting for agent to end conversation (end_call flag)...")
+            }
+            return
+        }
+        
+        // Guard against re-entry if already completed (though the above guard should mostly handle it)
+        guard !appState.isOnboardingComplete else {
+            print("⚠️ OnboardingView: Onboarding already marked as complete. Aborting transition attempt.")
+            return
+        }
+        
+        print("🎯 DEBUG: OnboardingView - Handling onboarding completion (all conditions met)")
         print("📱 DEBUG: NotificationManager availability check:")
         print("- Is NotificationManager initialized: \(notificationManager != nil)")
         print("- Is NotificationManager authorized: \(notificationManager.isAuthorized)")
@@ -290,6 +389,7 @@ struct OnboardingView: View {
                                     .environmentObject(self.resourceCoordinator)
                                     .environmentObject(self.cameraManager)
                                     .environmentObject(self.visionManager)
+                                    .environmentObject(self.userManager)
                             )
                         }
                     } else {

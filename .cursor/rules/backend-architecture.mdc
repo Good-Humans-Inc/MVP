@@ -1,0 +1,26 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Backend Architecture
+
+The backend is built with serverless functions organized by feature. Each directory in the `backend/` folder represents a specific cloud function.
+
+## Key Services
+
+- [analyze_exercise_poses](mdc:backend/analyze_exercise_poses) - Analyzes exercise poses from user screenshots
+- [generate_exercise](mdc:backend/generate_exercise) - Generates personalized exercises
+- [generate_report](mdc:backend/generate_report) - Creates reports based on user activities
+- [get_feedback](mdc:backend/get_feedback) - Retrieves feedback on user in-exercise form from db
+- [get_user_data](mdc:backend/get_user_data) - Retrieves user data and preferences
+- [onboard_user](mdc:backend/onboard_user) - Manages user onboarding process
+- [schedule_notification](mdc:backend/schedule_notification) - Schedules user notifications
+- [send_notification](mdc:backend/send_notification) - Sends push notifications to users
+- [update_information](mdc:backend/update_information) - Updates user information
+- [update_timezone](mdc:backend/update_timezone) - Updates user timezone preferences
+- [update_fcm_token](mdc:backend/update_fcm_token) - Updates Firebase Cloud Messaging tokens
+
+## Utility Functions
+
+The [utils](mdc:backend/utils) directory contains shared code for logging and other common functions used across services.

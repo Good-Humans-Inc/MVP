@@ -1,0 +1,256 @@
+{
+  "displayName": "PEP MVP Application Monitoring",
+  "gridLayout": {
+    "columns": "2",
+    "widgets": [
+      {
+        "title": "API Requests by Status Code",
+        "xyChart": {
+          "chartOptions": {
+            "mode": "COLOR"
+          },
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"logging.googleapis.com/log_entry_count\" resource.type=\"cloud_function\" metric.label.\"status_code\"!=\"\"",
+                  "aggregation": {
+                    "alignmentPeriod": "60s",
+                    "perSeriesAligner": "ALIGN_RATE",
+                    "crossSeriesReducer": "REDUCE_SUM",
+                    "groupByFields": [
+                      "metric.label.\"status_code\""
+                    ]
+                  }
+                },
+                "unitOverride": "1"
+              },
+              "plotType": "LINE",
+              "targetAxis": "Y1"
+            }
+          ],
+          "thresholds": [],
+          "timeshiftDuration": "0s",
+          "yAxis": {
+            "label": "y1Axis",
+            "scale": "LINEAR"
+          }
+        }
+      },
+      {
+        "title": "Error Rate",
+        "xyChart": {
+          "chartOptions": {
+            "mode": "COLOR"
+          },
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"logging.googleapis.com/log_entry_count\" resource.type=\"cloud_function\" severity>=\"ERROR\"",
+                  "aggregation": {
+                    "alignmentPeriod": "60s",
+                    "perSeriesAligner": "ALIGN_RATE",
+                    "crossSeriesReducer": "REDUCE_SUM",
+                    "groupByFields": [
+                      "resource.label.\"function_name\""
+                    ]
+                  }
+                },
+                "unitOverride": "1"
+              },
+              "plotType": "LINE",
+              "targetAxis": "Y1"
+            }
+          ],
+          "thresholds": [],
+          "timeshiftDuration": "0s",
+          "yAxis": {
+            "label": "y1Axis",
+            "scale": "LINEAR"
+          }
+        }
+      },
+      {
+        "title": "Function Invocations",
+        "xyChart": {
+          "chartOptions": {
+            "mode": "COLOR"
+          },
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"cloudfunctions.googleapis.com/function/execution_count\" resource.type=\"cloud_function\"",
+                  "aggregation": {
+                    "alignmentPeriod": "60s",
+                    "perSeriesAligner": "ALIGN_RATE",
+                    "crossSeriesReducer": "REDUCE_SUM",
+                    "groupByFields": [
+                      "resource.label.\"function_name\""
+                    ]
+                  }
+                },
+                "unitOverride": "1"
+              },
+              "plotType": "LINE",
+              "targetAxis": "Y1"
+            }
+          ],
+          "thresholds": [],
+          "timeshiftDuration": "0s",
+          "yAxis": {
+            "label": "y1Axis",
+            "scale": "LINEAR"
+          }
+        }
+      },
+      {
+        "title": "Function Execution Times",
+        "xyChart": {
+          "chartOptions": {
+            "mode": "COLOR"
+          },
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"cloudfunctions.googleapis.com/function/execution_times\" resource.type=\"cloud_function\"",
+                  "aggregation": {
+                    "alignmentPeriod": "60s",
+                    "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                    "crossSeriesReducer": "REDUCE_MEAN",
+                    "groupByFields": [
+                      "resource.label.\"function_name\""
+                    ]
+                  }
+                },
+                "unitOverride": "ms"
+              },
+              "plotType": "LINE",
+              "targetAxis": "Y1"
+            }
+          ],
+          "thresholds": [],
+          "timeshiftDuration": "0s",
+          "yAxis": {
+            "label": "y1Axis",
+            "scale": "LINEAR"
+          }
+        }
+      },
+      {
+        "title": "Notification Activity",
+        "xyChart": {
+          "chartOptions": {
+            "mode": "COLOR"
+          },
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "logName=~\"projects/pepmvp/logs/.*\" jsonPayload.service=~\"send_notification|schedule_notification\"",
+                  "aggregation": {
+                    "alignmentPeriod": "60s",
+                    "perSeriesAligner": "ALIGN_RATE",
+                    "crossSeriesReducer": "REDUCE_SUM",
+                    "groupByFields": [
+                      "jsonPayload.service"
+                    ]
+                  }
+                },
+                "unitOverride": "1"
+              },
+              "plotType": "LINE",
+              "targetAxis": "Y1"
+            }
+          ],
+          "thresholds": [],
+          "timeshiftDuration": "0s",
+          "yAxis": {
+            "label": "y1Axis",
+            "scale": "LINEAR"
+          }
+        }
+      },
+      {
+        "title": "User Activities",
+        "tableChart": {
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "logName=~\"projects/pepmvp/logs/.*\" jsonPayload.activity_type:*",
+                  "aggregation": {
+                    "alignmentPeriod": "60s",
+                    "perSeriesAligner": "ALIGN_RATE",
+                    "crossSeriesReducer": "REDUCE_COUNT",
+                    "groupByFields": [
+                      "jsonPayload.activity_type"
+                    ]
+                  }
+                },
+                "unitOverride": "1"
+              },
+              "plotType": "TABLE",
+              "minAlignmentPeriod": "60s"
+            }
+          ],
+          "columnSettings": [
+            {
+              "column": "jsonPayload.activity_type",
+              "displayName": "Activity Type"
+            },
+            {
+              "column": "value",
+              "displayName": "Count"
+            }
+          ]
+        }
+      },
+      {
+        "title": "Recent Errors",
+        "logsPanel": {
+          "filter": "severity>=ERROR",
+          "resourceNames": [
+            "projects/pepmvp"
+          ]
+        }
+      },
+      {
+        "title": "Memory Usage",
+        "xyChart": {
+          "chartOptions": {
+            "mode": "COLOR"
+          },
+          "dataSets": [
+            {
+              "timeSeriesQuery": {
+                "timeSeriesFilter": {
+                  "filter": "metric.type=\"cloudfunctions.googleapis.com/function/user_memory_bytes\" resource.type=\"cloud_function\"",
+                  "aggregation": {
+                    "alignmentPeriod": "60s",
+                    "perSeriesAligner": "ALIGN_PERCENTILE_99",
+                    "crossSeriesReducer": "REDUCE_MEAN",
+                    "groupByFields": [
+                      "resource.label.\"function_name\""
+                    ]
+                  }
+                },
+                "unitOverride": "By"
+              },
+              "plotType": "LINE",
+              "targetAxis": "Y1"
+            }
+          ],
+          "thresholds": [],
+          "timeshiftDuration": "0s",
+          "yAxis": {
+            "label": "y1Axis",
+            "scale": "LINEAR"
+          }
+        }
+      }
+    ]
+  }
+} 

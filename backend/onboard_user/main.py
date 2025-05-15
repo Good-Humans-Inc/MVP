@@ -23,7 +23,8 @@ def onboard_user(request):
     Required fields:
     - user_name (str): User's name
     - pain_description (str): Description of the pain
-    - pain_level (int): Pain level on a scale of 1-10
+    Optional fields:
+    - pain_level (int): Pain level on a scale of 1-10 (optional)
     - notification_time (str): Preferred time for daily notifications (format: "HH:MM")
     """
     # Enable CORS
@@ -51,11 +52,12 @@ def onboard_user(request):
         # Extract fields
         user_name = request_json.get('user_name')
         pain_description = request_json.get('pain_description')
-        pain_level = request_json.get('pain_level')
+
+        pain_level = request_json.get('pain_level') # Extract pain_level (will be None if not provided)
         notification_time = request_json.get('notification_time')
         # Check for missing required fields
-        if not user_name or not pain_description or not pain_level or not notification_time:
-            error_msg = "Missing required fields: user_name, pain_description, notification_time and pain_level are required"
+        if not user_name or not pain_description:
+            error_msg = "Missing required fields: user_name and pain_description are required"
             logger.error(error_msg)
             return (json.dumps({'error': error_msg}), 400, headers)
         
@@ -68,42 +70,48 @@ def onboard_user(request):
             'id': user_id,
             'user_name': user_name,
             'pain_description': pain_description,
-            'pain_level': pain_level,
             'created_at': created_at,
             'updated_at': created_at
         }
 
+        # Add optional fields if they exist
+        if pain_level is not None:
+            user_doc['pain_level'] = pain_level
+        
         # Save to Firestore
         db.collection('users').document(user_id).set(user_doc)
         logger.info(f"Created user with ID: {user_id}")
 
-        # --- Call update_information to set initial notification preferences ---
-        try:
-            # Construct URL (replace with your actual region and project if different)
-            update_info_url = f"https://us-central1-pepmvp.cloudfunctions.net/update_information"
-            
-            # Prepare payload (only send notification_time and user_id)
-            # update_information will handle timezone extraction/defaulting
-            payload = {
-                'user_id': user_id,
-                'notification_time': notification_time 
-            }
-            
-            logger.info(f"Calling update_information for user {user_id} with notification time {notification_time}")
-            
-            response = requests.post(update_info_url, json=payload, timeout=15) # Added timeout
-            response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
-            
-            logger.info(f"Successfully called update_information. Status: {response.status_code}")
+        # --- Call update_information to set initial notification preferences (if provided) ---
+        if notification_time:
+            try:
+                # Construct URL (replace with your actual region and project if different)
+                update_info_url = f"https://us-central1-pepmvp.cloudfunctions.net/update_information"
+                
+                # Prepare payload (only send notification_time and user_id)
+                # update_information will handle timezone extraction/defaulting
+                payload = {
+                    'user_id': user_id,
+                    'notification_time': notification_time 
+                }
+                
+                logger.info(f"Calling update_information for user {user_id} with notification time {notification_time}")
+                
+                response = requests.post(update_info_url, json=payload, timeout=15) # Added timeout
+                response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+                
+                logger.info(f"Successfully called update_information. Status: {response.status_code}")
 
-        except requests.exceptions.RequestException as req_err:
-            # Log errors from the update_information call but don't fail the onboarding
-            logger.error(f"Error calling update_information for user {user_id}: {str(req_err)}")
-            # Optionally, you could add more specific error handling here
-            # For the demo, we log the error and proceed.
-        except Exception as update_err:
-             # Catch any other unexpected errors during the update call
-             logger.error(f"Unexpected error calling update_information for user {user_id}: {str(update_err)}")
+            except requests.exceptions.RequestException as req_err:
+                # Log errors from the update_information call but don't fail the onboarding
+                logger.error(f"Error calling update_information for user {user_id}: {str(req_err)}")
+                # Optionally, you could add more specific error handling here
+                # For the demo, we log the error and proceed.
+            except Exception as update_err:
+                 # Catch any other unexpected errors during the update call
+                 logger.error(f"Unexpected error calling update_information for user {user_id}: {str(update_err)}")
+        else:
+            logger.info(f"No notification_time provided for user {user_id}. Skipping call to update_information.")
         # --- End call to update_information ---
 
         # Return success response for onboarding

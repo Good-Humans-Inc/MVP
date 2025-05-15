@@ -132,7 +132,7 @@ class ResourceCoordinator: NSObject, ObservableObject {
                                               mode: .spokenAudio,
                                               options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers])
                 try self.audioSession.setPreferredSampleRate(48000.0)
-                try self.audioSession.setPreferredIOBufferDuration(0.005) // 5ms buffer
+                try self.audioSession.setPreferredIOBufferDuration(0.02) // 20ms buffer, increased from 0.005
                 try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
                 print("✅ Master audio session configured")
             } catch {
