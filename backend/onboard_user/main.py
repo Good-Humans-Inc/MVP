@@ -52,6 +52,7 @@ def onboard_user(request):
         # Extract fields
         user_name = request_json.get('user_name')
         pain_description = request_json.get('pain_description')
+
         pain_level = request_json.get('pain_level') # Extract pain_level (will be None if not provided)
         notification_time = request_json.get('notification_time')
         # Check for missing required fields
