@@ -218,7 +218,7 @@ def analyze_exercise_poses(request):
     """
     HTTP Cloud Function to analyze exercise poses, upload images to GCS,
     and store analysis results (including image URLs) in Firestore.
-    Returns success status and the ID of the created analysis document.
+    Returns success status, the ID of the created analysis document, and the full analysis.
     """
     # Enable CORS
     if request.method == 'OPTIONS':
@@ -335,7 +335,8 @@ YOUR RESPONSE MUST BE 2 SENTENCES MAXIMUM AND UNDER 30 WORDS.
         return {
             'success': True,
             'message': 'Analysis complete, images uploaded, and results stored.',
-            'analysisId': analysis_id # Return the analysis ID
+            'analysisId': analysis_id, # Return the analysis ID
+            'analysisResult': analysis_result # Return the full analysis
         }, 200, headers
 
     except Exception as e:
