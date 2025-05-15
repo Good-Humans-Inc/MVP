@@ -23,8 +23,8 @@ def onboard_user(request):
     Required fields:
     - user_name (str): User's name
     - pain_description (str): Description of the pain
-    - pain_level (int): Pain level on a scale of 1-10
-    Optional field:
+    Optional fields:
+    - pain_level (int): Pain level on a scale of 1-10 (optional)
     - notification_time (str): Preferred time for daily notifications (format: "HH:MM")
     """
     # Enable CORS
@@ -52,11 +52,11 @@ def onboard_user(request):
         # Extract fields
         user_name = request_json.get('user_name')
         pain_description = request_json.get('pain_description')
-        pain_level = request_json.get('pain_level')
+        pain_level = request_json.get('pain_level') # Extract pain_level (will be None if not provided)
         notification_time = request_json.get('notification_time')
         # Check for missing required fields
-        if not user_name or not pain_description or not pain_level:
-            error_msg = "Missing required fields: user_name, pain_description, and pain_level are required"
+        if not user_name or not pain_description:
+            error_msg = "Missing required fields: user_name and pain_description are required"
             logger.error(error_msg)
             return (json.dumps({'error': error_msg}), 400, headers)
         
@@ -69,11 +69,14 @@ def onboard_user(request):
             'id': user_id,
             'user_name': user_name,
             'pain_description': pain_description,
-            'pain_level': pain_level,
             'created_at': created_at,
             'updated_at': created_at
         }
 
+        # Add optional fields if they exist
+        if pain_level is not None:
+            user_doc['pain_level'] = pain_level
+        
         # Save to Firestore
         db.collection('users').document(user_id).set(user_doc)
         logger.info(f"Created user with ID: {user_id}")
