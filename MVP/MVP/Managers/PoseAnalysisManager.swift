@@ -25,6 +25,7 @@ class PoseAnalysisManager: ObservableObject {
     private var screenshotCount = 0
     private weak var cameraManager: CameraManager?
     private let processingQueue = DispatchQueue(label: "com.app.poseAnalysis", qos: .userInitiated)
+    private var currentClientSideAnalysisId: String? // Add property to store the ID
     
     // Cloud Function URLs
     private let analyzePosesURL = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/analyze_exercise_poses")!
@@ -41,7 +42,7 @@ class PoseAnalysisManager: ObservableObject {
         self.appState = appState
     }
     
-    func startAnalysis(for exercise: Exercise) {
+    func startAnalysis(for exercise: Exercise, clientSideAnalysisId: String) {
         guard !isCapturing else { return }
         guard let userId = UserDefaults.standard.string(forKey: "userId") else {
              handleError("User ID not found, cannot start analysis.")
@@ -52,6 +53,8 @@ class PoseAnalysisManager: ObservableObject {
         screenshotCount = 0
         screenshots.removeAll()
         captureProgress = 0
+        self.currentClientSideAnalysisId = clientSideAnalysisId // Store the ID
+        print("🧠 PoseAnalysisManager received clientSideAnalysisId: \(clientSideAnalysisId)")
 
         // --- Call update_information to set timestamp via HTTP --- // <-- Changed section
         setAnalysisStartTimestamp(userId: userId) { [weak self] success in
@@ -160,7 +163,7 @@ class PoseAnalysisManager: ObservableObject {
     // --- End new function ---
     
     private func startScreenshotCapture(for exercise: Exercise) {
-        print("📸 Starting screenshot capture...")
+        print("📸 Starting screenshot capture for clientSideAnalysisId: \(self.currentClientSideAnalysisId ?? "UNKNOWN_ID")...")
         
         // Create a repeating timer for screenshots
         captureTimer = Timer.scheduledTimer(withTimeInterval: captureInterval, repeats: true) { [weak self] _ in
@@ -198,7 +201,12 @@ class PoseAnalysisManager: ObservableObject {
             if self.screenshotCount >= self.totalScreenshots {
                 print("✅ All screenshots captured, preparing batch upload...")
                 // Upload all screenshots in a single batch
-                self.uploadScreenshots(self.screenshots, for: exercise)
+                guard let clientSideId = self.currentClientSideAnalysisId else {
+                    handleError("Critical error: currentClientSideAnalysisId is nil before upload.")
+                    self.finishCapture()
+                    return
+                }
+                self.uploadScreenshots(self.screenshots, for: exercise, clientSideAnalysisId: clientSideId)
                 self.finishCapture()
             }
         }
@@ -283,7 +291,11 @@ class PoseAnalysisManager: ObservableObject {
         }
         
         // Send to backend
-        uploadScreenshots(base64Images, for: appState.currentExercise!)
+        guard let clientSideId = self.currentClientSideAnalysisId else {
+            handleError("Critical error: currentClientSideAnalysisId is nil before upload in processCapturedFrames.")
+            return
+        }
+        uploadScreenshots(base64Images, for: appState.currentExercise!, clientSideAnalysisId: clientSideId)
         
         // Reset state
         capturedFrames.removeAll()
@@ -325,7 +337,7 @@ class PoseAnalysisManager: ObservableObject {
         return uiImage.jpegData(compressionQuality: 0.1)
     }
     
-    private func uploadScreenshots(_ base64Images: [String], for exercise: Exercise) {
+    private func uploadScreenshots(_ base64Images: [String], for exercise: Exercise, clientSideAnalysisId: String) {
         guard let userId = UserDefaults.standard.string(forKey: "userId") else {
             handleError("No user ID found")
             return
@@ -351,7 +363,8 @@ class PoseAnalysisManager: ObservableObject {
                 "userId": userId,
                 "exerciseId": exercise.id.uuidString.lowercased(),
                 "name": exercise.name,
-                "instructions": exercise.instructions.joined(separator: ". ")
+                "instructions": exercise.instructions.joined(separator: ". "),
+                "clientSideAnalysisId": clientSideAnalysisId
             ]
         ]
         

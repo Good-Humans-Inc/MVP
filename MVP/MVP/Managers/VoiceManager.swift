@@ -620,17 +620,21 @@ class VoiceManager: NSObject, ObservableObject {
                 return "Cannot determine the current exercise."
             }
 
-            print("🔵 Starting pose analysis for user: \(userId), exercise: \(exercise.name) (ID: \(exercise.id))")
+            let clientSideAnalysisId = UUID().uuidString // Generate the correlation ID
+            print("🔵 Starting pose analysis for user: \(userId), exercise: \(exercise.name) (ID: \(exercise.id)), clientSideAnalysisId: \(clientSideAnalysisId)")
 
             // Post notification to trigger pose analysis in the active view
             NotificationCenter.default.post(
                 name: VoiceManager.startPoseAnalysisNotification,
                 object: nil,
-                userInfo: ["exercise": exercise] // Pass the exercise object
+                userInfo: [
+                    "exercise": exercise,
+                    "clientSideAnalysisId": clientSideAnalysisId // Pass the ID in userInfo
+                ]
             )
-            print("🔔 Posted StartPoseAnalysisNotification")
+            print("🔔 Posted StartPoseAnalysisNotification with clientSideAnalysisId: \(clientSideAnalysisId)")
 
-            return "Okay, I'll start analyzing your form now."
+            return "Okay, I'll start analyzing your form now. The reference ID for this analysis is \(clientSideAnalysisId)."
         }
     }
     

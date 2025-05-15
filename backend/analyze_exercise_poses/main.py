@@ -181,8 +181,8 @@ def call_LLM(images_base64, prompt, max_tokens=300): # Renamed 'images' -> 'imag
         raise # Re-raise to be caught by the main handler
 
 
-def store_analysis(user_id, exercise_id, analysis_id, analysis_data, image_urls): # Added analysis_id and image_urls
-    """Store the analysis results (including image URLs) in Firestore."""
+def store_analysis(user_id, exercise_id, analysis_id, analysis_data, image_urls, client_side_analysis_id): # Added client_side_analysis_id
+    """Store the analysis results (including image URLs and client_correlation_id) in Firestore."""
     try:
         # Use the global db client initialized earlier
         # db = firestore.Client(project='pepmvp', database='pep-mvp') # No need to re-initialize
@@ -196,10 +196,11 @@ def store_analysis(user_id, exercise_id, analysis_id, analysis_data, image_urls)
             'timestamp': firestore.SERVER_TIMESTAMP,
             'user_id': user_id,
             'raw_response': analysis_data['raw_response'],
-            'image_urls': image_urls # Add the list of image URLs
+            'image_urls': image_urls, # Add the list of image URLs
+            'client_correlation_id': client_side_analysis_id # Store the client-side ID
         }
 
-        logger.info(f"💾 Storing analysis data to Firestore document: {analysis_ref.path}")
+        logger.info(f"💾 Storing analysis data to Firestore document: {analysis_ref.path} with client_correlation_id: {client_side_analysis_id}")
         # logger.debug(f"Firestore Data: {firestore_data}") # Log data only if needed
 
         # Set the data in Firestore
@@ -254,7 +255,7 @@ def analyze_exercise_poses(request):
              logger.error("Request processing failed: 'exerciseInfo' field is missing or not an object.")
              return {'error': "'exerciseInfo' must be an object"}, 400, headers
 
-        required_fields = ['userId', 'exerciseId', 'name', 'instructions']
+        required_fields = ['userId', 'exerciseId', 'name', 'instructions', 'clientSideAnalysisId'] # Added clientSideAnalysisId
         missing_fields = [field for field in required_fields if field not in exercise_info or not exercise_info[field]]
 
         if missing_fields:
@@ -266,8 +267,9 @@ def analyze_exercise_poses(request):
         exercise_id = exercise_info['exerciseId']
         exercise_name = exercise_info['name']
         exercise_instructions = exercise_info['instructions']
+        client_side_analysis_id = exercise_info['clientSideAnalysisId'] # Extract clientSideAnalysisId
 
-        logger.info(f"🚀 Received analysis request for User: {user_id}, Exercise: {exercise_id} ({exercise_name}) with {len(images_base64)} images.")
+        logger.info(f"🚀 Received analysis request for User: {user_id}, Exercise: {exercise_id} ({exercise_name}) with {len(images_base64)} images. ClientSideAnalysisId: {client_side_analysis_id}.")
 
         # --- Generate Analysis ID ---
         # Create the Firestore document reference first to get the ID
@@ -328,10 +330,11 @@ YOUR RESPONSE MUST BE 2 SENTENCES MAXIMUM AND UNDER 30 WORDS.
             exercise_id=exercise_id,
             analysis_id=analysis_id, # Pass the generated ID
             analysis_data=analysis_result,
-            image_urls=uploaded_image_urls # Pass the list of URLs
+            image_urls=uploaded_image_urls, # Pass the list of URLs
+            client_side_analysis_id=client_side_analysis_id # Pass the client-generated ID
         )
 
-        logger.info(f"✅ Successfully processed analysis request {analysis_id}.")
+        logger.info(f"✅ Successfully processed analysis request {analysis_id} (Client ID: {client_side_analysis_id}).")
         return {
             'success': True,
             'message': 'Analysis complete, images uploaded, and results stored.',
