@@ -202,7 +202,7 @@ class PoseAnalysisManager: ObservableObject {
                 print("✅ All screenshots captured, preparing batch upload...")
                 // Upload all screenshots in a single batch
                 guard let clientSideId = self.currentClientSideAnalysisId else {
-                    handleError("Critical error: currentClientSideAnalysisId is nil before upload.")
+                    self.handleError("Critical error: currentClientSideAnalysisId is nil before upload.")
                     self.finishCapture()
                     return
                 }

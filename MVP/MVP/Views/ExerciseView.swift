@@ -235,7 +235,17 @@ struct ExerciseView: View {
         ) { [self] notification in
             print("✅ ExerciseView received StartPoseAnalysisNotification")
             // We already have the correct exercise object as a property of this view
-            poseAnalysisManager.startAnalysis(for: self.exercise)
+            
+            // Extract clientSideAnalysisId from notification
+            guard let userInfo = notification.userInfo,
+                  let clientSideAnalysisId = userInfo["clientSideAnalysisId"] as? String else {
+                print("❌ ExerciseView: Could not extract clientSideAnalysisId from notification. Cannot start analysis.")
+                // Optionally, handle this error, e.g., show an alert to the user
+                return
+            }
+            
+            print("🧬 ExerciseView extracted clientSideAnalysisId: \(clientSideAnalysisId)")
+            poseAnalysisManager.startAnalysis(for: self.exercise, clientSideAnalysisId: clientSideAnalysisId)
         }
     }
     
