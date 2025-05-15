@@ -146,12 +146,6 @@ struct OnboardingView: View {
                 addMessage(text: newText, isUser: true)
             }
         }
-        // Handle voiceManager.hasCompletedOnboarding changes
-        .onChange(of: voiceManager.hasCompletedOnboarding) { completed in
-            if completed && !appState.isOnboardingComplete {
-                handleOnboardingComplete()
-            }
-        }
     }
     
     // MARK: - Helper Methods
@@ -166,8 +160,7 @@ struct OnboardingView: View {
             if let userId = notification.userInfo?["user_id"] as? String {
                 self.appState.updateUserId(userId)
                 self.animationState = .thinking
-                self.addMessage(text: "Thanks! I'm now preparing your personalized exercise...", isUser: false)
-                
+
                 // Update timezone information first
                 print("🕒 OnboardingView: Checking and updating timezone information for userId: \(userId)")
                 self.userManager.checkAndUpdateTimezoneIfNeeded()
@@ -221,11 +214,22 @@ struct OnboardingView: View {
             }
             self.processGeneratedExercise(exerciseJson: exerciseJson)
         }
+        
+        // Listen for when the end call flag is received from VoiceManager
+        NotificationCenter.default.addObserver(
+            forName: VoiceManager.endCallFlagReceivedNotification,
+            object: nil,
+            queue: .main
+        ) { _ in // No need for [weak self] if only calling a method on self
+            print("🔔 OnboardingView: Received EndCallFlagReceivedNotification")
+            self.handleOnboardingComplete() // Attempt to complete onboarding
+        }
     }
     
     private func removeNotificationObservers() {
         NotificationCenter.default.removeObserver(self, name: VoiceManager.userIdReceivedNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: VoiceManager.exercisesGeneratedNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: VoiceManager.endCallFlagReceivedNotification, object: nil) // Remove new observer
     }
     
     private func configureAudioSession() {
@@ -307,16 +311,41 @@ struct OnboardingView: View {
     private func handleExercisesGenerated() {
         print("🎯 DEBUG: OnboardingView - Exercises generated notification received")
         isLoading = false
-        addMessage(text: "Your personalized exercise is ready! Let's get started with your recovery journey.", isUser: false)
-        
+
         // Wait a moment to show the message before proceeding
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            handleOnboardingComplete()
+            // self.handleOnboardingComplete() // Original call location
+            // Now, instead of directly calling handleOnboardingComplete, let it be triggered by either exercise generation or end_call flag
+            // However, we still need to check if conditions are met if exercises were generated.
+            print("💡 OnboardingView: Exercises generated, attempting to complete onboarding.")
+            self.handleOnboardingComplete() // Attempt to complete, conditions will be checked within
         }
     }
     
     private func handleOnboardingComplete() {
-        print("🎯 DEBUG: OnboardingView - Handling onboarding completion")
+        print("⚙️ OnboardingView: handleOnboardingComplete() called. Checking conditions...")
+        print("- appState.currentExercise is set: \(appState.currentExercise != nil)")
+        print("- voiceManager.hasReceivedEndCallFlag: \(voiceManager.hasReceivedEndCallFlag)")
+        
+        // Guard: Only proceed if exercise is ready AND end call flag is received
+        guard appState.currentExercise != nil, voiceManager.hasReceivedEndCallFlag else {
+            print("⚠️ OnboardingView: Conditions not yet met for onboarding completion.")
+            if appState.currentExercise == nil {
+                print("  - Waiting for exercise generation...")
+            }
+            if !voiceManager.hasReceivedEndCallFlag {
+                print("  - Waiting for agent to end conversation (end_call flag)...")
+            }
+            return
+        }
+        
+        // Guard against re-entry if already completed (though the above guard should mostly handle it)
+        guard !appState.isOnboardingComplete else {
+            print("⚠️ OnboardingView: Onboarding already marked as complete. Aborting transition attempt.")
+            return
+        }
+        
+        print("🎯 DEBUG: OnboardingView - Handling onboarding completion (all conditions met)")
         print("📱 DEBUG: NotificationManager availability check:")
         print("- Is NotificationManager initialized: \(notificationManager != nil)")
         print("- Is NotificationManager authorized: \(notificationManager.isAuthorized)")

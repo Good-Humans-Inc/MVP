@@ -47,6 +47,7 @@ class VoiceManager: NSObject, ObservableObject {
     @Published var isListening = false
     @Published var transcribedText = ""
     @Published var hasCompletedOnboarding = false
+    @Published var hasReceivedEndCallFlag: Bool = false
     
     // Track session operations
     private var sessionOperationInProgress = false
@@ -100,6 +101,7 @@ class VoiceManager: NSObject, ObservableObject {
     static let exerciseCoachReadyNotification = Notification.Name("ExerciseCoachReady")
     static let reportGeneratedNotification = Notification.Name("ReportGenerated")
     static let startPoseAnalysisNotification = Notification.Name("StartPoseAnalysisNotification")
+    static let endCallFlagReceivedNotification = Notification.Name("EndCallFlagReceived")
     
     // Modify init to accept AppState
     init(appState: AppState) {
@@ -565,14 +567,26 @@ class VoiceManager: NSObject, ObservableObject {
 
             print("✅ Saved user ID: \(userId)")
 
-            // Set onboarding as completed
-            self.hasCompletedOnboarding = true
-            // Generate exercises with the user ID
-            self.generateExercises(userId: userId)
-
             return "User data saved successfully with ID: \(userId)"
         }
-        print("⭐️ Registered onboarding client tools: saveUserId")
+        
+        // New tool to signal end of onboarding conversation
+        clientTools.register("endOnboardingConversation") { [weak self] parameters in
+            guard let self = self else { 
+                print("❌ endOnboardingConversation: VoiceManager instance is nil")
+                return "Manager not available"
+            }
+            
+            print("🔵 endOnboardingConversation tool called by agent")
+            DispatchQueue.main.async {
+                self.hasReceivedEndCallFlag = true
+                NotificationCenter.default.post(name: VoiceManager.endCallFlagReceivedNotification, object: nil)
+                print("✅ hasReceivedEndCallFlag set to true and EndCallFlagReceivedNotification posted")
+            }
+            return "Onboarding conversation end flag received."
+        }
+        
+        print("⭐️ Registered onboarding client tools: saveUserId, endOnboardingConversation")
     }
     
     // Register tools specific to the regular exercise agent
@@ -802,12 +816,6 @@ class VoiceManager: NSObject, ObservableObject {
                                     object: nil,
                                     userInfo: ["user_id": userId]
                                 )
-                                
-                                // Set onboarding as completed
-                                self.hasCompletedOnboarding = true
-                                
-                                // Automatically generate exercises
-                                self.generateExercises(userId: userId)
                             }
                         }
                     }
@@ -835,12 +843,6 @@ class VoiceManager: NSObject, ObservableObject {
                             object: nil,
                             userInfo: ["user_id": userId]
                         )
-                        
-                        // Set onboarding as completed
-                        self.hasCompletedOnboarding = true
-                        
-                        // Automatically generate exercises
-                        self.generateExercises(userId: userId)
                     }
                 }
             }
@@ -1025,6 +1027,7 @@ class VoiceManager: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.hasCompletedOnboarding = false
+            self.hasReceivedEndCallFlag = false
             self.lastSpokenText = ""
             self.transcribedText = ""
             self.isListening = false

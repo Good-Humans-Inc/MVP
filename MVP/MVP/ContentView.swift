@@ -17,8 +17,8 @@ struct ContentView: View {
     
     var body: some View {
         Group {
-            // Simplify the decision tree to reduce potential race conditions
-            if let exercise = appState.currentExercise {
+            // Primary condition: Is onboarding complete and do we have an exercise?
+            if appState.isOnboardingComplete, let exercise = appState.currentExercise {
                 ExerciseDetailView(exercise: exercise)
                     .environmentObject(appState)
                     .environmentObject(voiceManager)
@@ -28,16 +28,10 @@ struct ContentView: View {
                     .environmentObject(notificationManager)
                     .environmentObject(userManager)
                     .transition(.opacity)
-            } else if appState.isOnboardingComplete || appState.hasUserId {
-                // If onboarding is complete or we have a user ID, show loading with exercise fetch
-                ProgressView("Generating your exercise...")
-                    .onAppear {
-                        if let userId = appState.userId {
-                            loadRecommendedExercise(userId: userId)
-                        }
-                    }
             } else {
-                // Otherwise show onboarding
+                // If onboarding is not complete, always show OnboardingView.
+                // Exercise loading for users who completed onboarding previously but app restarted
+                // will be handled by onAppear logic or if currentExercise gets populated by other means.
                 OnboardingView()
                     .environmentObject(appState)
                     .environmentObject(voiceManager)
@@ -45,33 +39,36 @@ struct ContentView: View {
                     .environmentObject(resourceCoordinator)
                     .environmentObject(visionManager)
                     .environmentObject(notificationManager)
+                    // Pass userManager to OnboardingView if it needs it directly
+                    // (It currently accesses UserManager.shared, but explicit passing is good practice if direct interaction is needed)
+                    .environmentObject(userManager) 
             }
         }
-        .onChange(of: appState.currentExercise) { exercise in
-            if exercise != nil {
-                print("🔄 DEBUG: ContentView - Exercise loaded, setting shouldShowExerciseDetail to true")
-                shouldShowExerciseDetail = true
-            }
-        }
-        .onChange(of: appState.isOnboardingComplete) { complete in
-            if complete && appState.userId != nil {
-                print("🔄 DEBUG: ContentView - Onboarding complete with userId, loading exercise")
+        .onChange(of: appState.isOnboardingComplete) { complete in // Keep this for loading exercises for returning users
+            if complete && appState.userId != nil && appState.currentExercise == nil {
+                print("🔄 DEBUG: ContentView - Onboarding complete, userId available, but no exercise. Loading exercise.")
                 loadRecommendedExercise(userId: appState.userId!)
             }
         }
         .onAppear {
             // Check for existing user on appear
-            if let userId = UserDefaults.standard.string(forKey: "UserId") {
-                appState.userId = userId
-                appState.hasUserId = true
-                
-                // If we already have an exercise, show it
-                if appState.currentExercise != nil {
-                    shouldShowExerciseDetail = true
-                } else {
-                    // Otherwise load it
-                    loadRecommendedExercise(userId: userId)
+            if let userId = UserDefaults.standard.string(forKey: "UserId") { // Assuming "UserId" is the key used by AppState/UserManager
+                // Ensure AppState is updated. UserManager might already do this.
+                if appState.userId == nil {
+                    appState.updateUserId(userId) // Ensure AppState has it if not already set by UserManager
                 }
+                
+                // If onboarding was already completed and we have a user ID, but no current exercise (e.g., app restart)
+                if UserDefaults.standard.bool(forKey: "OnboardingComplete") && appState.currentExercise == nil { // Check persisted onboarding completion
+                     print("🔄 DEBUG: ContentView.onAppear - Returning user, onboarding was complete. Loading exercise.")
+                    loadRecommendedExercise(userId: userId)
+                } else if appState.currentExercise != nil {
+                    // If onboarding is marked complete in AppState and exercise exists, the main body handles it.
+                    // If onboarding is NOT marked complete in AppState, OnboardingView will show.
+                    print("🔄 DEBUG: ContentView.onAppear - State will be handled by main body logic.")
+                }
+            } else {
+                print("🔄 DEBUG: ContentView.onAppear - No existing user ID found in UserDefaults.")
             }
         }
 //        .sheet(isPresented: $showingNotificationSettings) {
