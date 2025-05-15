@@ -166,20 +166,17 @@ struct OnboardingView: View {
             if let userId = notification.userInfo?["user_id"] as? String {
                 self.appState.updateUserId(userId)
                 self.animationState = .thinking
-                self.addMessage(text: "Thanks for sharing that information. I'm generating personalized exercises for you now...", isUser: false)
+                self.addMessage(text: "Thanks! I'm now preparing your personalized exercise...", isUser: false)
                 
                 // Update timezone information first
-                print("🕒 OnboardingView: Checking and updating timezone information")
-                let userManager = UserManager.shared
-                print("🕒 OnboardingView: User ID for timezone update: \(userId)")
-                userManager.checkAndUpdateTimezoneIfNeeded()
+                print("🕒 OnboardingView: Checking and updating timezone information for userId: \(userId)")
+                self.userManager.checkAndUpdateTimezoneIfNeeded()
                 
                 // Force an immediate timezone update regardless of cache
                 let currentOffset = TimeZone.current.secondsFromGMT() / 3600
                 let currentOffsetString = String(currentOffset)
                 print("🕒 OnboardingView: Forcing timezone update with offset: \(currentOffsetString)")
-                // Call the public method directly now
-                userManager.updateTimezoneOnServer(userId: userId, timezone: currentOffsetString)
+                self.userManager.updateTimezoneOnServer(userId: userId, timezone: currentOffsetString)
                 
                 // Update FCM token with the new user ID
                 self.notificationManager.getFCMToken { token in
@@ -188,74 +185,41 @@ struct OnboardingView: View {
                         self.notificationManager.updateFCMTokenInBackend(token: token)
                     }
                 }
+
+                // --- Generate Exercise directly ---
+                print("🚀 OnboardingView: Attempting to generate exercise directly for userId: \(userId)")
+                self.isLoading = true
+                self.userManager.generateExercise(userId: userId) { result in
+                    DispatchQueue.main.async {
+                        self.isLoading = false
+                        switch result {
+                        case .success(let exerciseJson):
+                            print("✅ OnboardingView: Successfully generated exercise directly.")
+                            self.processGeneratedExercise(exerciseJson: exerciseJson)
+                        case .failure(let error):
+                            print("⚠️ OnboardingView: Failed to generate exercise directly: \(error.localizedDescription). Will rely on agent fallback if available.")
+                        }
+                    }
+                }
+                // --- End Generate Exercise ---
             }
         }
         
-        // Listen for when exercises are generated
+        // Listen for when exercises are generated (potentially as a fallback from the agent)
         NotificationCenter.default.addObserver(
             forName: VoiceManager.exercisesGeneratedNotification,
             object: nil,
             queue: .main
         ) { notification in
-            print("🎯 DEBUG: OnboardingView - exercisesGeneratedNotification received")
+            print("🎯 DEBUG: OnboardingView - exercisesGeneratedNotification received (potentially as fallback)")
             
-            // --- DETAILED LOGGING FOR USERINFO ---
-            print("🔍 RAW UserInfo from notification: \(notification.userInfo ?? [:])")
-            if let rawExerciseData = notification.userInfo?["exerciseJson"] {
-                print("🔍 Type of object for key 'exerciseJson': \(type(of: rawExerciseData))")
-            } else {
-                print("🔍 Key 'exerciseJson' not found in userInfo.")
-            }
-            // --- END DETAILED LOGGING ---
-
-            // 1. Extract the exerciseJson from the notification
             guard let exerciseJson = notification.userInfo?["exerciseJson"] as? [String: Any] else {
-                print("⚠️ DEBUG: OnboardingView - exercisesGeneratedNotification did not contain valid exerciseJson. UserInfo dump above should clarify.")
-                // Handle this error appropriately
-                self.isLoading = false // Use self directly
-                self.addMessage(text: "Sorry, I couldn't prepare your exercise. Please try restarting.", isUser: false) // Use self directly
+                print("⚠️ DEBUG: OnboardingView - exercisesGeneratedNotification did not contain valid exerciseJson.")
+                self.isLoading = false
+                self.addMessage(text: "Sorry, I couldn't prepare your exercise. Please try restarting.", isUser: false)
                 return
             }
-
-            // --- PRINT PARSED EXERCISEJSON ---
-            print("✅ PROCESSED exerciseJson: \(exerciseJson)")
-            // --- END PRINT ---
-
-            // 2. Convert exerciseJson to an Exercise object
-            //    (Ensure keys like imageURL, videoURL, targetJoints match your backend's JSON structure)
-            let newExercise = Exercise(
-                id: UUID(uuidString: exerciseJson["id"] as? String ?? UUID().uuidString) ?? UUID(),
-                name: exerciseJson["name"] as? String ?? "Unknown Exercise",
-                description: exerciseJson["description"] as? String ?? "No description available",
-                imageURLString: exerciseJson["imageURL"] as? String, // Or "image_url" etc.
-                imageURLString1: exerciseJson["imageURL1"] as? String, // Or "image_url1" etc.
-                duration: TimeInterval(exerciseJson["duration"] as? Int ?? 180),
-                targetJoints: (exerciseJson["targetJoints"] as? [String])?.compactMap { BodyJointType(rawValue: $0) } ?? [],
-                instructions: exerciseJson["instructions"] as? [String] ?? [],
-                firestoreId: exerciseJson["firestoreId"] as? String ?? exerciseJson["id"] as? String, // Prefer firestoreId, fallback to id
-                videoURL: (exerciseJson["videoURL"] as? String).flatMap { URL(string: $0) } // Or "video_url" etc.
-            )
-
-            print("✅ DEBUG: OnboardingView - Successfully parsed new exercise: \(newExercise.name)")
-
-            // 3. Set this new exercise in AppState
-            self.appState.setCurrentExercise(newExercise) // Use self directly
-
-            // 4. IMPORTANT: Save this new exercise (original JSON) to UserDefaults
-            //    The structure must match what APIService.getRecommendedExercise expects (an array of exercises).
-            let exercisesArrayToSave = [exerciseJson]
-            if let dataToSave = try? JSONSerialization.data(withJSONObject: exercisesArrayToSave) {
-                UserDefaults.standard.set(dataToSave, forKey: "UserExercises")
-                print("✅ DEBUG: OnboardingView - New exercise (JSON) saved to UserDefaults for APIService compatibility.")
-            } else {
-                print("⚠️ DEBUG: OnboardingView - Failed to serialize new exercise JSON for UserDefaults.")
-                // Consider how to handle this; if UserDefaults saving fails, subsequent cold starts
-                // might not pick up the exercise until a new one is generated or fetched.
-                // For now, we'll proceed as appState.currentExercise is set.
-            }
-
-            // 5. Now call your existing handleExercisesGenerated() or similar logic
-            self.handleExercisesGenerated() // Use self directly
+            self.processGeneratedExercise(exerciseJson: exerciseJson)
         }
     }
     
@@ -291,6 +255,53 @@ struct OnboardingView: View {
         } catch {
             print("Audio session error: \(error)")
         }
+    }
+    
+    private func processGeneratedExercise(exerciseJson: [String: Any]) {
+        // Guard against processing if onboarding is already considered complete by AppState
+        // or if we are already past the point where an exercise should have been set.
+        guard !appState.isOnboardingComplete && appState.currentExercise == nil else {
+            print("⚠️ DEBUG: OnboardingView.processGeneratedExercise - Onboarding already complete or exercise already set. Skipping processing. (isOnboardingComplete: \(appState.isOnboardingComplete), currentExercise: \(appState.currentExercise?.name ?? "nil"))")
+            if appState.isOnboardingComplete && isLoading { // If we were loading for the direct call, hide it.
+                isLoading = false
+            }
+            return
+        }
+        
+        print("⚙️ DEBUG: OnboardingView.processGeneratedExercise - Processing exerciseJson: \(exerciseJson)")
+        self.isLoading = true // Ensure loading indicator is shown during processing
+
+        // 1. Convert exerciseJson to an Exercise object
+        let newExercise = Exercise(
+            id: UUID(uuidString: exerciseJson["id"] as? String ?? UUID().uuidString) ?? UUID(),
+            name: exerciseJson["name"] as? String ?? "Unknown Exercise",
+            description: exerciseJson["description"] as? String ?? "No description available",
+            imageURLString: exerciseJson["imageURL"] as? String,
+            imageURLString1: exerciseJson["imageURL1"] as? String,
+            duration: TimeInterval(exerciseJson["duration"] as? Int ?? 180),
+            targetJoints: (exerciseJson["target_joints"] as? [String])?.compactMap { BodyJointType(rawValue: $0) } ?? // Use target_joints
+                          (exerciseJson["targetJoints"] as? [String])?.compactMap { BodyJointType(rawValue: $0) } ?? [], // Fallback for targetJoints
+            instructions: exerciseJson["instructions"] as? [String] ?? [],
+            firestoreId: exerciseJson["firestoreId"] as? String ?? exerciseJson["id"] as? String,
+            videoURL: (exerciseJson["videoURL"] as? String).flatMap { URL(string: $0) }
+        )
+
+        print("✅ DEBUG: OnboardingView - Successfully parsed new exercise: \(newExercise.name)")
+
+        // 2. Set this new exercise in AppState
+        self.appState.setCurrentExercise(newExercise)
+
+        // 3. Save this new exercise (original JSON) to UserDefaults
+        let exercisesArrayToSave = [exerciseJson]
+        if let dataToSave = try? JSONSerialization.data(withJSONObject: exercisesArrayToSave) {
+            UserDefaults.standard.set(dataToSave, forKey: "UserExercises")
+            print("✅ DEBUG: OnboardingView - New exercise (JSON) saved to UserDefaults for APIService compatibility.")
+        } else {
+            print("⚠️ DEBUG: OnboardingView - Failed to serialize new exercise JSON for UserDefaults.")
+        }
+
+        // 4. Now call your existing handleExercisesGenerated()
+        self.handleExercisesGenerated()
     }
     
     private func handleExercisesGenerated() {

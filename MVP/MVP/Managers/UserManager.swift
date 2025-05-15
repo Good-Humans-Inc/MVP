@@ -242,6 +242,77 @@ class UserManager: ObservableObject {
             return false // Indicate failure
         }
     }
+
+    func generateExercise(userId: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        guard let url = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/generate_exercise") else {
+            print("❌ UserManager: Invalid URL for generate exercise")
+            completion(.failure(NSError(domain: "UserManager", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: String] = ["user_id": userId]
+        print("🚀 UserManager: Generating exercise for userId: \(userId)")
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            print("❌ UserManager: Failed to serialize generate exercise request")
+            completion(.failure(NSError(domain: "UserManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to serialize request body"])))
+            return
+        }
+        request.httpBody = jsonData
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("❌ UserManager: Error generating exercise: \(error.localizedDescription)")
+                completion(.failure(error))
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("❌ UserManager: Invalid response from server")
+                completion(.failure(NSError(domain: "UserManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid response from server"])))
+                return
+            }
+            
+            print("☁️ UserManager: Generate exercise response status: \(httpResponse.statusCode)")
+
+            guard let data = data else {
+                print("❌ UserManager: No data received from generate exercise endpoint")
+                completion(.failure(NSError(domain: "UserManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "No data received"])))
+                return
+            }
+            
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("☁️ Raw JSON response from /generate_exercise: \(responseString)")
+            }
+
+            if httpResponse.statusCode == 200 {
+                do {
+                    if let jsonResponse = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        if let exerciseData = jsonResponse["exercise"] as? [String: Any], jsonResponse["status"] as? String == "success" {
+                            print("✅ UserManager: Exercise generated successfully.")
+                            completion(.success(exerciseData))
+                        } else {
+                            print("❌ UserManager: Exercise generation succeeded but response format was unexpected or status was not success. Full response: \(jsonResponse)")
+                            completion(.failure(NSError(domain: "UserManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "Unexpected response format or status not success"])))
+                        }
+                    } else {
+                        print("❌ UserManager: Failed to parse JSON response from generate exercise")
+                        completion(.failure(NSError(domain: "UserManager", code: 5, userInfo: [NSLocalizedDescriptionKey: "Failed to parse JSON response"])))
+                    }
+                } catch {
+                    print("❌ UserManager: Error parsing exercise data JSON: \(error.localizedDescription)")
+                    completion(.failure(error))
+                }
+            } else {
+                print("❌ UserManager: Generate exercise failed with status: \(httpResponse.statusCode)")
+                completion(.failure(NSError(domain: "UserManager", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Generate exercise failed with status code: \(httpResponse.statusCode)"])))
+            }
+        }.resume()
+    }
 }
 
 // Helper extension for URL query parameters
