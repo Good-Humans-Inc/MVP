@@ -149,19 +149,19 @@ SHOULDER_EXERCISES = [
 
 # Knee exercises
 KNEE_EXERCISES = [
-    {
-        "name": "Straight Leg Raises",
-        "description": "Strengthening exercise for the quadriceps while keeping knee straight",
-        "target_joints": ["knee"],
-        "instructions": [
-            "Lie on your back with one leg straight and other bent",
-            "Tighten thigh muscles of straight leg",
-            "Lift straight leg about 6 inches off ground",
-            "Hold for 5 seconds",
-            "Lower slowly and repeat 10 times"
-        ],
-        "videoURL": "https://storage.googleapis.com/mvp-vids/straight_leg_raises.mp4"
-    },
+    # {
+    #     "name": "Straight Leg Raises",
+    #     "description": "Strengthening exercise for the quadriceps while keeping knee straight",
+    #     "target_joints": ["knee"],
+    #     "instructions": [
+    #         "Lie on your back with one leg straight and other bent",
+    #         "Tighten thigh muscles of straight leg",
+    #         "Lift straight leg about 6 inches off ground",
+    #         "Hold for 5 seconds",
+    #         "Lower slowly and repeat 10 times"
+    #     ],
+    #     "videoURL": "https://storage.googleapis.com/mvp-vids/straight_leg_raises.mp4"
+    # },
     {
         "name": "Wall Squats",
         "description": "Controlled squat exercise using wall support",
