@@ -27,9 +27,9 @@ struct ExerciseView: View {
     // Add PoseAnalysisManager
     @StateObject private var poseAnalysisManager: PoseAnalysisManager
     
-    init(exercise: Exercise, cameraManager: CameraManager, appState: AppState) {
+    init(exercise: Exercise, cameraManager: CameraManager, appState: AppState, voiceManager: VoiceManager) {
         self.exercise = exercise
-        _poseAnalysisManager = StateObject(wrappedValue: PoseAnalysisManager(cameraManager: cameraManager, appState: appState))
+        _poseAnalysisManager = StateObject(wrappedValue: PoseAnalysisManager(cameraManager: cameraManager, appState: appState, voiceManager: voiceManager))
     }
     
     var body: some View {
@@ -64,6 +64,15 @@ struct ExerciseView: View {
             exerciseControlsView
         }
         .onAppear {
+            // Start vision processing as soon as the view appears for live overlay
+            // This assumes cameraManager.videoDataOutput is available.
+            // If CameraManager needs explicit setup first, that should be ensured.
+            if let videoOutput = cameraManager.videoDataOutput { // You'll need to ensure CameraManager exposes this property
+                visionManager.startProcessing(videoOutput)
+            } else {
+                print("⚠️ ExerciseView: cameraManager.videoDataOutput not available. VisionManager not started early.")
+            }
+
             // Setup the exercise session
             setupExerciseSession()
             

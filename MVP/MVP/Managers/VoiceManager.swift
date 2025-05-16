@@ -648,8 +648,28 @@ class VoiceManager: NSObject, ObservableObject {
             )
             print("🔔 Posted StartPoseAnalysisNotification with clientSideAnalysisId: \(clientSideAnalysisId)")
 
-            return "Okay, I'll start analyzing your form now. The reference ID for this analysis is \(clientSideAnalysisId)."
+            return "Okay, I'll start analyzing your form now." // Simplified: Agent no longer needs to be told the ID for polling
         }
+    }
+    
+    // Method to send a contextual update to the active ElevenLabs agent
+    func sendContextualUpdate(text: String) {
+        guard let conversation = self.conversation, status == .connected else {
+            print("⚠️ VoiceManager: Cannot send contextual update. No active or connected conversation.")
+            return
+        }
+        
+        print("🗣️ VoiceManager: Attempting to send contextual update to agent: '\(text)'")
+        
+        // Call the NEW public method from the SDK.
+        // This method is not async and does not throw according to the SDK v1.1.3 provided.
+        // Error handling for the actual WebSocket send is done internally by the SDK
+        // via the completion handler in its private sendWebSocketMessage.
+        conversation.sendContextualUpdate(text) 
+        
+        // We can assume the SDK handles logging of successful send or errors internally via its callbacks/logger.
+        // For our VoiceManager, we've initiated the send.
+        print("✅ VoiceManager: contextual_update(\'\(text)\') command sent to SDK.")
     }
     
     // Generate exercises for the user

@@ -101,7 +101,7 @@ struct ExerciseDetailView: View {
             }
         }
         .fullScreenCover(isPresented: $showingExerciseView) {
-            ExerciseView(exercise: exercise, cameraManager: cameraManager, appState: appState)
+            ExerciseView(exercise: exercise, cameraManager: cameraManager, appState: appState, voiceManager: voiceManager)
                 .environmentObject(appState)
                 .environmentObject(voiceManager)
                 .environmentObject(resourceCoordinator)

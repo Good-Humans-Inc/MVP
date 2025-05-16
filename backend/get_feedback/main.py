@@ -2,7 +2,6 @@ import functions_framework
 from firebase_admin import initialize_app, firestore
 import firebase_admin
 from datetime import datetime, timezone
-import time
 
 # Initialize Firebase Admin
 try:
@@ -47,64 +46,53 @@ def get_latest_feedback(request):
         # Initialize Firestore DB
         db = firestore.Client(project='pepmvp', database='pep-mvp')
 
-        max_attempts = 5  # 10 seconds / 2 seconds per attempt
-        attempt_delay = 2  # seconds
+        # --- Query for analyses using client_correlation_id ---
+        analyses_query = (
+            db.collection('exercises')
+            .document(exercise_id)
+            .collection('analyses')
+            .where('user_id', '==', user_id)
+            .where('client_correlation_id', '==', client_correlation_id)
+            .limit(1)
+        )
 
-        for attempt in range(max_attempts):
-            print(f"Attempt {attempt + 1}/{max_attempts} to get feedback for client_correlation_id: {client_correlation_id}")
-            # --- Query for analyses using client_correlation_id ---
-            analyses_query = (
-                db.collection('exercises')
-                .document(exercise_id)
-                .collection('analyses')
-                .where('user_id', '==', user_id)
-                .where('client_correlation_id', '==', client_correlation_id)
-                .limit(1)
-            )
+        print(f"Querying for analysis with user_id: {user_id}, exercise_id: {exercise_id}, client_correlation_id: {client_correlation_id}")
 
-            print(f"Querying for analysis with user_id: {user_id}, exercise_id: {exercise_id}, client_correlation_id: {client_correlation_id}")
+        # Execute query
+        analyses = analyses_query.stream() # Use stream() for iterator
+        doc_list = list(analyses)
 
-            # Execute query
-            analyses = analyses_query.stream() # Use stream() for iterator
-            doc_list = list(analyses)
+        # Check if any document matched the criteria
+        if not doc_list:
+            message = "Feedback not ready yet. No need to reveal this to the user, just call this tool `get_pose_feedback` again later. Absolutely do not make up feedback to the user, just say nothing and move on to other points you need to cover in the exercise session according to the instructions"
+            print(f"ℹ️ {message} for client_correlation_id: {client_correlation_id}")
+            return {
+                'success': True,
+                'hasAnalysis': False,
+                'message': message,
+                'analysisId': None,
+                'clientCorrelationId': client_correlation_id
+            }, 200, headers
 
-            # Check if any document matched the criteria
-            if doc_list:
-                # An analysis matching the criteria was found
-                doc_snapshot = doc_list[0]
-                retrieved_analysis_id = doc_snapshot.id
-                latest_analysis = doc_snapshot.to_dict()
+        # An analysis matching the criteria was found
+        doc_snapshot = doc_list[0]
+        retrieved_analysis_id = doc_snapshot.id
+        latest_analysis = doc_snapshot.to_dict()
 
-                print(f"✅ Found analysis {retrieved_analysis_id} matching client_correlation_id: {client_correlation_id}.")
-                # Ensure raw_response is fetched correctly
-                feedback_text = latest_analysis.get('raw_response', '')
-                if not feedback_text:
-                    print(f"⚠️ Analysis {retrieved_analysis_id} found, but 'raw_response' field is empty or missing.")
-                    feedback_text = "Analysis found, but feedback content is missing."
+        print(f"✅ Found analysis {retrieved_analysis_id} matching client_correlation_id: {client_correlation_id}.")
+        # Ensure raw_response is fetched correctly
+        feedback_text = latest_analysis.get('raw_response', '')
+        if not feedback_text:
+             print(f"⚠️ Analysis {retrieved_analysis_id} found, but 'raw_response' field is empty or missing.")
+             feedback_text = "Analysis found, but feedback content is missing."
 
-                return {
-                    'success': True,
-                    'hasAnalysis': True,
-                    'feedback': feedback_text,
-                    'analysisId': retrieved_analysis_id,
-                    'clientCorrelationId': client_correlation_id
-                }, 200, headers
-
-            # If feedback not found, wait before retrying (unless it's the last attempt)
-            if attempt < max_attempts - 1:
-                print(f"Feedback not found on attempt {attempt + 1}. Waiting for {attempt_delay} seconds before retrying.")
-                time.sleep(attempt_delay)
-            else:
-                # This was the last attempt
-                message = "Feedback not ready yet. No need to reveal this to the user, just call this tool `get_pose_feedback` again later. Absolutely do not make up feedback to the user, just say nothing and move on to other points you need to cover in the exercise session according to the instructions"
-                print(f"ℹ️ {message} for client_correlation_id: {client_correlation_id} after {max_attempts} attempts.")
-                return {
-                    'success': True,
-                    'hasAnalysis': False,
-                    'message': message,
-                    'analysisId': None,
-                    'clientCorrelationId': client_correlation_id
-                }, 200, headers
+        return {
+            'success': True,
+            'hasAnalysis': True,
+            'feedback': feedback_text,
+            'analysisId': retrieved_analysis_id,
+            'clientCorrelationId': client_correlation_id
+        }, 200, headers
 
     except Exception as e:
         print(f"❌ Error in get_latest_feedback: {str(e)}")

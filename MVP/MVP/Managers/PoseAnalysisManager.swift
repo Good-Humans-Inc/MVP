@@ -26,6 +26,7 @@ class PoseAnalysisManager: ObservableObject {
     private weak var cameraManager: CameraManager?
     private let processingQueue = DispatchQueue(label: "com.app.poseAnalysis", qos: .userInitiated)
     private var currentClientSideAnalysisId: String? // Add property to store the ID
+    private weak var voiceManager: VoiceManager? // Add weak reference to VoiceManager
     
     // Cloud Function URLs
     private let analyzePosesURL = URL(string: "https://us-central1-pepmvp.cloudfunctions.net/analyze_exercise_poses")!
@@ -37,9 +38,10 @@ class PoseAnalysisManager: ObservableObject {
     private var capturedFrames: [(frame: CMSampleBuffer, timestamp: Date)] = []
     private var currentFrameCount = 0
     
-    init(cameraManager: CameraManager, appState: AppState) {
+    init(cameraManager: CameraManager, appState: AppState, voiceManager: VoiceManager) {
         self.cameraManager = cameraManager
         self.appState = appState
+        self.voiceManager = voiceManager // Store the voiceManager reference
     }
     
     func startAnalysis(for exercise: Exercise, clientSideAnalysisId: String) {
@@ -424,15 +426,36 @@ class PoseAnalysisManager: ObservableObject {
                         print("\n✅ Batch Upload Request Complete")
                     }
                 },
-                receiveValue: { response in
+                receiveValue: { [weak self] response in
+                    guard let self = self else { return }
                     print("\n🎯 Batch Upload Response:")
                     print("--------------------------------")
                     if response.success {
-                        print("✅ All screenshots processed successfully")
+                        print("✅ All screenshots processed successfully by backend.")
+                        if let feedbackText = response.analysisResult?.raw_response, !feedbackText.isEmpty {
+                            print("🗣️ PoseAnalysisManager: Received feedback from backend: '\(feedbackText)'") // Log received feedback
+                            print("🗣️ PoseAnalysisManager: Preparing to send feedback to agent as contextual update.")
+                            // Access voiceManager through the stored property
+                            if let vm = self.voiceManager { // Use the stored voiceManager property
+                                let fullFeedbackMessage = "Form analysis feedback: \(feedbackText)"
+                                vm.sendContextualUpdate(text: fullFeedbackMessage)
+                            } else {
+                                print("⚠️ PoseAnalysisManager: self.voiceManager is nil. Cannot send contextual update.")
+                            }
+                        } else {
+                            print("ℹ️ No feedback text received from backend or feedback is empty.")
+                        }
                     } else {
-                        print("⚠️ Server reported failure")
+                        print("⚠️ Server reported failure: \(response.message)")
+                        // Optionally, send a contextual update about the failure
+                        if let vm = self.voiceManager { // Use the stored voiceManager property
+                            vm.sendContextualUpdate(text: "There was an issue getting your form analysis: \(response.message)")
+                        }
                     }
                     print("📝 Server message: \(response.message)")
+                    if let analysisId = response.analysisId {
+                        print("🆔 Analysis ID from backend: \(analysisId)")
+                    }
                     print("--------------------------------")
                 }
             )
@@ -440,19 +463,31 @@ class PoseAnalysisManager: ObservableObject {
     }
 }
 
+// Structure for the raw analysis result from the backend
+struct AnalysisResultPayload: Codable {
+    let raw_response: String? // The actual feedback text
+    // Add any other fields if your 'analysis_result' dictionary in Python has more
+}
+
 // Response type for cloud function
 struct AnalysisResponse: Codable {
     let success: Bool
     let message: String
-    
+    let analysisId: String?          // To store the ID of the analysis document
+    let analysisResult: AnalysisResultPayload? // To store the actual analysis payload
+
     enum CodingKeys: String, CodingKey {
         case success
         case message
+        case analysisId
+        case analysisResult // Ensure this matches the JSON key from your Python backend
     }
-    
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         success = try container.decode(Bool.self, forKey: .success)
         message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
+        analysisId = try container.decodeIfPresent(String.self, forKey: .analysisId)
+        analysisResult = try container.decodeIfPresent(AnalysisResultPayload.self, forKey: .analysisResult)
     }
 } 

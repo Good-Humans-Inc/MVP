@@ -84,7 +84,7 @@ class VisionManager: NSObject, ObservableObject {
             self.transformMatrix = CGAffineTransform(scaleX: self.previewLayer.width, y: self.previewLayer.height)
         }
         
-        print("👁 Started hand pose processing")
+        print("👁 Vision processing started")
     }
     
     func stopProcessing() {
